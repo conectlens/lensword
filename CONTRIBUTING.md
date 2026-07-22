@@ -59,7 +59,10 @@ npm test        # vitest run
 
 ## Branching and commits
 
-- Branch off `main`; there is no separate `develop` branch.
+- Branch off `development` — the shared integration branch feature work lands
+  on. `main` tracks the last released state; `development` is promoted to
+  `main` as a separate, explicit release step, not as part of normal feature
+  work.
 - Use short, descriptive branch names (e.g. `fix/review-session-timer`,
   `feat/mnemolab-voting`).
 - Write commit messages that explain *why* a change was made, not just what
@@ -95,7 +98,7 @@ npm test        # vitest run
 
 ## Submitting a pull request
 
-1. Fork the repository and create a branch from `main`.
+1. Fork the repository and create a branch from `development`.
 2. Make your change, adding or updating tests and documentation as needed.
 3. Run the checks above.
 4. Open a pull request using the provided template, describing what changed
