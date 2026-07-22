@@ -1,0 +1,32 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "18420:8000"
+    environment:
+      DATABASE_URL: sqlite:///./data/lensword.db
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production-this-is-not-secure}
+      ACCESS_TOKEN_EXPIRE_MINUTES: "10080"
+      CORS_ORIGINS: '["http://localhost:18421","http://localhost:5173"]'
+      FIRST_ADMIN_EMAIL: ${FIRST_ADMIN_EMAIL:-}
+      FIRST_ADMIN_PASSWORD: ${FIRST_ADMIN_PASSWORD:-}
+    volumes:
+      - lensword_data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:18420
+    ports:
+      - "18421:80"
+    depends_on:
+      - backend
+
+volumes:
+  lensword_data:
