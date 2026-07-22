@@ -149,6 +149,23 @@ class MnemonicNoteModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime)
 
 
+class ReminderModel(Base):
+    """Per-user cron-like schedule: when to fire, how often, and which
+    review group it targets. Wiring this to the Phase 0.0 scheduler is a
+    Phase 2 concern (reminder scheduling use case) — this is only the
+    persisted shape."""
+
+    __tablename__ = "reminders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("groups.id"))
+    trigger_time: Mapped[str] = mapped_column(String(8))
+    recurrence: Mapped[str] = mapped_column(String(16))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+
+
 class RecallSettingsModel(Base):
     __tablename__ = "recall_settings"
 
