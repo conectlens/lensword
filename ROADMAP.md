@@ -16,16 +16,16 @@ works — no stubbed capability is documented as shipped.
 Shared infrastructure. No user-visible behavior change; everything below
 depends on this.
 
-- [ ] **0.0** Background scheduler in `backend/app/infrastructure/`, wired
+- [x] **0.0** Background scheduler in `backend/app/infrastructure/`, wired
       into the FastAPI app lifespan, with a `jobs/` module for registered
-      tasks. *(Planned)*
-- [ ] **0.1** `NotificationChannel` domain port (`send(user, message,
-      channel)`) with one concrete adapter to start. *(Planned)*
-- [ ] **0.2** `AIProvider` domain port (`suggest_mnemonic(word, context) ->
+      tasks. *(Shipped)*
+- [x] **0.1** `NotificationChannel` domain port (`send(user, message,
+      channel)`) with one concrete adapter to start. *(Shipped)*
+- [x] **0.2** `AIProvider` domain port (`suggest_mnemonic(word, context) ->
       str`), decoupled from any specific backend, preserving the domain
-      layer's zero-framework-dependency boundary. *(Planned)*
-- [ ] **0.3** `reminders` table (model + migration): trigger time, recurrence,
-      target review group. *(Planned)*
+      layer's zero-framework-dependency boundary. *(Shipped)*
+- [x] **0.3** `reminders` table (model + migration): trigger time, recurrence,
+      target review group. *(Shipped)*
 
 ## Phase 1 — Local AI support (Ollama)
 
