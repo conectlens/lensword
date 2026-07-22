@@ -21,9 +21,9 @@ depends on this.
       tasks. *(Shipped)*
 - [x] **0.1** `NotificationChannel` domain port (`send(user, message,
       channel)`) with one concrete adapter to start. *(Shipped)*
-- [ ] **0.2** `AIProvider` domain port (`suggest_mnemonic(word, context) ->
+- [x] **0.2** `AIProvider` domain port (`suggest_mnemonic(word, context) ->
       str`), decoupled from any specific backend, preserving the domain
-      layer's zero-framework-dependency boundary. *(Planned)*
+      layer's zero-framework-dependency boundary. *(Shipped)*
 - [ ] **0.3** `reminders` table (model + migration): trigger time, recurrence,
       target review group. *(Planned)*
 
