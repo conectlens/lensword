@@ -19,8 +19,8 @@ depends on this.
 - [x] **0.0** Background scheduler in `backend/app/infrastructure/`, wired
       into the FastAPI app lifespan, with a `jobs/` module for registered
       tasks. *(Shipped)*
-- [ ] **0.1** `NotificationChannel` domain port (`send(user, message,
-      channel)`) with one concrete adapter to start. *(Planned)*
+- [x] **0.1** `NotificationChannel` domain port (`send(user, message,
+      channel)`) with one concrete adapter to start. *(Shipped)*
 - [ ] **0.2** `AIProvider` domain port (`suggest_mnemonic(word, context) ->
       str`), decoupled from any specific backend, preserving the domain
       layer's zero-framework-dependency boundary. *(Planned)*
