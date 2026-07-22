@@ -1,0 +1,40 @@
+name: Feature request
+description: Suggest an idea or enhancement for LensWord
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the use case or gap this feature would address.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like to see happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any alternative solutions or workarounds you've considered.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Where would this apply?
+      options:
+        - Frontend (React app)
+        - Backend (FastAPI)
+        - Docker / deployment
+        - Documentation
+        - Other
+    validations:
+      required: true

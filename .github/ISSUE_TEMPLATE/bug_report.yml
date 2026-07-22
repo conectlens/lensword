@@ -1,0 +1,67 @@
+name: Bug report
+description: Report a problem with LensWord
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please do not use this form for security vulnerabilities — see [SECURITY.md](https://github.com/conectlens/lensword/security/policy) instead.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Step-by-step instructions to reproduce the issue.
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Where does this occur?
+      options:
+        - Frontend (React app)
+        - Backend (FastAPI)
+        - Docker / deployment
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: How are you running LensWord? (e.g. `docker compose up`, local dev with Node/Python versions, browser)
+      placeholder: e.g. docker compose, macOS, Chrome 128
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or output
+      description: Backend/frontend console output, if any. This will be formatted as code automatically.
+      render: shell
+    validations:
+      required: false

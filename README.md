@@ -1,5 +1,8 @@
 # LensWord
 
+[![CI](https://github.com/conectlens/lensword/actions/workflows/ci.yml/badge.svg)](https://github.com/conectlens/lensword/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A vocabulary-learning app built around **spaced repetition** and the **memory-palace
 (method of loci)** mnemonic technique. FastAPI + SQLite backend, Vite + React +
 Tailwind frontend, email/password auth, Docker deployment.
@@ -139,3 +142,18 @@ npm run dev
 - MnemoLab AI suggestions and image generation, and scheduled notification
   delivery, are intentionally not implemented (see above) — real credentials/
   infrastructure decisions for you to make, not something to fake.
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for
+development setup, running tests/lint, and the pull request process. This
+project follows a [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Security
+
+To report a security vulnerability, please see [SECURITY.md](SECURITY.md)
+rather than opening a public issue.
+
+## License
+
+[MIT](LICENSE)
