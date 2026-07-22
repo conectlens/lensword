@@ -4,6 +4,7 @@ services:
     ports:
       - "18420:8000"
     environment:
+      ENVIRONMENT: production
       DATABASE_URL: sqlite:///./data/lensword.db
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production-this-is-not-secure}
       ACCESS_TOKEN_EXPIRE_MINUTES: "10080"

@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -11,15 +12,23 @@ from app.domain.exceptions import DomainError
 from app.domain.value_objects import UserRole
 from app.infrastructure.db import SessionLocal, init_db
 from app.infrastructure.repositories import SqlAlchemyUserRepository
+from app.infrastructure.scheduler import create_scheduler, register_jobs
 
 settings_ = get_settings()
+
+if settings_.environment == "development":
+    logging.basicConfig(level=logging.INFO)
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
     _seed_first_admin()
+    _app.state.scheduler = create_scheduler()
+    register_jobs(_app.state.scheduler, settings_)
+    _app.state.scheduler.start()
     yield
+    _app.state.scheduler.shutdown(wait=False)
 
 
 app = FastAPI(title=settings_.app_name, lifespan=lifespan)
