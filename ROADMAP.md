@@ -16,9 +16,9 @@ works — no stubbed capability is documented as shipped.
 Shared infrastructure. No user-visible behavior change; everything below
 depends on this.
 
-- [ ] **0.0** Background scheduler in `backend/app/infrastructure/`, wired
+- [x] **0.0** Background scheduler in `backend/app/infrastructure/`, wired
       into the FastAPI app lifespan, with a `jobs/` module for registered
-      tasks. *(Planned)*
+      tasks. *(Shipped)*
 - [ ] **0.1** `NotificationChannel` domain port (`send(user, message,
       channel)`) with one concrete adapter to start. *(Planned)*
 - [ ] **0.2** `AIProvider` domain port (`suggest_mnemonic(word, context) ->
