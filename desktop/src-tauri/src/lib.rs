@@ -9,6 +9,8 @@
 //! exercised without a webview toolchain. What remains in this file is the
 //! Tauri wiring.
 
+mod credential;
+
 use lensword_api_config::{read_endpoint_file, resolve, ApiConfig};
 use tauri::Manager;
 
@@ -51,7 +53,12 @@ fn get_api_config(app: tauri::AppHandle) -> Result<ApiConfig, String> {
 
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_api_config])
+        .invoke_handler(tauri::generate_handler![
+            get_api_config,
+            credential::credential_get,
+            credential::credential_set,
+            credential::credential_clear,
+        ])
         .run(tauri::generate_context!())
         .expect("failed to start the LensWord desktop shell");
 }

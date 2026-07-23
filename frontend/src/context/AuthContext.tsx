@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { ApiRequestError, authApi, getToken, setToken } from '../lib/api'
+import { ApiRequestError, authApi, clearToken, getToken, hydrateToken, setToken } from '../lib/api'
 import type { User } from '../lib/types'
 
 interface AuthContextValue {
@@ -7,7 +7,7 @@ interface AuthContextValue {
   loading: boolean
   login: (email: string, password: string) => Promise<void>
   register: (username: string, email: string, password: string) => Promise<void>
-  logout: () => void
+  logout: () => Promise<void>
   refreshUser: () => Promise<void>
 }
 
@@ -18,6 +18,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   async function refreshUser() {
+    // Load the token from its backing store (the OS credential store in the
+    // desktop shell, localStorage in the browser) before reading it. In the
+    // shell the token is not in localStorage, so skipping this would always see
+    // none and force a re-login on every launch.
+    await hydrateToken()
     if (!getToken()) {
       setUser(null)
       setLoading(false)
@@ -33,7 +38,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // there would log the user out over a typo in a config file and force a
       // re-login even after the endpoint is corrected.
       if (err instanceof ApiRequestError && (err.status === 401 || err.status === 403)) {
-        setToken(null)
+        // The server rejected the credential, so it is already worthless; if the
+        // OS store cannot be cleared right now, a persisted-but-rejected token is
+        // harmless. Still surface a failure rather than swallowing it.
+        clearToken().catch((clearErr) => {
+          console.error('could not clear the rejected credential from the OS store', clearErr)
+        })
       }
       setUser(null)
     } finally {
@@ -58,8 +68,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(res.user)
   }
 
-  function logout() {
-    setToken(null)
+  async function logout() {
+    // Clearing the credential from the OS store must not fail silently: a token
+    // left behind would let the next launch re-authenticate this session on a
+    // shared machine. Retry once for a store that was momentarily busy, then
+    // surface the failure loudly. The in-memory session ends either way.
+    try {
+      await clearToken()
+    } catch {
+      try {
+        await clearToken()
+      } catch (err) {
+        console.error(
+          'logout could not remove the stored credential; it may persist in the OS credential store',
+          err,
+        )
+      }
+    }
     setUser(null)
   }
 
