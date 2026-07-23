@@ -95,6 +95,27 @@ def test_existing_rows_survive_the_migration(legacy_engine):
     assert username == "existing"
 
 
+def test_two_columns_on_one_table_are_both_added(legacy_engine, monkeypatch):
+    """Guards the loop against stale metadata.
+
+    An Inspector caches the columns it has read, so one reused across the loop
+    would not see a column added by an earlier iteration and would act on
+    pre-ALTER metadata for the second entry on the same table.
+    """
+    monkeypatch.setattr(
+        db_module,
+        "_ADDITIVE_COLUMNS",
+        (
+            ("users", "time_zone", "VARCHAR(64) NOT NULL DEFAULT 'UTC'"),
+            ("users", "locale", "VARCHAR(16) NOT NULL DEFAULT 'en'"),
+        ),
+    )
+
+    db_module._apply_additive_columns()
+
+    assert {"time_zone", "locale"} <= _columns(legacy_engine)
+
+
 def test_a_database_with_no_tables_at_all_is_left_to_create_all(tmp_path, monkeypatch):
     """A fresh install has no users table yet; create_all builds it with the
     column already present, so the step must not try to ALTER it."""

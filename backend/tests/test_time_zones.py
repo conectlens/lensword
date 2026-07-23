@@ -175,6 +175,30 @@ def test_resolution_is_the_earliest_instant_reaching_the_requested_time(zone_nam
     assert just_before < local
 
 
+@pytest.mark.parametrize(
+    "zone_name,local,expected_local",
+    [
+        # A 30-minute gap, queried away from its edges and away from its
+        # midpoint — the case a one-hour gap queried at :30 cannot expose.
+        ("Australia/Lord_Howe", datetime(2026, 10, 4, 2, 1), "02:30"),
+        ("Australia/Lord_Howe", datetime(2026, 10, 4, 2, 17, 13), "02:30"),
+        ("America/New_York", datetime(2026, 3, 8, 2, 3, 7), "03:00"),
+    ],
+)
+def test_a_gap_resolves_onto_the_transition_exactly(zone_name, local, expected_local):
+    """Not merely within a second of it.
+
+    Halving a bracket lands on microseconds, so an off-centre query inside a
+    gap would otherwise come back carrying a sub-second remainder.
+    """
+    zone = zone_for(zone_name)
+
+    resolved = resolve_local_time(local, zone)
+
+    assert resolved.microsecond == 0
+    assert resolved.astimezone(zone).strftime("%H:%M:%S") == f"{expected_local}:00"
+
+
 def test_resolution_returns_an_aware_utc_datetime():
     resolved = resolve_local_time(datetime(2026, 7, 15, 9, 0), zone_for("Europe/Istanbul"))
 

@@ -55,15 +55,18 @@ _ADDITIVE_COLUMNS: tuple[tuple[str, str, str], ...] = (
 def _apply_additive_columns() -> None:
     """Add columns missing from tables that already exist. Idempotent: it runs
     on every start and does nothing once the column is present."""
-    inspector = inspect(engine)
-    existing_tables = set(inspector.get_table_names())
+    existing_tables = set(inspect(engine).get_table_names())
 
     for table, column, ddl in _ADDITIVE_COLUMNS:
         # A table absent here does not exist yet, so create_all() below will
         # build it with the column already in place.
         if table not in existing_tables:
             continue
-        if column in {c["name"] for c in inspector.get_columns(table)}:
+        # A fresh Inspector per entry, not one reused across the loop: an
+        # Inspector caches the columns it has already read and would not see a
+        # column that an earlier iteration added to the same table, so the
+        # second entry touching a table would act on pre-ALTER metadata.
+        if column in {c["name"] for c in inspect(engine).get_columns(table)}:
             continue
         with engine.begin() as conn:
             conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))

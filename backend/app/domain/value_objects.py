@@ -115,14 +115,19 @@ def resolve_local_time(local: datetime, zone: ZoneInfo) -> datetime:
     # transition is between them, and the clock increases across that span.
     lo, hi = instant_for(1), instant_for(0)
     while hi - lo > timedelta(seconds=1):
-        # Floor division keeps the bracket on whole seconds, so the answer
-        # comes back with the precision a reminder is actually expressed in.
         mid = lo + (hi - lo) // 2
         if clock_at(mid) < local:
             lo = mid
         else:
             hi = mid
-    return hi
+
+    # The loop narrows to within a second of the transition but not onto it,
+    # because halving a bracket lands on microseconds. Offsets only ever change
+    # on a whole minute, so the transition is a whole second, and the invariant
+    # leaves `hi` inside [transition, transition + 1s) — truncating the
+    # sub-second remainder therefore yields the transition exactly rather than
+    # merely close to it.
+    return hi.replace(microsecond=0)
 
 
 
