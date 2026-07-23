@@ -52,14 +52,21 @@ async function nativeClear(): Promise<void> {
 // Native persistence is serialized through this promise chain so writes apply
 // in the order they were requested — a `login` immediately followed by a
 // `logout` must leave the store cleared, never re-set by a set that resolved
-// after the clear. A rejected step is logged, not thrown: callers are
-// synchronous, so an unhandled rejection here has nowhere to go.
+// after the clear.
 let persistence: Promise<void> = Promise.resolve()
 
-function enqueuePersist(op: () => Promise<void>): void {
-  persistence = persistence.then(op).catch((err) => {
-    console.error('failed to persist the auth token to the OS credential store', err)
-  })
+/**
+ * Queue a native persist behind the ones already pending, preserving order.
+ *
+ * Returns a promise that reflects *this* operation's outcome, so a caller that
+ * must observe failure — clearing the credential on logout — can await it. The
+ * serialized chain itself continues regardless of this op's result, so a failed
+ * step never blocks the ones queued after it.
+ */
+function enqueuePersist(op: () => Promise<void>): Promise<void> {
+  const run = persistence.then(op)
+  persistence = run.catch(() => {})
+  return run
 }
 
 // --- in-memory cache ------------------------------------------------------
@@ -93,25 +100,52 @@ export function getToken(): string | null {
 }
 
 /**
- * Set or clear the token.
+ * Set the token.
  *
  * The cache is updated synchronously so a following `getToken()` is correct
- * immediately. Persistence to the backing store happens in the background; a
- * failed native write is surfaced to the console rather than thrown, because
- * callers (`login`, `logout`) are synchronous and a rejected promise here would
- * be unhandled. In the shell, `localStorage` is deliberately never written.
+ * immediately. Persistence to the backing store happens in the background: a
+ * failed *set* is fail-safe — the token still works this session, and its
+ * absence next launch just means a re-login — so it is logged, not thrown. To
+ * *remove* a token where a failure matters (logout, an invalidated credential),
+ * use {@link clearToken}, which surfaces the failure. In the shell,
+ * `localStorage` is deliberately never written.
  */
 export function setToken(token: string | null): void {
   cache = token
   hydrated = true
 
   if (isDesktopShell()) {
-    enqueuePersist(() => (token !== null ? nativeSave(token) : nativeClear()))
+    const op = token !== null ? () => nativeSave(token) : () => nativeClear()
+    void enqueuePersist(op).catch((err) => {
+      console.error('failed to persist the auth token to the OS credential store', err)
+    })
     return
   }
 
   if (token !== null) localStorage.setItem(TOKEN_KEY, token)
   else localStorage.removeItem(TOKEN_KEY)
+}
+
+/**
+ * Remove the token, returning a promise that rejects if the backing store could
+ * not be cleared.
+ *
+ * Unlike a failed set, a failed clear is fail-*open*: the credential remains in
+ * the OS store and a later launch would re-hydrate and re-authenticate a
+ * session the user believed they ended. So this surfaces the failure to the
+ * caller instead of swallowing it. The in-memory cache is cleared synchronously
+ * either way, so the current session is ended immediately.
+ */
+export function clearToken(): Promise<void> {
+  cache = null
+  hydrated = true
+
+  if (isDesktopShell()) {
+    return enqueuePersist(() => nativeClear())
+  }
+
+  localStorage.removeItem(TOKEN_KEY)
+  return Promise.resolve()
 }
 
 /**

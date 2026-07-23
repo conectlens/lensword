@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  clearToken,
   credentialPersistenceSettled,
   getToken,
   hydrateToken,
@@ -19,7 +20,10 @@ function enterDesktopShell(): void {
   webview.__TAURI_INTERNALS__ = {}
 }
 
-afterEach(() => {
+afterEach(async () => {
+  // Fire-and-forget persists from a test must finish before the mock is reset,
+  // or a late `invoke` resolves into the next test's call log.
+  await credentialPersistenceSettled()
   delete webview.__TAURI_INTERNALS__
   invoke.mockReset()
   localStorage.clear()
@@ -75,6 +79,18 @@ describe('credentialStore — desktop shell', () => {
     expect(getToken()).toBeNull()
   })
 
+  it('treats an undefined from the store as no token, not the string "undefined"', async () => {
+    // A Tauri version could serialize Rust `None` as `undefined` rather than
+    // `null`; both must resolve to no token, keeping the `string | null`
+    // contract getToken advertises.
+    enterDesktopShell()
+    invoke.mockResolvedValue(undefined)
+
+    await hydrateToken()
+
+    expect(getToken()).toBeNull()
+  })
+
   it('persists the token to the OS credential store and never to localStorage', async () => {
     enterDesktopShell()
     invoke.mockResolvedValue(undefined)
@@ -115,5 +131,55 @@ describe('credentialStore — desktop shell', () => {
     setToken('shell.token')
 
     expect(localStorage.getItem(TOKEN_KEY)).toBeNull()
+  })
+
+  it('still clears the store when the preceding set failed', async () => {
+    // A set that rejects (store momentarily locked) must not block the clear
+    // queued after it, or a logout would leave the just-failed token behind.
+    enterDesktopShell()
+    invoke.mockImplementation((cmd: string) =>
+      cmd === 'credential_set' ? Promise.reject(new Error('store locked')) : Promise.resolve(undefined),
+    )
+
+    setToken('bearer.jwt.value')
+    setToken(null)
+
+    // The failed set is swallowed rather than throwing out of the sync call.
+    await expect(credentialPersistenceSettled()).resolves.toBeUndefined()
+    expect(invoke).toHaveBeenNthCalledWith(1, 'credential_set', { token: 'bearer.jwt.value' })
+    expect(invoke).toHaveBeenLastCalledWith('credential_clear')
+  })
+})
+
+describe('credentialStore — clearToken surfaces failure', () => {
+  it('resolves and removes the token in the browser build', async () => {
+    localStorage.setItem(TOKEN_KEY, 'browser.token')
+
+    await expect(clearToken()).resolves.toBeUndefined()
+
+    expect(localStorage.getItem(TOKEN_KEY)).toBeNull()
+    expect(getToken()).toBeNull()
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
+  it('rejects when the OS store cannot be cleared, so logout can react', async () => {
+    // The security-relevant case: the credential could not be removed. Unlike a
+    // failed set, this must not be swallowed — a caller has to know the token
+    // may still be in the store.
+    enterDesktopShell()
+    invoke.mockRejectedValue(new Error('secret service unavailable'))
+
+    await expect(clearToken()).rejects.toThrow('secret service unavailable')
+    // The in-memory session still ends immediately regardless.
+    expect(getToken()).toBeNull()
+    expect(localStorage.getItem(TOKEN_KEY)).toBeNull()
+  })
+
+  it('resolves when the OS store clears successfully', async () => {
+    enterDesktopShell()
+    invoke.mockResolvedValue(undefined)
+
+    await expect(clearToken()).resolves.toBeUndefined()
+    expect(invoke).toHaveBeenCalledWith('credential_clear')
   })
 })

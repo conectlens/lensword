@@ -7,8 +7,8 @@ import { resolveApiBase } from './runtimeConfig'
 // The token lives behind a typed adapter: `localStorage` in the browser, the OS
 // credential store in the desktop shell (ADR 0001). Re-exported here so the
 // public API surface — and its callers — stay unchanged.
-import { getToken, setToken, hydrateToken } from './credentialStore'
-export { getToken, setToken, hydrateToken }
+import { getToken, setToken, clearToken, hydrateToken } from './credentialStore'
+export { getToken, setToken, clearToken, hydrateToken }
 
 export class ApiRequestError extends Error {
   status: number
