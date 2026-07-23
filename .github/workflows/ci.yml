@@ -66,6 +66,33 @@ jobs:
       - name: Unit tests
         run: npm test
 
+  desktop:
+    name: Desktop shell (Rust)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v7
+
+      # Rust ships preinstalled on the GitHub-hosted runners, so rustup is used
+      # directly rather than adding a third-party toolchain action.
+      - name: Add rustfmt and clippy
+        run: rustup component add rustfmt clippy
+
+      - name: Format
+        run: cargo fmt --check
+
+      # Only the endpoint-validation crate is built. It carries no Tauri or GUI
+      # dependency, so this job needs no webview system packages and no
+      # frontend build output. Compiling and packaging the shell itself is
+      # Phase 3.3 (#16), which owns the per-OS packaging jobs.
+      - name: Clippy
+        run: cargo clippy --locked -p lensword-api-config -- -D warnings
+
+      - name: Tests
+        run: cargo test --locked -p lensword-api-config
+
   docker-build:
     name: Docker build validation
     runs-on: ubuntu-latest
