@@ -30,24 +30,31 @@ class OllamaProvider:
         *,
         connect_timeout: float = 2.0,
         read_timeout: float = 20.0,
-        transport: httpx.BaseTransport | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
-        # read_timeout is deliberately short. Routes here are sync `def`, so
-        # each in-flight request holds an anyio worker thread (pool of 40)
-        # and the image runs one uvicorn worker: a handful of slow
-        # generations would otherwise exhaust the pool and stall unrelated
-        # routes, health check included. It is also longer than anyone will
-        # sit and watch a suggestion spinner.
+        # A generation occupies this client for seconds. Awaiting it keeps
+        # the wait on the event loop instead of an OS thread, so slow or hung
+        # generations cannot exhaust the server's bounded worker pool and
+        # stall unrelated endpoints. The ceiling becomes the HTTP connection
+        # pool rather than anyio's CapacityLimiter(40).
+        #
+        # read_timeout stays short regardless: it is longer than anyone will
+        # watch a suggestion spinner, and it bounds how long a wedged daemon
+        # can tie up a connection.
         self._model = model
         timeout = httpx.Timeout(
             connect=connect_timeout, read=read_timeout, write=connect_timeout, pool=connect_timeout
         )
-        self._client = httpx.Client(base_url=base_url, timeout=timeout, transport=transport)
+        # Constructed here rather than at import: httpx.AsyncClient does not
+        # bind to an event loop until it is first used, so the one instance
+        # built per process (see api.deps._ai_provider) attaches to the
+        # running server loop and lives as long as the process.
+        self._client = httpx.AsyncClient(base_url=base_url, timeout=timeout, transport=transport)
 
-    def suggest_mnemonic(self, word: str, context: str) -> str:
+    async def suggest_mnemonic(self, word: str, context: str) -> str:
         prompt = f"Give a short, memorable mnemonic for the word '{word}' ({context})."
         try:
-            response = self._client.post(
+            response = await self._client.post(
                 "/api/generate",
                 json={"model": self._model, "prompt": prompt, "stream": False},
             )

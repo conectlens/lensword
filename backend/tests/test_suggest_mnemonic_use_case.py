@@ -8,6 +8,8 @@ field.
 """
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from app.application.use_cases.review import SuggestMnemonicUseCase
@@ -46,13 +48,13 @@ class _RecordingProvider:
         self._reply = reply
         self.calls: list[tuple[str, str]] = []
 
-    def suggest_mnemonic(self, word: str, context: str) -> str:
+    async def suggest_mnemonic(self, word: str, context: str) -> str:
         self.calls.append((word, context))
         return self._reply
 
 
 class _UnavailableProvider:
-    def suggest_mnemonic(self, word: str, context: str) -> str:
+    async def suggest_mnemonic(self, word: str, context: str) -> str:
         raise AIProviderUnavailableError("The AI provider is not reachable")
 
 
@@ -81,7 +83,7 @@ def _use_case(provider, word: Word | None = ..., group: Group | None = ...) -> S
 def test_returns_the_providers_suggestion():
     provider = _RecordingProvider("Think of a 'purr-oh' that barks.")
 
-    result = _use_case(provider).execute(OWNER_ID, 7)
+    result = asyncio.run(_use_case(provider).execute(OWNER_ID, 7))
 
     assert result == "Think of a 'purr-oh' that barks."
 
@@ -93,7 +95,7 @@ def test_refuses_a_word_owned_by_another_account():
     use_case = _use_case(provider)
 
     with pytest.raises(PermissionDeniedError):
-        use_case.execute(STRANGER_ID, 7)
+        asyncio.run(use_case.execute(STRANGER_ID, 7))
 
     assert provider.calls == [], "the provider must not see another account's word"
 
@@ -104,13 +106,13 @@ def test_ownership_is_enforced_even_when_no_provider_is_configured():
     use_case = _use_case(None)
 
     with pytest.raises(PermissionDeniedError):
-        use_case.execute(STRANGER_ID, 7)
+        asyncio.run(use_case.execute(STRANGER_ID, 7))
 
 
 def test_passes_the_term_and_a_context_built_from_the_word():
     provider = _RecordingProvider()
 
-    _use_case(provider).execute(OWNER_ID, 7)
+    asyncio.run(_use_case(provider).execute(OWNER_ID, 7))
 
     assert len(provider.calls) == 1
     term, context = provider.calls[0]
@@ -122,7 +124,7 @@ def test_passes_the_term_and_a_context_built_from_the_word():
 def test_context_is_still_usable_when_the_word_has_no_translations():
     provider = _RecordingProvider()
 
-    _use_case(provider, word=_word(translations=[])).execute(OWNER_ID, 7)
+    asyncio.run(_use_case(provider, word=_word(translations=[])).execute(OWNER_ID, 7))
 
     _term, context = provider.calls[0]
     assert context.strip() != ""
@@ -131,29 +133,61 @@ def test_context_is_still_usable_when_the_word_has_no_translations():
 
 def test_raises_not_configured_when_no_provider_is_wired():
     with pytest.raises(AIProviderNotConfiguredError):
-        _use_case(None).execute(OWNER_ID, 7)
+        asyncio.run(_use_case(None).execute(OWNER_ID, 7))
 
 
 def test_raises_not_found_for_an_unknown_word():
     with pytest.raises(EntityNotFoundError):
-        _use_case(_RecordingProvider(), word=None).execute(OWNER_ID, 999)
+        asyncio.run(_use_case(_RecordingProvider(), word=None).execute(OWNER_ID, 999))
 
 
 def test_unknown_word_is_reported_even_when_no_provider_is_configured():
     """A bad word id is a bad word id regardless of AI configuration —
     otherwise enabling Ollama would change a 404 into a 200."""
     with pytest.raises(EntityNotFoundError):
-        _use_case(None, word=None).execute(OWNER_ID, 999)
+        asyncio.run(_use_case(None, word=None).execute(OWNER_ID, 999))
 
 
 def test_raises_not_found_when_the_words_group_has_vanished():
     with pytest.raises(EntityNotFoundError):
-        _use_case(_RecordingProvider(), group=None).execute(OWNER_ID, 7)
+        asyncio.run(_use_case(_RecordingProvider(), group=None).execute(OWNER_ID, 7))
 
 
 def test_lets_provider_unavailability_propagate():
     with pytest.raises(AIProviderUnavailableError):
-        _use_case(_UnavailableProvider()).execute(OWNER_ID, 7)
+        asyncio.run(_use_case(_UnavailableProvider()).execute(OWNER_ID, 7))
+
+
+def test_resolve_word_authorizes_without_touching_the_provider():
+    """The two halves exist so the router can hand its database connection
+    back before the slow await. Resolution must therefore be complete —
+    including the ownership decision — before any provider work starts."""
+    provider = _RecordingProvider()
+
+    word = _use_case(provider).resolve_word(OWNER_ID, 7)
+
+    assert word.term == "perro"
+    assert provider.calls == []
+
+
+def test_resolve_word_still_refuses_a_foreign_word():
+    with pytest.raises(PermissionDeniedError):
+        _use_case(_RecordingProvider()).resolve_word(STRANGER_ID, 7)
+
+
+def test_generate_needs_no_repository_access():
+    """Generation runs after the database session has been released, so it
+    must not reach back into a repository."""
+    use_case = SuggestMnemonicUseCase(None, None, _RecordingProvider("done"))
+
+    assert asyncio.run(use_case.generate(_word())) == "done"
+
+
+def test_generate_reports_a_missing_provider():
+    use_case = SuggestMnemonicUseCase(None, None, None)
+
+    with pytest.raises(AIProviderNotConfiguredError):
+        asyncio.run(use_case.generate(_word()))
 
 
 def test_not_configured_is_a_distinct_error_from_unavailable():

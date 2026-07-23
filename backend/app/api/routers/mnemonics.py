@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.deps import CurrentUser, GroupRepo, MnemonicRepo, OptionalAIProvider, WordRepo
+from app.api.deps import CurrentUser, DbSession, GroupRepo, MnemonicRepo, OptionalAIProvider, WordRepo
 from app.api.mappers import mnemonic_to_response
 from app.api.schemas.review import (
     MnemonicCreateRequest,
@@ -68,12 +68,13 @@ def add_mnemonic(
 
 
 @router.post("/suggest", response_model=MnemonicSuggestionResponse)
-def suggest_mnemonic(
+async def suggest_mnemonic(
     word_id: int,
     current_user: CurrentUser,
     word_repo: WordRepo,
     group_repo: GroupRepo,
     ai_provider: OptionalAIProvider,
+    db: DbSession,
 ) -> MnemonicSuggestionResponse:
     """Always 200, with the outcome carried in `status`.
 
@@ -82,11 +83,27 @@ def suggest_mnemonic(
     as HTTP errors would make the client treat a configuration choice like a
     fault; the discriminated status keeps the two apart without the client
     having to parse an error message.
+
+    `async def` so that a slow generation waits on the event loop rather than
+    occupying one of the server's bounded worker threads, where a handful of
+    hung calls would make unrelated endpoints unresponsive.
     """
+    use_case = SuggestMnemonicUseCase(word_repo, group_repo, ai_provider)
     try:
-        text = SuggestMnemonicUseCase(word_repo, group_repo, ai_provider).execute(current_user.id, word_id)
+        word = use_case.resolve_word(current_user.id, word_id)
     except (EntityNotFoundError, PermissionDeniedError) as exc:
         _handle_common_errors(exc)
+
+    # Hand the pooled database connection back before waiting on the model.
+    # get_db otherwise holds it for the whole request, and the engine pool is
+    # far smaller than the number of requests a hung provider can pile up —
+    # so without this, slow generations starve every other endpoint of
+    # connections even though no worker thread is blocked. `word` is a
+    # detached domain object and stays valid.
+    db.close()
+
+    try:
+        text = await use_case.generate(word)
     except AIProviderNotConfiguredError:
         return MnemonicSuggestionDisabled()
     except AIProviderUnavailableError as exc:

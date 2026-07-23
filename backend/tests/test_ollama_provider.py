@@ -8,6 +8,7 @@ check required by issue #15's Verify line.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -22,6 +23,16 @@ def _provider(handler, **kwargs) -> OllamaProvider:
     return OllamaProvider(transport=httpx.MockTransport(handler), **kwargs)
 
 
+def _suggest(provider: OllamaProvider, word: str = "word", context: str = "context") -> str:
+    """Drive the coroutine from a sync test.
+
+    asyncio.run rather than a plugin: the adapter is awaitable now, but
+    the project has no async pytest plugin and adding a dependency for
+    this would change the CI install surface.
+    """
+    return asyncio.run(provider.suggest_mnemonic(word, context))
+
+
 def test_suggest_mnemonic_returns_generated_text():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/api/generate"
@@ -33,7 +44,7 @@ def test_suggest_mnemonic_returns_generated_text():
 
     provider = _provider(handler)
 
-    result = provider.suggest_mnemonic("ubiquitous", "common in academic writing")
+    result = _suggest(provider, "ubiquitous", "common in academic writing")
 
     assert result == "Think 'you-BIK-wit-us'"
 
@@ -49,7 +60,7 @@ def test_suggest_mnemonic_raises_clear_error_when_daemon_unreachable(caplog):
 
     with caplog.at_level(logging.WARNING):
         with pytest.raises(AIProviderUnavailableError):
-            provider.suggest_mnemonic("perro", "dog in Spanish")
+            _suggest(provider, "perro", "dog in Spanish")
 
     assert "unreachable" in caplog.text
 
@@ -61,7 +72,7 @@ def test_suggest_mnemonic_raises_clear_error_on_timeout():
     provider = _provider(handler)
 
     with pytest.raises(AIProviderUnavailableError):
-        provider.suggest_mnemonic("word", "context")
+        _suggest(provider, "word", "context")
 
 
 def test_suggest_mnemonic_raises_clear_error_when_connection_drops_mid_response():
@@ -75,7 +86,7 @@ def test_suggest_mnemonic_raises_clear_error_when_connection_drops_mid_response(
     provider = _provider(handler)
 
     with pytest.raises(AIProviderUnavailableError):
-        provider.suggest_mnemonic("word", "context")
+        _suggest(provider, "word", "context")
 
 
 def test_suggest_mnemonic_raises_clear_error_when_model_not_pulled(caplog):
@@ -86,7 +97,7 @@ def test_suggest_mnemonic_raises_clear_error_when_model_not_pulled(caplog):
 
     with caplog.at_level(logging.WARNING):
         with pytest.raises(AIProviderUnavailableError):
-            provider.suggest_mnemonic("word", "context")
+            _suggest(provider, "word", "context")
 
     # The operator still needs to know *which* model to pull.
     assert "llama3.2" in caplog.text
@@ -98,7 +109,7 @@ def test_suggest_mnemonic_strips_surrounding_whitespace():
 
     provider = _provider(handler)
 
-    assert provider.suggest_mnemonic("word", "context") == "padded answer"
+    assert _suggest(provider, "word", "context") == "padded answer"
 
 
 def test_suggest_mnemonic_raises_clear_error_on_malformed_response():
@@ -108,7 +119,7 @@ def test_suggest_mnemonic_raises_clear_error_on_malformed_response():
     provider = _provider(handler)
 
     with pytest.raises(AIProviderUnavailableError):
-        provider.suggest_mnemonic("word", "context")
+        _suggest(provider, "word", "context")
 
 
 def test_suggest_mnemonic_raises_clear_error_when_response_field_is_wrong_type():
@@ -118,7 +129,7 @@ def test_suggest_mnemonic_raises_clear_error_when_response_field_is_wrong_type()
     provider = _provider(handler)
 
     with pytest.raises(AIProviderUnavailableError):
-        provider.suggest_mnemonic("word", "context")
+        _suggest(provider, "word", "context")
 
 
 def test_suggest_mnemonic_raises_on_unexpected_server_error():
@@ -128,7 +139,7 @@ def test_suggest_mnemonic_raises_on_unexpected_server_error():
     provider = _provider(handler)
 
     with pytest.raises(AIProviderUnavailableError):
-        provider.suggest_mnemonic("word", "context")
+        _suggest(provider, "word", "context")
 
 
 def test_read_timeout_stays_within_what_a_ui_can_wait_on():
@@ -153,7 +164,7 @@ def test_unreachable_daemon_log_masks_credentials_in_the_url(caplog):
 
     with caplog.at_level(logging.WARNING):
         with pytest.raises(AIProviderUnavailableError):
-            provider.suggest_mnemonic("word", "context")
+            _suggest(provider, "word", "context")
 
     assert caplog.text.strip() != ""
     assert "hunter2" not in caplog.text
@@ -169,7 +180,7 @@ def test_transport_failure_message_does_not_echo_the_raw_exception():
     provider = _provider(handler)
 
     with pytest.raises(AIProviderUnavailableError) as excinfo:
-        provider.suggest_mnemonic("word", "context")
+        _suggest(provider, "word", "context")
 
     assert "10.0.0.5" not in str(excinfo.value)
 
@@ -198,7 +209,7 @@ def _ollama_model_available(model: str, base_url: str = "http://localhost:11434"
 def test_suggest_mnemonic_integration_against_real_ollama():
     provider = OllamaProvider()
 
-    result = provider.suggest_mnemonic("perro", "dog in Spanish")
+    result = _suggest(provider, "perro", "dog in Spanish")
 
     assert isinstance(result, str)
     assert result.strip() != ""

@@ -161,16 +161,30 @@ class SuggestMnemonicUseCase:
         self.group_repo = group_repo
         self.provider = provider
 
-    def execute(self, owner_id: int, word_id: int) -> str:
-        # Ownership is resolved before anything else. A generated mnemonic
-        # restates the word it was built from, so answering for someone
-        # else's id would hand back their vocabulary; and checking before the
-        # provider branch keeps a foreign id from being distinguishable by
-        # its 'disabled' answer when AI is switched off.
-        word = _require_word_owner(self.word_repo, self.group_repo, word_id, owner_id)
+    def resolve_word(self, owner_id: int, word_id: int) -> Word:
+        """Authorize and load the word. Synchronous and database-bound.
+
+        Split from generation so a caller can release its database
+        connection before the slow await — the repositories return detached
+        domain objects, so the returned Word stays usable afterwards.
+
+        Ownership is resolved here, before any provider work. A generated
+        mnemonic restates the word it was built from, so answering for
+        someone else's id would hand back their vocabulary; and checking
+        before the provider branch keeps a foreign id from being
+        distinguishable by its 'disabled' answer when AI is switched off.
+        """
+        return _require_word_owner(self.word_repo, self.group_repo, word_id, owner_id)
+
+    async def generate(self, word: Word) -> str:
+        """The slow half. Touches no repository."""
         if self.provider is None:
             raise AIProviderNotConfiguredError()
-        return self.provider.suggest_mnemonic(word.term, self._context_for(word))
+        return await self.provider.suggest_mnemonic(word.term, self._context_for(word))
+
+    async def execute(self, owner_id: int, word_id: int) -> str:
+        """Both halves, for callers with no connection to release."""
+        return await self.generate(self.resolve_word(owner_id, word_id))
 
     @staticmethod
     def _context_for(word: Word) -> str:
