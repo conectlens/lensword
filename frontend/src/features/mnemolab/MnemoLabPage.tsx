@@ -7,6 +7,7 @@ import { Card } from '../../components/ui/Card'
 import { Icon } from '../../components/ui/Icon'
 import { Spinner } from '../../components/ui/Spinner'
 import { Textarea } from '../../components/ui/Textarea'
+import { MnemonicSuggestion } from './MnemonicSuggestion'
 
 export function MnemoLabPage() {
   const { wordId } = useParams()
@@ -150,11 +151,9 @@ export function MnemoLabPage() {
             </Card>
 
             <Card className="p-6">
-              <div className="mb-2 flex items-center justify-between">
+              <div className="mb-2 flex items-start justify-between gap-4">
                 <h3 className="text-xl font-bold text-white">Mnemonic gallery for &ldquo;{selected.term}&rdquo;</h3>
-                <span className="flex items-center gap-1 rounded-full bg-white/5 px-2 py-1 text-xs text-white/40" title="AI-generated suggestions are not available in this build — no LLM provider is configured.">
-                  <Icon name="info" className="text-sm" /> AI suggestions unavailable
-                </span>
+                <MnemonicSuggestion key={selected.id} wordId={selected.id} onUse={setDraft} />
               </div>
               <div className="flex flex-col gap-4">
                 {notes.length === 0 && <p className="text-sm text-white/40">No mnemonics yet — be the first to share one.</p>}

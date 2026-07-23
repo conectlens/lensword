@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -68,3 +69,32 @@ class MnemonicResponse(BaseModel):
     downvotes: int
     score: int
     created_at: datetime
+
+
+class MnemonicSuggestionDisabled(BaseModel):
+    """No AI provider is configured. A deployment setting, not a fault — the
+    client shows a calm notice, never an error."""
+
+    status: Literal["disabled"] = "disabled"
+
+
+class MnemonicSuggestionUnavailable(BaseModel):
+    """A provider is configured but could not be reached or used. Transient,
+    so the client offers a retry."""
+
+    status: Literal["unavailable"] = "unavailable"
+    detail: str
+
+
+class MnemonicSuggestionOk(BaseModel):
+    status: Literal["ok"] = "ok"
+    text: str
+
+
+# Discriminated on `status` so the client can branch on a field instead of
+# pattern-matching an error message, and so OpenAPI documents the three
+# shapes separately.
+MnemonicSuggestionResponse = Annotated[
+    MnemonicSuggestionDisabled | MnemonicSuggestionUnavailable | MnemonicSuggestionOk,
+    Field(discriminator="status"),
+]

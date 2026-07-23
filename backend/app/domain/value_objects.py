@@ -71,6 +71,33 @@ class UserRole(str, Enum):
     ADMIN = "admin"
 
 
+class Recurrence(str, Enum):
+    """How often a reminder repeats.
+
+    Deliberately a small, closed set: every member has to be expressible as a
+    real scheduler trigger, so adding one is a decision about behavior rather
+    than a free-text label. Anything richer (weekdays only, every N hours)
+    belongs behind a real product need.
+    """
+
+    ONCE = "once"
+    DAILY = "daily"
+
+
+class Channel(str, Enum):
+    """A delivery route a notification can take.
+
+    The values match the `channel` argument of the NotificationChannel port
+    and the `*_enabled` flags on RecallSettings, so no translation table is
+    needed between settings, policy and adapter.
+    """
+
+    PUSH = "push"
+    EMAIL = "email"
+    DESKTOP = "desktop"
+    IN_APP = "in_app"
+
+
 def utcnow() -> datetime:
     """Single source of truth for 'now', as a naive UTC datetime.
 

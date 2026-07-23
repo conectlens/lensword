@@ -29,25 +29,25 @@ depends on this.
 
 ## Phase 1 — Local AI support (Ollama)
 
-- [ ] **1.0** `OllamaProvider` implementing the `AIProvider` port (HTTP client
+- [x] **1.0** `OllamaProvider` implementing the `AIProvider` port (HTTP client
       to a local Ollama instance), with a clear "provider unavailable" error
-      instead of a silent failure. *(Planned)*
-- [ ] **1.1** `AI_PROVIDER` / `OLLAMA_MODEL` / `OLLAMA_BASE_URL` settings,
+      instead of a silent failure. *(Shipped)*
+- [x] **1.1** `AI_PROVIDER` / `OLLAMA_MODEL` / `OLLAMA_BASE_URL` settings,
       defaulting to disabled — preserving current stubbed behavior when
-      unset. *(Planned)*
-- [ ] **1.2** Wire MnemoLab's "AI Suggestion" UI to the new endpoint; keep
+      unset. *(Shipped)*
+- [x] **1.2** Wire MnemoLab's "AI Suggestion" UI to the new endpoint; keep
       the existing honest "no provider configured" message when none is
-      set up. *(Planned)*
-- [ ] **1.3** README section documenting Ollama install, model pull, and
-      configuration. *(Planned)*
+      set up. *(Shipped)*
+- [x] **1.3** README section documenting Ollama install, model pull, and
+      configuration. *(Shipped)*
 
 ## Phase 2 — Notifications + local cron reminders
 
-- [ ] **2.0** Reminder scheduling use case: on creation, register a job with
-      the Phase 0 scheduler that fires at the configured time. *(Planned)*
-- [ ] **2.1** Wire the existing Forced Recall Engine settings (channels,
+- [x] **2.0** Reminder scheduling use case: on creation, register a job with
+      the Phase 0 scheduler that fires at the configured time. *(Shipped)*
+- [x] **2.1** Wire the existing Forced Recall Engine settings (channels,
       quiet hours, triggers) to actually gate delivery through the
-      notification port. *(Planned)*
+      notification port. *(Shipped)*
 - [ ] **2.2** Desktop OS-notification adapter (depends on Phase 3's shell;
       can use a log adapter until then). *(Planned)*
 - [ ] **2.3** Remove README's "notifications configured but not dispatched"

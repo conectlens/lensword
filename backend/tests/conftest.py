@@ -1,11 +1,66 @@
-import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
+import os
+import shutil
+import tempfile
 
-from app.infrastructure.db import Base, get_db
-from app.main import app
+# Point the application's own engine at a throwaway database before anything
+# imports app.infrastructure.db, which builds its engine at import time from
+# the settings. Entering the app's lifespan in a test calls init_db(), and
+# init_db() writes through that module-level engine — no dependency override or
+# monkeypatched SessionLocal can redirect it. Without this, running the test
+# suite would create (or open, and migrate) the developer's real database.
+#
+# Every app.* import below must stay after this assignment for that reason,
+# which is why they all carry a noqa: E402.
+_THROWAWAY_DB_DIR = tempfile.mkdtemp(prefix="lensword-tests-")
+os.environ["DATABASE_URL"] = f"sqlite:///{_THROWAWAY_DB_DIR}/lensword-test.db"
+
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy.orm import sessionmaker  # noqa: E402
+from sqlalchemy.pool import StaticPool  # noqa: E402
+
+from app.api.deps import _ai_provider  # noqa: E402
+from app.config import Settings, get_settings  # noqa: E402
+from app.infrastructure.db import Base, get_db  # noqa: E402
+from app.main import app  # noqa: E402
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _discard_the_throwaway_database():
+    yield
+    shutil.rmtree(_THROWAWAY_DB_DIR, ignore_errors=True)
+
+AI_ENV_VARS = ("AI_PROVIDER", "OLLAMA_MODEL", "OLLAMA_BASE_URL")
+
+
+@pytest.fixture(autouse=True)
+def isolate_ai_settings(monkeypatch):
+    """Make every test hermetic with respect to AI configuration.
+
+    Two things would otherwise leak in. The README tells operators to put
+    AI_PROVIDER=ollama in backend/.env, so a developer following the
+    documentation would turn the suite red and — worse — have it place real
+    HTTP calls against their running daemon. And because both the settings
+    and the built provider are process-wide lru_caches, the first test that
+    does enable AI would poison every test after it.
+
+    Clearing on the way in and out is deliberate: a test that deliberately
+    enables AI (see test_ai_provider_config.py) must not affect its
+    neighbours in either direction.
+    """
+    for name in AI_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+        monkeypatch.delenv(name.lower(), raising=False)
+    # Neutralise backend/.env as well: deleting environment variables does
+    # not stop pydantic-settings reading the dotenv file.
+    monkeypatch.setitem(Settings.model_config, "env_file", None)
+
+    get_settings.cache_clear()
+    _ai_provider.cache_clear()
+    yield
+    get_settings.cache_clear()
+    _ai_provider.cache_clear()
 
 
 @pytest.fixture()

@@ -133,6 +133,75 @@ def test_mnemonic_lifecycle(client, auth_headers):
     assert len(resp.json()) == 1
 
 
+def test_cannot_list_mnemonics_for_another_users_word(client, auth_headers):
+    headers_a = auth_headers(username="alex", email="alex@example.com")
+    headers_b = auth_headers(username="sam", email="sam@example.com")
+    _group, word = _setup_group_with_word(client, headers_a, term="Ephemeral", translation="Fleeting")
+    client.post(
+        f"/api/v1/words/{word['id']}/mnemonics", json={"text": "alex's private note"}, headers=headers_a
+    )
+
+    resp = client.get(f"/api/v1/words/{word['id']}/mnemonics", headers=headers_b)
+
+    assert resp.status_code == 403
+    assert "private note" not in resp.text
+
+
+def test_cannot_add_mnemonic_to_another_users_word(client, auth_headers):
+    headers_a = auth_headers(username="alex", email="alex@example.com")
+    headers_b = auth_headers(username="sam", email="sam@example.com")
+    _group, word = _setup_group_with_word(client, headers_a)
+
+    resp = client.post(
+        f"/api/v1/words/{word['id']}/mnemonics", json={"text": "sneaking in"}, headers=headers_b
+    )
+
+    assert resp.status_code == 403
+
+
+def test_cannot_vote_on_a_mnemonic_of_another_users_word(client, auth_headers):
+    headers_a = auth_headers(username="alex", email="alex@example.com")
+    headers_b = auth_headers(username="sam", email="sam@example.com")
+    _group, word = _setup_group_with_word(client, headers_a)
+    note = client.post(
+        f"/api/v1/words/{word['id']}/mnemonics", json={"text": "alex's note"}, headers=headers_a
+    ).json()
+
+    resp = client.post(
+        f"/api/v1/words/{word['id']}/mnemonics/{note['id']}/vote", json={"upvote": True}, headers=headers_b
+    )
+
+    assert resp.status_code == 403
+
+
+def test_cannot_vote_using_your_own_word_id_with_a_foreign_mnemonic_id(client, auth_headers):
+    """The subtle one: ownership is checked against the path's word_id, so a
+    caller who owns *some* word could otherwise pair it with a stranger's
+    mnemonic_id and pass the check while mutating someone else's row. The
+    mnemonic must actually belong to the word in the path."""
+    headers_a = auth_headers(username="alex", email="alex@example.com")
+    headers_b = auth_headers(username="sam", email="sam@example.com")
+
+    _group_a, word_a = _setup_group_with_word(client, headers_a, term="Alex", translation="A")
+    victim_note = client.post(
+        f"/api/v1/words/{word_a['id']}/mnemonics", json={"text": "alex's note"}, headers=headers_a
+    ).json()
+
+    _group_b, word_b = _setup_group_with_word(client, headers_b, term="Sam", translation="S")
+
+    resp = client.post(
+        f"/api/v1/words/{word_b['id']}/mnemonics/{victim_note['id']}/vote",
+        json={"upvote": True},
+        headers=headers_b,
+    )
+
+    assert resp.status_code == 404
+
+    # And the victim's row is untouched.
+    still = client.get(f"/api/v1/words/{word_a['id']}/mnemonics", headers=headers_a).json()
+    assert still[0]["upvotes"] == 0
+
+
 def test_recall_settings_roundtrip(client, auth_headers):
     headers = auth_headers()
     defaults = client.get("/api/v1/recall-settings", headers=headers).json()

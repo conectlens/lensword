@@ -146,8 +146,18 @@ export const reviewApi = {
 
 // --- MnemoLab ----------------------------------------------------------------
 
+/** Mirrors the backend's discriminated suggestion response: the endpoint
+ *  answers 200 in all three cases, because an AI provider being switched off
+ *  or temporarily unreachable is a state of a healthy install, not an error. */
+export type MnemonicSuggestion =
+  | { status: 'disabled' }
+  | { status: 'unavailable'; detail: string }
+  | { status: 'ok'; text: string }
+
 export const mnemonicsApi = {
   list: (wordId: number) => request<MnemonicNote[]>(`/api/v1/words/${wordId}/mnemonics`),
+  suggest: (wordId: number) =>
+    request<MnemonicSuggestion>(`/api/v1/words/${wordId}/mnemonics/suggest`, { method: 'POST' }),
   add: (wordId: number, text: string) =>
     request<MnemonicNote>(`/api/v1/words/${wordId}/mnemonics`, { method: 'POST', body: JSON.stringify({ text }) }),
   vote: (wordId: number, mnemonicId: number, upvote: boolean) =>
