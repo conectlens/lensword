@@ -16,3 +16,8 @@ frontend/tsconfig.tsbuildinfo
 # General
 .DS_Store
 *.log
+
+# Internal working notes and design scratch — not part of the published
+# project. Documentation intended for contributors belongs in README.md,
+# CONTRIBUTING.md, or ROADMAP.md instead.
+docs/superpowers/
