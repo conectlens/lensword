@@ -70,7 +70,9 @@ depends on this.
 - [ ] **3.3** CI build+package jobs producing installers for all three
       OSes on tagged releases. *(Planned)*
 - [ ] **3.4** Decide bundled-local-backend vs. remote-only mode for
-      desktop. *(Planned — product decision)*
+      desktop. A recommendation (remote-only first, sidecar-ready) is drafted
+      in [ADR 0002](docs/adr/0002-desktop-backend-mode.md); the item stays open
+      until that ADR is accepted. *(Planned — product decision)*
 
 ## Phase 4 — Cloud support (multi-tenant hosting)
 
