@@ -64,6 +64,17 @@ class ValidationError(DomainError):
         super().__init__(message)
 
 
+class AIProviderNotConfiguredError(DomainError):
+    """Raised when an AI-backed feature is asked for but no provider is
+    configured. Deliberately a sibling of AIProviderUnavailableError rather
+    than a subclass: 'switched off' is a settings state the caller should
+    report calmly, while 'unavailable' is a transient fault worth retrying,
+    and the two must stay distinguishable."""
+
+    def __init__(self, message: str = "No AI provider is configured"):
+        super().__init__(message)
+
+
 class AIProviderUnavailableError(DomainError):
     """Raised by an AIProvider adapter when the configured backend can't be
     reached or returns something unusable — never let a raw transport

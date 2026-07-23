@@ -2,13 +2,20 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from app.domain.entities import MnemonicNote, ReviewSession, User, Word
-from app.domain.exceptions import EntityNotFoundError, NoWordsDueError, PermissionDeniedError, ValidationError
+from app.domain.exceptions import (
+    AIProviderNotConfiguredError,
+    EntityNotFoundError,
+    NoWordsDueError,
+    PermissionDeniedError,
+    ValidationError,
+)
 from app.domain.repositories import (
     MnemonicRepository,
     ReviewSessionRepository,
     UserRepository,
     WordRepository,
 )
+from app.domain.services.ai_provider import AIProvider
 from app.domain.services.spaced_repetition import Scheduler
 from app.domain.value_objects import ReviewOutcome, SessionMode
 
@@ -129,6 +136,36 @@ class ListMnemonicsUseCase:
 
     def execute(self, word_id: int) -> list[MnemonicNote]:
         return self.mnemonic_repo.list_by_word(word_id)
+
+
+class SuggestMnemonicUseCase:
+    """Ask the configured AI provider for a mnemonic for one word.
+
+    The provider is optional by design: AI is off by default, so the use
+    case is constructed with None and says so explicitly rather than the
+    caller having to know whether wiring succeeded.
+    """
+
+    def __init__(self, word_repo: WordRepository, provider: AIProvider | None):
+        self.word_repo = word_repo
+        self.provider = provider
+
+    def execute(self, word_id: int) -> str:
+        # Resolved before the provider check so that an unknown word is
+        # reported as such whether or not AI happens to be enabled.
+        word = self.word_repo.get_by_id(word_id)
+        if word is None:
+            raise EntityNotFoundError("Word", word_id)
+        if self.provider is None:
+            raise AIProviderNotConfiguredError()
+        return self.provider.suggest_mnemonic(word.term, self._context_for(word))
+
+    @staticmethod
+    def _context_for(word: Word) -> str:
+        language = word.target_language.value
+        if word.translations:
+            return f"a {language} word meaning {', '.join(word.translations)}"
+        return f"a {language} word"
 
 
 class VoteMnemonicUseCase:
