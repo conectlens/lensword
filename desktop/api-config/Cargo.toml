@@ -1,0 +1,9 @@
+[package]
+name = "lensword-api-config"
+description = "Resolves and validates the API endpoint the desktop shell is allowed to talk to."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+url = "2"

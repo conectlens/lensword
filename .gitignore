@@ -17,6 +17,12 @@ frontend/dist/
 frontend/.env
 frontend/tsconfig.tsbuildinfo
 
+# Desktop shell
+# Both forms, for the same reason as the backend entries above.
+desktop/target
+desktop/target/
+desktop/src-tauri/gen/
+
 # General
 .DS_Store
 *.log

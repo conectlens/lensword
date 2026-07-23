@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Minimum capability set for the main window. ADR 0001 requires capabilities to be granted to exact windows and exact commands, so this grants neither a plugin's default permission set nor access to any window other than `main`. Notification permission belongs to Phase 3.2 (#31) and is deliberately absent; shell and process access are absent because the bundled-backend question (#17) is undecided and ADR 0001 keeps process execution unavailable to frontend code either way.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
