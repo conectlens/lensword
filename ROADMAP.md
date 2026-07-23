@@ -43,11 +43,11 @@ depends on this.
 
 ## Phase 2 — Notifications + local cron reminders
 
-- [ ] **2.0** Reminder scheduling use case: on creation, register a job with
-      the Phase 0 scheduler that fires at the configured time. *(Planned)*
-- [ ] **2.1** Wire the existing Forced Recall Engine settings (channels,
+- [x] **2.0** Reminder scheduling use case: on creation, register a job with
+      the Phase 0 scheduler that fires at the configured time. *(Shipped)*
+- [x] **2.1** Wire the existing Forced Recall Engine settings (channels,
       quiet hours, triggers) to actually gate delivery through the
-      notification port. *(Planned)*
+      notification port. *(Shipped)*
 - [ ] **2.2** Desktop OS-notification adapter (depends on Phase 3's shell;
       can use a log adapter until then). *(Planned)*
 - [ ] **2.3** Remove README's "notifications configured but not dispatched"

@@ -25,7 +25,7 @@ async def lifespan(_app: FastAPI):
     init_db()
     _seed_first_admin()
     _app.state.scheduler = create_scheduler()
-    register_jobs(_app.state.scheduler, settings_)
+    register_jobs(_app.state.scheduler, settings_, SessionLocal)
     _app.state.scheduler.start()
     yield
     _app.state.scheduler.shutdown(wait=False)
