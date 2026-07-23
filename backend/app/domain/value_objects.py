@@ -20,6 +20,19 @@ from app.domain.exceptions import ValidationError
 DEFAULT_TIME_ZONE = "UTC"
 
 
+@lru_cache(maxsize=1)
+def _known_time_zones() -> frozenset[str]:
+    """The identifiers this system recognizes.
+
+    Cached because available_timezones() walks the tz database on disk each
+    time it is called, and validation sits on the settings-save path, which a
+    client hits on every toggle rather than only when the zone changes. A tz
+    database updated underneath a running process is picked up on restart;
+    zone_for already degrades gracefully if an identifier disappears.
+    """
+    return frozenset(available_timezones())
+
+
 def normalize_time_zone(value: str | None) -> str:
     """Validate an IANA time-zone identifier, or fall back to the default.
 
@@ -32,7 +45,7 @@ def normalize_time_zone(value: str | None) -> str:
     if value is None:
         return DEFAULT_TIME_ZONE
     candidate = value.strip()
-    if candidate not in available_timezones():
+    if candidate not in _known_time_zones():
         raise ValidationError(f"'{value}' is not a known IANA time zone identifier")
     return candidate
 
