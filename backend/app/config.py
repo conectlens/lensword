@@ -30,6 +30,22 @@ class Settings(BaseSettings):
     ollama_model: str = "llama3.2"
     ollama_base_url: str = "http://localhost:11434"
 
+    # Bounds on one suggestion. A mnemonic is a sentence, so the token limit
+    # is generous for the intended output while still keeping a steered model
+    # from returning an unbounded response body (issue #45).
+    ai_max_output_tokens: int = 200
+    ai_context_max_chars: int = 500
+
+    @field_validator("ai_max_output_tokens", "ai_context_max_chars")
+    @classmethod
+    def _positive_bound(cls, value: int) -> int:
+        """A non-positive bound would either truncate every record to nothing
+        or, for num_predict, be read by Ollama as 'no limit' — the opposite of
+        what setting it is for. Fail at startup rather than at generation."""
+        if value <= 0:
+            raise ValueError(f"must be greater than 0 (got {value})")
+        return value
+
     @field_validator("ai_provider")
     @classmethod
     def _known_ai_provider(cls, value: str) -> str:

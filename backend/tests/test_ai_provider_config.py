@@ -58,6 +58,29 @@ def test_build_ai_provider_passes_configured_model_and_base_url(unset_env):
     assert str(provider._client.base_url) == "http://ollama.internal:9999"
 
 
+def test_build_ai_provider_passes_configured_generation_bounds(unset_env):
+    """Without this, dropping either kwarg from build_ai_provider would leave
+    the bounds silently pinned to their defaults whatever an operator sets,
+    and the rest of the suite would stay green — it constructs OllamaProvider
+    directly with explicit kwargs and never exercises this wiring."""
+    provider = build_ai_provider(
+        _settings(ai_provider="ollama", ai_max_output_tokens=42, ai_context_max_chars=77)
+    )
+
+    assert provider is not None
+    assert provider._max_output_tokens == 42
+    assert provider._context_max_chars == 77
+
+
+@pytest.mark.parametrize("field", ["ai_max_output_tokens", "ai_context_max_chars"])
+@pytest.mark.parametrize("value", [0, -1, -2])
+def test_settings_reject_a_bound_that_would_disable_the_limit(unset_env, field, value):
+    """Ollama reads a non-positive num_predict as 'unlimited', so a bound of 0
+    or -1 would switch off the very limit it was set to impose."""
+    with pytest.raises(PydanticValidationError):
+        _settings(ai_provider="ollama", **{field: value})
+
+
 def test_settings_reject_an_unknown_provider_name_up_front(unset_env):
     """A typo in AI_PROVIDER must stop the app from starting, not lie dormant
     until the first suggestion request turns it into a 500."""

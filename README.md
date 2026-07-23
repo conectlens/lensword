@@ -153,6 +153,8 @@ OLLAMA_BASE_URL=http://localhost:11434
 | `AI_PROVIDER` | `none` | `none` disables AI entirely; `ollama` enables local suggestions. Any other value is rejected at startup with a message listing the supported values. |
 | `OLLAMA_MODEL` | `llama3.2` | The model name passed to Ollama. Must be one you have pulled. |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Where the Ollama daemon is listening. |
+| `AI_MAX_OUTPUT_TOKENS` | `200` | Upper bound on the length of a generated suggestion. Must be greater than zero — Ollama reads a non-positive value as "no limit", so a zero or negative bound is rejected at startup rather than silently disabling itself. |
+| `AI_CONTEXT_MAX_CHARS` | `500` | How much of a word's context is sent to the model. Longer context is truncated. Must be greater than zero. |
 
 Restart the backend, open **MnemoLab**, pick a word and use **Suggest with AI**.
 

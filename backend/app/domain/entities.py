@@ -36,6 +36,7 @@ from datetime import date, datetime, time, timedelta
 
 from app.domain.exceptions import InvalidPlacementError, SessionAlreadyCompletedError, ValidationError
 from app.domain.value_objects import (
+    DEFAULT_TIME_ZONE,
     Recurrence,
     ReviewOutcome,
     ReviewState,
@@ -60,6 +61,10 @@ class User:
     last_activity_date: date | None = None
     total_words_learned: int = 0
     total_study_seconds: int = 0
+    # IANA identifier. Defaults to UTC, which is the convention every
+    # stored datetime already follows, so an account that never chooses
+    # one behaves exactly as it did before (issue #44).
+    time_zone: str = DEFAULT_TIME_ZONE
 
     def record_completed_session(self, session: "ReviewSession") -> None:
         """Update denormalized profile stats after a session completes.

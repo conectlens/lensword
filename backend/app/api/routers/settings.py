@@ -1,6 +1,6 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
-from app.api.deps import CurrentUser, RecallSettingsRepo, UserRepo, WordRepo
+from app.api.deps import CurrentUser, RecallSettingsRepo, ReminderRepo, UserRepo, WordRepo
 from app.api.schemas.settings import (
     BadgeResponse,
     ProfileOverviewResponse,
@@ -12,13 +12,18 @@ from app.application.use_cases.settings import (
     GetRecallSettingsUseCase,
     UpdateRecallSettingsUseCase,
 )
+from app.application.use_cases.reminders import SetUserTimeZoneUseCase
 from app.domain.entities import RecallSettings
+from app.infrastructure.db import SessionLocal
+from app.infrastructure.notifications import LogNotificationChannel
+from app.infrastructure.reminders import build_reminder_scheduler
 
 router = APIRouter(prefix="/api/v1", tags=["settings"])
 
 
-def _settings_to_response(s: RecallSettings) -> RecallSettingsResponse:
+def _settings_to_response(s: RecallSettings, time_zone: str) -> RecallSettingsResponse:
     return RecallSettingsResponse(
+        time_zone=time_zone,
         enabled=s.enabled,
         intensity=s.intensity,
         morning_checkin_enabled=s.morning_checkin_enabled,
@@ -42,16 +47,43 @@ def _settings_to_response(s: RecallSettings) -> RecallSettingsResponse:
 @router.get("/recall-settings", response_model=RecallSettingsResponse)
 def get_recall_settings(current_user: CurrentUser, settings_repo: RecallSettingsRepo) -> RecallSettingsResponse:
     settings = GetRecallSettingsUseCase(settings_repo).execute(current_user.id)
-    return _settings_to_response(settings)
+    return _settings_to_response(settings, current_user.time_zone)
 
 
 @router.put("/recall-settings", response_model=RecallSettingsResponse)
 def update_recall_settings(
-    payload: RecallSettingsUpdateRequest, current_user: CurrentUser, settings_repo: RecallSettingsRepo
+    payload: RecallSettingsUpdateRequest,
+    request: Request,
+    current_user: CurrentUser,
+    settings_repo: RecallSettingsRepo,
+    user_repo: UserRepo,
+    reminder_repo: ReminderRepo,
 ) -> RecallSettingsResponse:
-    updated = RecallSettings(user_id=current_user.id, **payload.model_dump())
+    fields = payload.model_dump()
+    # The zone lives on the user, not on RecallSettings, so it is split off
+    # before the rest is used to build the settings record.
+    requested_zone = fields.pop("time_zone", None)
+
+    updated = RecallSettings(user_id=current_user.id, **fields)
     saved = UpdateRecallSettingsUseCase(settings_repo).execute(current_user.id, updated)
-    return _settings_to_response(saved)
+
+    # Absent outside a running application (unit tests, any caller that
+    # starts no scheduler), in which case there are no registered jobs to move.
+    running_scheduler = getattr(request.app.state, "scheduler", None)
+    jobs = (
+        build_reminder_scheduler(
+            running_scheduler,
+            SessionLocal,
+            getattr(request.app.state, "notification_channel", None) or LogNotificationChannel(),
+        )
+        if running_scheduler is not None
+        else None
+    )
+    time_zone = SetUserTimeZoneUseCase(user_repo, reminder_repo, jobs).execute(
+        current_user.id, requested_zone or current_user.time_zone
+    )
+
+    return _settings_to_response(saved, time_zone)
 
 
 @router.get("/profile", response_model=ProfileOverviewResponse)
