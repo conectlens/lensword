@@ -16,7 +16,12 @@
 
 set -uo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Resolved to an absolute path before the `cd` below. ${BASH_SOURCE[0]} holds
+# the path as invoked, so a relative invocation from another directory
+# (`cd backend && ../scripts/verify.sh`) stops resolving the moment the working
+# directory changes — and --help, which re-reads this file, would find nothing.
+SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+REPO_ROOT="$(cd "$(dirname "$SELF")/.." && pwd)"
 cd "$REPO_ROOT"
 
 # Pinned in .github/workflows/ci.yml. A local toolchain that differs can pass
@@ -31,7 +36,7 @@ for arg in "$@"; do
   case "$arg" in
     --fail-fast) FAIL_FAST=1 ;;
     --docker)    RUN_DOCKER=1 ;;
-    -h|--help)   sed -n '3,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)   sed -n '3,15p' "$SELF" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *)           echo "unknown option: $arg" >&2; exit 2 ;;
   esac
 done
@@ -59,9 +64,21 @@ if [ ! -x "$PYTHON" ]; then
     backend/.venv/bin/pip install -r backend/requirements.txt"
 fi
 
-if [ ! -d "frontend/node_modules" ]; then
-  fail "frontend dependencies are not installed. Install them with:
+# `npm ci` clears node_modules before repopulating it, and writes this hidden
+# lockfile once the tree is complete. Testing for the directory alone would let
+# an interrupted install through, and its three gates would then fail as though
+# the code were broken.
+if [ ! -f "frontend/node_modules/.package-lock.json" ]; then
+  fail "frontend dependencies are missing or only partly installed. Install them with:
     (cd frontend && npm ci)"
+fi
+
+# Docker is only a dependency when it is going to be used, so it is checked
+# here rather than unconditionally — but it is still checked before any gate
+# runs, so a stopped daemon exits 2 instead of reporting two failing builds.
+if [ "$RUN_DOCKER" -eq 1 ] && ! docker info >/dev/null 2>&1; then
+  fail "--docker was requested but no Docker daemon is reachable.
+    Start Docker and retry, or drop --docker."
 fi
 
 local_python="$("$PYTHON" -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
