@@ -16,6 +16,7 @@
 
 <!-- How was this verified? Check off what applies and add commands/output where useful. -->
 
+- [ ] `scripts/verify.sh` passes (runs all four gates below)
 - [ ] `cd backend && python -m pytest` passes
 - [ ] `cd frontend && npm run lint` passes
 - [ ] `cd frontend && npm run build` passes (type check + build)
