@@ -11,9 +11,10 @@ from app.application.use_cases.reminders import (
     ScheduleReminderUseCase,
 )
 from app.config import Settings
-from app.domain.entities import RecallSettings, Reminder, User
+from app.domain.entities import Group, RecallSettings, Reminder, User
+from app.domain.exceptions import EntityNotFoundError, PermissionDeniedError
 from app.domain.services.reminder_scheduler import ReminderScheduler
-from app.domain.value_objects import Recurrence, UserRole, utcnow
+from app.domain.value_objects import Recurrence, SupportedLanguage, UserRole, utcnow
 from app.infrastructure.reminders import ApSchedulerReminderScheduler, reminder_job_id
 from app.infrastructure.scheduler import create_scheduler, register_jobs
 
@@ -68,6 +69,20 @@ class _InMemoryUserRepository:
         return self.rows.get(user_id)
 
 
+class _InMemoryGroupRepository:
+    def __init__(self, groups: list[Group]):
+        self.rows = {g.id: g for g in groups}
+
+    def get_by_id(self, group_id):
+        return self.rows.get(group_id)
+
+
+def _groups(group_id: int = 2, owner_id: int = 1) -> _InMemoryGroupRepository:
+    return _InMemoryGroupRepository(
+        [Group(id=group_id, owner_id=owner_id, name="Verbs", target_language=SupportedLanguage.SPANISH)]
+    )
+
+
 class _SingleUserSettingsRepository:
     def __init__(self, settings: RecallSettings):
         self.settings = settings
@@ -113,7 +128,7 @@ def test_scheduling_a_reminder_persists_it_and_registers_exactly_one_job():
     repo = _InMemoryReminderRepository()
     jobs = _RecordingReminderScheduler()
 
-    saved = ScheduleReminderUseCase(repo, jobs).execute(_reminder())
+    saved = ScheduleReminderUseCase(repo, _groups(), jobs).execute(_reminder())
 
     assert saved.id is not None
     assert repo.get_by_id(saved.id) is saved
@@ -126,7 +141,7 @@ def test_a_reminder_is_persisted_before_its_job_is_registered():
     repo = _InMemoryReminderRepository()
     jobs = _RecordingReminderScheduler()
 
-    ScheduleReminderUseCase(repo, jobs).execute(_reminder())
+    ScheduleReminderUseCase(repo, _groups(), jobs).execute(_reminder())
 
     assert jobs.scheduled[0].id is not None
 
@@ -135,7 +150,7 @@ def test_a_disabled_reminder_is_persisted_but_registers_no_job():
     repo = _InMemoryReminderRepository()
     jobs = _RecordingReminderScheduler()
 
-    saved = ScheduleReminderUseCase(repo, jobs).execute(_reminder(enabled=False))
+    saved = ScheduleReminderUseCase(repo, _groups(), jobs).execute(_reminder(enabled=False))
 
     assert repo.get_by_id(saved.id) is not None
     assert jobs.scheduled == []
@@ -145,10 +160,60 @@ def test_cancelling_a_reminder_deletes_it_and_unregisters_its_job():
     repo = _InMemoryReminderRepository([_reminder(id=7)])
     jobs = _RecordingReminderScheduler()
 
-    CancelReminderUseCase(repo, jobs).execute(7)
+    CancelReminderUseCase(repo, jobs).execute(user_id=1, reminder_id=7)
 
     assert repo.get_by_id(7) is None
     assert jobs.unscheduled == [7]
+
+
+# ---------------------------------------------------------------------------
+# Ownership. The repositories' get_by_id are deliberately unscoped, so every
+# use case has to establish that the actor owns what it is about to touch.
+# ---------------------------------------------------------------------------
+
+
+def test_a_reminder_cannot_be_scheduled_against_someone_elses_group():
+    repo = _InMemoryReminderRepository()
+    jobs = _RecordingReminderScheduler()
+    groups = _groups(owner_id=99)
+
+    with pytest.raises(PermissionDeniedError):
+        ScheduleReminderUseCase(repo, groups, jobs).execute(_reminder(user_id=1, group_id=2))
+
+    assert repo.rows == {}
+    assert jobs.scheduled == []
+
+
+def test_a_reminder_cannot_be_scheduled_against_a_group_that_does_not_exist():
+    repo = _InMemoryReminderRepository()
+    jobs = _RecordingReminderScheduler()
+
+    with pytest.raises(EntityNotFoundError):
+        ScheduleReminderUseCase(repo, _InMemoryGroupRepository([]), jobs).execute(_reminder())
+
+    assert repo.rows == {}
+    assert jobs.scheduled == []
+
+
+def test_another_users_reminder_cannot_be_cancelled():
+    repo = _InMemoryReminderRepository([_reminder(id=7, user_id=1)])
+    jobs = _RecordingReminderScheduler()
+
+    with pytest.raises(PermissionDeniedError):
+        CancelReminderUseCase(repo, jobs).execute(user_id=99, reminder_id=7)
+
+    assert repo.get_by_id(7) is not None
+    assert jobs.unscheduled == []
+
+
+def test_cancelling_a_reminder_that_does_not_exist_reports_it_as_missing():
+    repo = _InMemoryReminderRepository()
+    jobs = _RecordingReminderScheduler()
+
+    with pytest.raises(EntityNotFoundError):
+        CancelReminderUseCase(repo, jobs).execute(user_id=1, reminder_id=404)
+
+    assert jobs.unscheduled == []
 
 
 # ---------------------------------------------------------------------------
@@ -244,7 +309,7 @@ def test_a_reminder_five_seconds_out_fires_and_notifies_exactly_once():
         adapter = ApSchedulerReminderScheduler(scheduler, dispatch=deliver.execute)
 
         fires_at = utcnow() + timedelta(seconds=5)
-        reminder = ScheduleReminderUseCase(repo, adapter).execute(
+        reminder = ScheduleReminderUseCase(repo, _groups(), adapter).execute(
             _reminder(trigger_time=fires_at.strftime("%H:%M:%S"), recurrence=Recurrence.ONCE)
         )
         assert scheduler.get_job(reminder_job_id(reminder.id)) is not None
@@ -338,6 +403,92 @@ def test_app_startup_restores_reminder_jobs(db_session, monkeypatch):
         job_ids = {job.id for job in main_module.app.state.scheduler.get_jobs()}
 
     assert reminder_job_id(saved.id) in job_ids
+
+
+def test_register_jobs_skips_an_unusable_recurrence_and_restores_the_rest(db_session):
+    """A corrupt reminder must cost only itself. The surviving-rows assertion
+    is the point: one bad row previously took the whole restore down with it."""
+    from app.infrastructure.models import GroupModel, ReminderModel, UserModel
+
+    user = UserModel(username="alex", email="alex@example.com", hashed_password="x", created_at=utcnow())
+    db_session.add(user)
+    db_session.flush()
+    group = GroupModel(owner_id=user.id, name="Verbs", target_language="Spanish", created_at=utcnow())
+    db_session.add(group)
+    db_session.flush()
+
+    def _row(**overrides):
+        defaults = dict(
+            user_id=user.id, group_id=group.id, trigger_time="09:00", recurrence="daily", created_at=utcnow()
+        )
+        defaults.update(overrides)
+        row = ReminderModel(**defaults)
+        db_session.add(row)
+        db_session.flush()
+        return row
+
+    before = _row(trigger_time="06:00")
+    _row(recurrence="weekly", trigger_time="07:00")
+    _row(recurrence="", trigger_time="07:30")
+    after = _row(trigger_time="08:00")
+
+    scheduler = create_scheduler()
+    register_jobs(scheduler, Settings(environment="production"), session_factory=lambda: db_session)
+
+    assert [job.id for job in scheduler.get_jobs()] == [
+        reminder_job_id(before.id),
+        reminder_job_id(after.id),
+    ]
+
+
+def test_register_jobs_survives_a_reminder_restore_that_fails_outright():
+    """Reminders are a nudge, not the product. Nothing about restoring them
+    may stop the application from starting."""
+
+    def _exploding_session_factory():
+        raise RuntimeError("the reminders table is unreadable")
+
+    scheduler = create_scheduler()
+
+    register_jobs(
+        scheduler, Settings(environment="development"), session_factory=_exploding_session_factory
+    )
+
+    assert {job.id for job in scheduler.get_jobs()} == {"dev_heartbeat"}
+
+
+def test_app_startup_survives_a_corrupt_reminders_table(db_session, monkeypatch):
+    """End to end: the application boots, and the readable reminders in the
+    same table are still scheduled."""
+    from fastapi.testclient import TestClient
+
+    from app.infrastructure.models import GroupModel, ReminderModel, UserModel
+
+    user = UserModel(username="alex", email="alex@example.com", hashed_password="x", created_at=utcnow())
+    db_session.add(user)
+    db_session.flush()
+    group = GroupModel(owner_id=user.id, name="Verbs", target_language="Spanish", created_at=utcnow())
+    db_session.add(group)
+    db_session.flush()
+    corrupt = ReminderModel(
+        user_id=user.id, group_id=group.id, trigger_time="07:00", recurrence="weekly", created_at=utcnow()
+    )
+    healthy = ReminderModel(
+        user_id=user.id, group_id=group.id, trigger_time="09:00", recurrence="daily", created_at=utcnow()
+    )
+    db_session.add_all([corrupt, healthy])
+    db_session.flush()
+
+    import app.main as main_module
+
+    monkeypatch.setattr(main_module, "SessionLocal", lambda: db_session)
+
+    with TestClient(main_module.app) as test_client:
+        assert test_client.get("/api/v1/health").status_code == 200
+        job_ids = {job.id for job in main_module.app.state.scheduler.get_jobs()}
+
+    assert reminder_job_id(healthy.id) in job_ids
+    assert reminder_job_id(corrupt.id) not in job_ids
 
 
 def test_register_jobs_skips_a_reminder_whose_trigger_time_is_unusable(db_session):

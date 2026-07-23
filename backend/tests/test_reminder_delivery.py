@@ -166,6 +166,29 @@ def test_delivery_of_a_deleted_reminder_is_silently_skipped():
     assert channel.calls == []
 
 
+def test_a_deactivated_account_is_not_notified():
+    """A suspended or deactivated account keeps its reminder rows, so without
+    this check it would go on being nudged indefinitely."""
+    channel = _RecordingChannel()
+    DeliverReminderUseCase(
+        _InMemoryReminderRepository([_reminder()]),
+        _InMemoryUserRepository([_user(is_active=False)]),
+        _InMemorySettingsRepository(_settings()),
+        channel,
+        clock=lambda: NOON,
+    ).execute(1)
+
+    assert channel.calls == []
+
+
+def test_an_active_account_is_still_notified():
+    """Companion to the test above, so 'not delivered' can never be satisfied
+    by delivering to nobody at all."""
+    channel = _deliver(_settings(), NOON)
+
+    assert channel.calls != []
+
+
 def test_delivery_for_a_vanished_user_is_silently_skipped():
     channel = _RecordingChannel()
     DeliverReminderUseCase(

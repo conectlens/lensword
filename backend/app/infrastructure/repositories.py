@@ -6,6 +6,7 @@ that no SQLAlchemy type ever leaks past this module.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 
 from sqlalchemy import func, or_, select
@@ -44,6 +45,8 @@ from app.infrastructure.models import (
     UserModel,
     WordModel,
 )
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Mapping helpers (ORM <-> domain). Kept private to this module.
@@ -201,6 +204,32 @@ def _reminder_to_domain(m: ReminderModel) -> Reminder:
         enabled=m.enabled,
         created_at=m.created_at,
     )
+
+
+def _readable_reminder(m: ReminderModel) -> Reminder | None:
+    """Map a stored reminder, or report it as unreadable instead of raising.
+
+    `reminders.recurrence` is an unconstrained string column, so a value the
+    domain has no meaning for is a data possibility rather than a programming
+    error. Reads must degrade one row at a time: these rows are loaded in
+    bulk at application startup, and letting a single unreadable one propagate
+    would cost every other user their reminders — or the application its boot.
+
+    The row is skipped rather than coerced to some default schedule, because a
+    reminder that fires at the wrong time is worse than one that stays silent
+    while its problem is logged.
+    """
+    try:
+        return _reminder_to_domain(m)
+    except ValueError:
+        logger.warning(
+            "reminder %s stores an unusable recurrence %r and was skipped", m.id, m.recurrence
+        )
+        return None
+
+
+def _readable_reminders(rows) -> list[Reminder]:
+    return [reminder for reminder in map(_readable_reminder, rows) if reminder is not None]
 
 
 def _apply_reminder(m: ReminderModel, e: Reminder) -> None:
@@ -587,15 +616,15 @@ class SqlAlchemyReminderRepository:
 
     def get_by_id(self, reminder_id: int) -> Reminder | None:
         m = self.db.get(ReminderModel, reminder_id)
-        return _reminder_to_domain(m) if m else None
+        return _readable_reminder(m) if m else None
 
     def list_by_user(self, user_id: int) -> list[Reminder]:
         stmt = select(ReminderModel).where(ReminderModel.user_id == user_id).order_by(ReminderModel.id.asc())
-        return [_reminder_to_domain(m) for m in self.db.scalars(stmt)]
+        return _readable_reminders(self.db.scalars(stmt))
 
     def list_enabled(self) -> list[Reminder]:
         stmt = select(ReminderModel).where(ReminderModel.enabled.is_(True)).order_by(ReminderModel.id.asc())
-        return [_reminder_to_domain(m) for m in self.db.scalars(stmt)]
+        return _readable_reminders(self.db.scalars(stmt))
 
     def add(self, reminder: Reminder) -> Reminder:
         m = ReminderModel()
