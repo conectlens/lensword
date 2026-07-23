@@ -10,6 +10,17 @@ releases exist yet).
 
 ### Added
 
+- Per-user time zones. An account carries an IANA identifier (for example
+  `Europe/Istanbul`), set from the settings screen and defaulting to `UTC`, and
+  reminder trigger times and Forced Recall quiet hours are both read on that
+  clock. A 09:00 reminder for an account at UTC+3 now fires at 06:00 UTC
+  instead of 09:00 UTC, and a 22:00-07:00 quiet window covers that account's
+  night rather than UTC's. Daylight-saving edges resolve to exactly one
+  delivery: a trigger time that a spring-forward transition skips fires at the
+  first valid instant after the gap, and one that an autumn fall-back repeats
+  fires on the first occurrence only. Changing the zone re-registers that
+  account's reminders immediately. Existing accounts default to `UTC` and are
+  unaffected.
 - Local AI mnemonic suggestions. `AI_PROVIDER`, `OLLAMA_MODEL` and
   `OLLAMA_BASE_URL` select and configure a provider; `OllamaProvider` talks to
   a local Ollama daemon; MnemoLab's AI control calls the new suggestion
@@ -48,8 +59,6 @@ releases exist yet).
 
 ### Known limitations
 
-- Reminder trigger times are interpreted as UTC; per-user time zones are not
-  yet modelled.
 - The scheduler's job store is in-process, so running more than one backend
   instance delivers each reminder once per instance.
 - Desktop OS notifications are not yet dispatched; the desktop channel adapter

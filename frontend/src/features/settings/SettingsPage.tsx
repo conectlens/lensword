@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { settingsApi } from '../../lib/api'
 import type { RecallSettings } from '../../lib/types'
@@ -127,6 +127,63 @@ export function SettingsPage() {
           <ToggleRow icon="notifications_active" title="In-app popups" description="" checked={settings.in_app_enabled} onChange={(v) => patch({ in_app_enabled: v })} />
         </div>
       </Card>
+
+      <Card className="p-6">
+        <h2 className="mb-4 font-display text-lg font-bold text-white">Time zone</h2>
+        <p className="mb-4 text-sm text-white/40">
+          Reminder times and quiet hours are read on this clock. Set it to where you actually are, or reminders arrive at the
+          wrong hour.
+        </p>
+        <TimeZoneSelect value={settings.time_zone} onChange={(v) => patch({ time_zone: v })} />
+      </Card>
+    </div>
+  )
+}
+
+/** Detected from the browser, used as the suggestion for an account that has
+ *  never chosen one. Falls back to UTC where the API is unavailable. */
+function detectedTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  } catch {
+    return 'UTC'
+  }
+}
+
+function TimeZoneSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  // Intl.supportedValuesOf is unavailable on older engines; the list then
+  // narrows to the values that matter here rather than the control vanishing.
+  const zones = useMemo(() => {
+    const all =
+      typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : []
+    return Array.from(new Set(['UTC', detectedTimeZone(), value, ...all])).filter(Boolean).sort()
+  }, [value])
+
+  const detected = detectedTimeZone()
+
+  return (
+    <div className="flex flex-col gap-2">
+      <select
+        aria-label="Time zone"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none focus:border-white/30"
+      >
+        {zones.map((zone) => (
+          <option key={zone} value={zone} className="bg-slate-900">
+            {zone}
+          </option>
+        ))}
+      </select>
+      {value !== detected && (
+        <button
+          type="button"
+          onClick={() => onChange(detected)}
+          className="self-start text-xs text-white/50 underline underline-offset-2 hover:text-white/80"
+        >
+          Use detected time zone ({detected})
+        </button>
+      )}
     </div>
   )
 }

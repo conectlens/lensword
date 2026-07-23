@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable
 
 # Reused rather than restated: an authorization rule copied into a second
@@ -15,7 +15,7 @@ from app.domain.repositories import (
 from app.domain.services.notification_channel import NotificationChannel
 from app.domain.services.recall_delivery import RecallDeliveryPolicy
 from app.domain.services.reminder_scheduler import ReminderScheduler
-from app.domain.value_objects import utcnow
+from app.domain.value_objects import DEFAULT_TIME_ZONE, normalize_time_zone, utcnow, zone_for
 
 REMINDER_MESSAGE = "Time to review your vocabulary."
 
@@ -49,17 +49,71 @@ class ScheduleReminderUseCase:
         reminder_repo: ReminderRepository,
         group_repo: GroupRepository,
         reminder_scheduler: ReminderScheduler,
+        user_repo: UserRepository | None = None,
     ):
         self.reminder_repo = reminder_repo
         self.group_repo = group_repo
         self.reminder_scheduler = reminder_scheduler
+        self.user_repo = user_repo
+
+    def _time_zone_of(self, user_id: int) -> str:
+        """The owner's zone, or the default when it cannot be established.
+
+        The repository is optional so a caller that has no need for zones
+        still gets the previous UTC convention rather than an error.
+        """
+        if self.user_repo is None:
+            return DEFAULT_TIME_ZONE
+        user = self.user_repo.get_by_id(user_id)
+        return user.time_zone if user else DEFAULT_TIME_ZONE
 
     def execute(self, reminder: Reminder) -> Reminder:
         _require_group_owner(self.group_repo, reminder.group_id, reminder.user_id)
         saved = self.reminder_repo.add(reminder)
         if saved.enabled:
-            self.reminder_scheduler.schedule(saved)
+            self.reminder_scheduler.schedule(saved, self._time_zone_of(saved.user_id))
         return saved
+
+
+class SetUserTimeZoneUseCase:
+    """Store a user's time zone and re-register their reminders against it.
+
+    Rescheduling is the whole point of the use case rather than an extra.
+    A registered job carries its zone inside its trigger, so a user who moves
+    from UTC to UTC+3 would otherwise keep being notified on the old offset
+    until the process restarted and jobs were rebuilt from the database.
+
+    An unrecognized identifier is refused here, at the write boundary, rather
+    than stored and discovered later by a scheduler job (issue #44).
+    """
+
+    def __init__(
+        self,
+        user_repo: UserRepository,
+        reminder_repo: ReminderRepository,
+        reminder_scheduler: ReminderScheduler | None,
+    ):
+        self.user_repo = user_repo
+        self.reminder_repo = reminder_repo
+        self.reminder_scheduler = reminder_scheduler
+
+    def execute(self, user_id: int, time_zone: str | None) -> str:
+        requested = normalize_time_zone(time_zone)
+        user = self.user_repo.get_by_id(user_id)
+        if user is None:
+            raise EntityNotFoundError("User", user_id)
+        if user.time_zone == requested:
+            return user.time_zone
+
+        user.time_zone = requested
+        self.user_repo.update(user)
+        # No scheduler means nothing is registered to move — the stored zone
+        # still takes effect the next time jobs are built from the database.
+        if self.reminder_scheduler is not None:
+            for reminder in self.reminder_repo.list_by_user(user_id):
+                if reminder.enabled:
+                    self.reminder_scheduler.schedule(reminder, requested)
+        return requested
 
 
 class CancelReminderUseCase:
@@ -121,7 +175,19 @@ class DeliverReminderUseCase:
         # user those same defaults, and delivery must not quietly use a
         # different set from the one the settings screen displays.
         settings = self.settings_repo.get_by_user(reminder.user_id) or RecallSettings(user_id=reminder.user_id)
-        allowed = RecallDeliveryPolicy.decide(settings, self.clock())
+
+        # Quiet hours are a statement about the user's night, so the policy is
+        # asked about the user's clock rather than UTC. A 22:00-07:00 window
+        # otherwise covers UTC night, which for a user at UTC+3 is 01:00-10:00
+        # of their own day (issue #44). The policy itself stays pure and
+        # zone-unaware; only the instant it is handed changes.
+        now_local = (
+            self.clock()
+            .replace(tzinfo=timezone.utc)
+            .astimezone(zone_for(user.time_zone))
+            .replace(tzinfo=None)
+        )
+        allowed = RecallDeliveryPolicy.decide(settings, now_local)
 
         # Sorted so delivery order is deterministic rather than dependent on
         # set iteration order, which makes failures reproducible.
