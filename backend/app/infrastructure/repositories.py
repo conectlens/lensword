@@ -25,6 +25,7 @@ from app.domain.entities import (
     Word,
 )
 from app.domain.value_objects import (
+    DEFAULT_TIME_ZONE,
     Recurrence,
     ReviewOutcome,
     ReviewState,
@@ -67,6 +68,7 @@ def _user_to_domain(m: UserModel) -> User:
         last_activity_date=m.last_activity_date,
         total_words_learned=m.total_words_learned,
         total_study_seconds=m.total_study_seconds,
+        time_zone=m.time_zone or DEFAULT_TIME_ZONE,
     )
 
 
@@ -82,6 +84,7 @@ def _apply_user(m: UserModel, e: User) -> None:
     m.last_activity_date = e.last_activity_date
     m.total_words_learned = e.total_words_learned
     m.total_study_seconds = e.total_study_seconds
+    m.time_zone = e.time_zone
 
 
 def _group_to_domain(m: GroupModel) -> Group:

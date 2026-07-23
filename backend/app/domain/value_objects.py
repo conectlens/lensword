@@ -7,8 +7,128 @@ depend on any framework or infrastructure concern.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
+from functools import lru_cache
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
+
+from app.domain.exceptions import ValidationError
+
+# The convention every stored datetime in this domain follows (see utcnow).
+# A user who has never chosen a zone keeps exactly that behavior, so the
+# column added for issue #44 defaults to this rather than to a guess.
+DEFAULT_TIME_ZONE = "UTC"
+
+
+@lru_cache(maxsize=1)
+def _known_time_zones() -> frozenset[str]:
+    """The identifiers this system recognizes.
+
+    Cached because available_timezones() walks the tz database on disk each
+    time it is called, and validation sits on the settings-save path, which a
+    client hits on every toggle rather than only when the zone changes. A tz
+    database updated underneath a running process is picked up on restart;
+    zone_for already degrades gracefully if an identifier disappears.
+    """
+    return frozenset(available_timezones())
+
+
+def normalize_time_zone(value: str | None) -> str:
+    """Validate an IANA time-zone identifier, or fall back to the default.
+
+    `None` means the user has no stored preference — a row predating the
+    column, or an account that never set one — and takes the default. An
+    identifier that is present but unrecognized is a caller error and is
+    rejected, so a typo is refused at the boundary rather than stored and
+    discovered later at delivery time.
+    """
+    if value is None:
+        return DEFAULT_TIME_ZONE
+    candidate = value.strip()
+    if candidate not in _known_time_zones():
+        raise ValidationError(f"'{value}' is not a known IANA time zone identifier")
+    return candidate
+
+
+@lru_cache(maxsize=None)
+def zone_for(name: str) -> ZoneInfo:
+    """Load a zone, degrading to UTC rather than raising.
+
+    Deliberately more forgiving than normalize_time_zone. That guards the
+    write path, where a bad value can still be refused; this is the read path,
+    reached from a scheduler job. A zone that was valid when it was stored can
+    become unknown when the system's tz database is updated beneath it, and
+    losing the reminder outright would be worse than delivering it on the
+    previous convention — the same reasoning the quiet-hours parser applies to
+    a malformed window.
+    """
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        if name == DEFAULT_TIME_ZONE:
+            raise
+        return zone_for(DEFAULT_TIME_ZONE)
+
+
+def resolve_local_time(local: datetime, zone: ZoneInfo) -> datetime:
+    """The UTC instant a naive local wall-clock time refers to.
+
+    Defined as *the earliest instant whose local clock in `zone` has reached
+    `local`*. One rule, which settles all three cases a wall-clock time can
+    fall into:
+
+    - An ordinary time maps to the instant that equals it.
+    - A time that occurs twice, on an autumn fall-back date, maps to the
+      earlier of the two — so a reminder is delivered once, not twice.
+    - A time that never occurs, on a spring-forward date, has no instant that
+      equals it, so the earliest instant to *reach* it is the transition
+      itself: 02:30 in a 02:00 -> 03:00 jump resolves to 03:00. The reminder
+      is moved, not lost.
+
+    The two PEP 495 readings of the wall clock — `fold=0` and `fold=1` —
+    supply the answer whenever one exists. Both round-trip back to `local` on
+    an ordinary day and agree; on a fall-back date both round-trip and differ,
+    and the earlier is taken. When neither round-trips, the time fell in a gap
+    and the transition instant is found by bisection.
+
+    Bisection is confined to that gap deliberately. It needs the local clock
+    to increase with the instant, which holds inside a gap but *not* across a
+    fold, where the clock runs 01:59 -> 01:00 -> 01:30 and a search would slide
+    into the second occurrence — the duplicate delivery this rule exists to
+    prevent.
+    """
+    if local.tzinfo is not None:
+        raise ValueError("resolve_local_time expects a naive local time, not an aware datetime")
+
+    def instant_for(fold: int) -> datetime:
+        return local.replace(tzinfo=zone, fold=fold).astimezone(timezone.utc)
+
+    def clock_at(instant: datetime) -> datetime:
+        return instant.astimezone(zone).replace(tzinfo=None)
+
+    existing = [i for i in (instant_for(0), instant_for(1)) if clock_at(i) == local]
+    if existing:
+        return min(existing)
+
+    # A gap. fold=1 applies the post-transition offset and so lands before the
+    # jump, fold=0 the pre-transition offset and so lands after it; the
+    # transition is between them, and the clock increases across that span.
+    lo, hi = instant_for(1), instant_for(0)
+    while hi - lo > timedelta(seconds=1):
+        mid = lo + (hi - lo) // 2
+        if clock_at(mid) < local:
+            lo = mid
+        else:
+            hi = mid
+
+    # The loop narrows to within a second of the transition but not onto it,
+    # because halving a bracket lands on microseconds. Offsets only ever change
+    # on a whole minute, so the transition is a whole second, and the invariant
+    # leaves `hi` inside [transition, transition + 1s) — truncating the
+    # sub-second remainder therefore yields the transition exactly rather than
+    # merely close to it.
+    return hi.replace(microsecond=0)
+
 
 
 class SupportedLanguage(str, Enum):

@@ -13,5 +13,14 @@ from app.domain.entities import Reminder
 
 
 class ReminderScheduler(Protocol):
-    def schedule(self, reminder: Reminder) -> None: ...
+    """`time_zone` is passed in rather than read off the reminder.
+
+    A reminder carries a `user_id`, not a user, so an adapter could not reach
+    the owner's zone without acquiring a repository of its own. Callers
+    already hold the user. The alternative — copying the zone onto every
+    reminder row — would duplicate a user-level property per reminder and
+    leave stale copies behind the moment the user changes it (issue #44).
+    """
+
+    def schedule(self, reminder: Reminder, time_zone: str) -> None: ...
     def unschedule(self, reminder_id: int) -> None: ...

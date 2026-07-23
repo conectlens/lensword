@@ -55,8 +55,10 @@ depends on this.
 
 ## Phase 3 — Desktop app (macOS / Windows / Linux)
 
-- [ ] **3.0** Decide Tauri vs. Electron for wrapping the existing
-      Vite+React frontend. *(Planned — needs a decision, see note below)*
+- [x] **3.0** Use Tauri 2 to wrap the existing Vite+React frontend. The
+      rationale, security requirements, release gates, and revisit triggers are
+      recorded in [ADR 0001](docs/adr/0001-use-tauri-for-desktop-shell.md).
+      *(Shipped)*
 - [ ] **3.1** Scaffold the chosen shell around the existing `frontend/`
       build output; API client points at either a bundled local backend or
       a remote server via config. *(Planned)*

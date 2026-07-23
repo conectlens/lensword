@@ -12,6 +12,7 @@ from app.domain.exceptions import DomainError
 from app.domain.value_objects import UserRole
 from app.infrastructure.db import SessionLocal, init_db
 from app.infrastructure.repositories import SqlAlchemyUserRepository
+from app.infrastructure.notifications import LogNotificationChannel
 from app.infrastructure.scheduler import create_scheduler, register_jobs
 
 settings_ = get_settings()
@@ -25,7 +26,13 @@ async def lifespan(_app: FastAPI):
     init_db()
     _seed_first_admin()
     _app.state.scheduler = create_scheduler()
-    register_jobs(_app.state.scheduler, settings_, SessionLocal)
+    # Held on app state so a request that has to re-register a user's jobs
+    # (a time-zone change) delivers through the same channel startup used,
+    # rather than quietly constructing a second one.
+    _app.state.notification_channel = LogNotificationChannel()
+    register_jobs(
+        _app.state.scheduler, settings_, SessionLocal, _app.state.notification_channel
+    )
     _app.state.scheduler.start()
     yield
     _app.state.scheduler.shutdown(wait=False)
