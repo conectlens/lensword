@@ -8,6 +8,15 @@ releases exist yet).
 
 ## [Unreleased]
 
+### Security
+
+- Mnemonic suggestion prompts now separate instruction from data. The task
+  description is sent in the request's system field, and the word and its
+  context travel inside a delimited block introduced as data, so a term
+  carrying its own directive is described rather than obeyed. Both fields are
+  truncated before sending, and generation is bounded by `AI_MAX_OUTPUT_TOKENS`
+  (default 200) so a response cannot grow without limit.
+
 ### Added
 
 - Local AI mnemonic suggestions. `AI_PROVIDER`, `OLLAMA_MODEL` and
