@@ -23,6 +23,18 @@ releases exist yet).
 
 ### Added
 
+- Desktop shell scaffold (Tauri 2), under `desktop/`. The shell hosts the
+  existing frontend production build and resolves its API endpoint at runtime
+  rather than at build time, so one build can address either a local backend or
+  a remote server. The endpoint is validated in the host process and must be
+  either a loopback address or an explicit `https://` origin; plain HTTP to a
+  remote host is refused rather than silently accepted. Configuration is read
+  from `LENSWORD_API_URL`, then a plain-text `api-endpoint` file in the
+  application-config directory, then a loopback default; a configured endpoint
+  that fails validation is an error rather than a fall-through to the default.
+  Browser behavior is unchanged — `VITE_API_URL` still applies there. **The
+  shell is not yet packaged or installable**: there is no signed build, no
+  installer, and no native notification support.
 - Per-user time zones. An account carries an IANA identifier (for example
   `Europe/Istanbul`), set from the settings screen and defaulting to `UTC`, and
   reminder trigger times and Forced Recall quiet hours are both read on that

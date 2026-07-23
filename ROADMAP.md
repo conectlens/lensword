@@ -61,7 +61,10 @@ depends on this.
       *(Shipped)*
 - [ ] **3.1** Scaffold the chosen shell around the existing `frontend/`
       build output; API client points at either a bundled local backend or
-      a remote server via config. *(Planned)*
+      a remote server via config. *(In Progress — the shell project, the
+      validated runtime endpoint, and the frontend adapter exist; the measured
+      startup/memory baseline on signed builds that ADR 0001 requires of this
+      item does not.)*
 - [ ] **3.2** Wire OS-native notifications through the shell's per-platform
       API. *(Planned)*
 - [ ] **3.3** CI build+package jobs producing installers for all three
@@ -84,9 +87,9 @@ depends on this.
 
 ## Phase 5 — Documentation
 
-- [ ] **5.0** This file. *(Shipped)*
-- [ ] **5.1** Update README's AI/notification disclaimers once Phases 1–2
-      ship. *(Planned)*
+- [x] **5.0** This file. *(Shipped)*
+- [x] **5.1** Update README's AI/notification disclaimers once Phases 1–2
+      ship. *(Shipped)*
 - [ ] **5.2** Add a "Desktop" section to README once Phase 3 ships.
       *(Planned)*
 - [ ] **5.3** Add a hosted-deployment section to README once Phase 4 ships.
