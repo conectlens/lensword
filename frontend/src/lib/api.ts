@@ -2,8 +2,8 @@ import type {
   AdminStats, Group, MnemonicNote, ProfileOverview, RecallSettings, Room,
   SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome,
 } from './types'
+import { resolveApiBase } from './runtimeConfig'
 
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 const TOKEN_KEY = 'lensword_token'
 
 export function getToken(): string | null {
@@ -31,7 +31,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
   if (token) headers.Authorization = `Bearer ${token}`
 
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers })
+  // Resolved rather than compiled in: the desktop shell supplies its own
+  // validated endpoint, and one build has to serve both it and the browser.
+  const res = await fetch(`${await resolveApiBase()}${path}`, { ...options, headers })
 
   if (res.status === 204) return undefined as T
 

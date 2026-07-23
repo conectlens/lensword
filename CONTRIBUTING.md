@@ -38,6 +38,28 @@ cp .env.example .env   # VITE_API_URL=http://localhost:8000
 npm run dev
 ```
 
+### Desktop shell
+
+Only needed if you are working on `desktop/`. Requires a Rust toolchain
+([rustup](https://rustup.rs)); the shell itself additionally needs your
+platform's webview development packages, listed in the
+[Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
+
+```bash
+cd desktop
+cargo test -p lensword-api-config     # endpoint validation — no webview needed
+cargo fmt --check
+cargo clippy -p lensword-api-config -- -D warnings
+```
+
+`lensword-api-config` deliberately has no Tauri dependency, so the endpoint
+rules can be tested on any machine without a GUI toolchain. Building and
+packaging the shell itself is not wired up yet — see ROADMAP Phase 3.
+
+The endpoint the shell connects to is read from `LENSWORD_API_URL`, then from
+an `api-endpoint` file in the OS application-config directory, then defaults to
+`http://127.0.0.1:8000`. It must be a loopback address or an `https://` origin.
+
 ### Docker (both services)
 
 ```bash

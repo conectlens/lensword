@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { authApi, getToken, setToken } from '../lib/api'
+import { ApiRequestError, authApi, getToken, setToken } from '../lib/api'
 import type { User } from '../lib/types'
 
 interface AuthContextValue {
@@ -26,8 +26,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const me = await authApi.me()
       setUser(me)
-    } catch {
-      setToken(null)
+    } catch (err) {
+      // Only the server rejecting the credential invalidates it. A transport
+      // failure, or the desktop shell refusing a misconfigured API endpoint,
+      // says nothing about whether the token is still good — discarding it
+      // there would log the user out over a typo in a config file and force a
+      // re-login even after the endpoint is corrected.
+      if (err instanceof ApiRequestError && (err.status === 401 || err.status === 403)) {
+        setToken(null)
+      }
       setUser(null)
     } finally {
       setLoading(false)

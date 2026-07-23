@@ -66,6 +66,82 @@ jobs:
       - name: Unit tests
         run: npm test
 
+  desktop:
+    name: Desktop shell (Rust)
+    runs-on: ubuntu-latest
+    # Bounded so a package manager waiting on a lock fails the job instead of
+    # occupying a runner until the six-hour default expires.
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+
+      # Rust ships preinstalled on the GitHub-hosted runners, so rustup is used
+      # directly rather than adding a third-party toolchain action.
+      - name: Add rustfmt and clippy
+        run: rustup component add rustfmt clippy
+
+      - name: Cache cargo registry and build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('desktop/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # `tauri::generate_context!` embeds the frontend production build, so the
+      # shell cannot be compiled at all without it.
+      - name: Build the frontend the shell embeds
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      # Tauri links against the system webview on Linux.
+      #
+      # `noninteractive` and `--no-install-recommends` are both load-bearing:
+      # without the first, a package that wants to prompt blocks until the job
+      # times out, and without the second this pulls in a large recommended set
+      # that is useless for compiling against the headers.
+      - name: Install webview build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Format
+        working-directory: desktop
+        run: cargo fmt --check
+
+      # Whole workspace, not just the validator crate. Scoping these to
+      # `-p lensword-api-config` left the shell with no compiler pass at all:
+      # renaming a field it consumes broke it while every check stayed green.
+      - name: Clippy
+        working-directory: desktop
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+
+      - name: Tests
+        working-directory: desktop
+        run: cargo test --locked --workspace
+
+      - name: Compile the shell
+        working-directory: desktop
+        run: cargo check --locked --workspace
+
   docker-build:
     name: Docker build validation
     runs-on: ubuntu-latest
