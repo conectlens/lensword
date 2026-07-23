@@ -30,6 +30,12 @@ class UserModel(Base):
     last_activity_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     total_words_learned: Mapped[int] = mapped_column(Integer, default=0)
     total_study_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    # server_default matters as much as default here: the column is added
+    # to existing databases by an ALTER, and every row already present
+    # must land on UTC rather than NULL (issue #44).
+    time_zone: Mapped[str] = mapped_column(
+        String(64), default="UTC", server_default="UTC", nullable=False
+    )
 
     groups: Mapped[list["GroupModel"]] = relationship(back_populates="owner", cascade="all, delete-orphan")
     rooms: Mapped[list["RoomModel"]] = relationship(cascade="all, delete-orphan")

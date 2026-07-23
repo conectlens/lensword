@@ -15,6 +15,7 @@ from app.infrastructure.repositories import (
     SqlAlchemyGroupRepository,
     SqlAlchemyMnemonicRepository,
     SqlAlchemyRecallSettingsRepository,
+    SqlAlchemyReminderRepository,
     SqlAlchemyReviewSessionRepository,
     SqlAlchemyRoomRepository,
     SqlAlchemyUserRepository,
@@ -55,6 +56,10 @@ def get_recall_settings_repository(db: DbSession) -> SqlAlchemyRecallSettingsRep
     return SqlAlchemyRecallSettingsRepository(db)
 
 
+def get_reminder_repository(db: DbSession) -> SqlAlchemyReminderRepository:
+    return SqlAlchemyReminderRepository(db)
+
+
 @lru_cache
 def _ai_provider() -> AIProvider | None:
     """Built once per process, not per request — the Ollama adapter owns a
@@ -73,6 +78,7 @@ RoomRepo = Annotated[SqlAlchemyRoomRepository, Depends(get_room_repository)]
 ReviewSessionRepo = Annotated[SqlAlchemyReviewSessionRepository, Depends(get_review_session_repository)]
 MnemonicRepo = Annotated[SqlAlchemyMnemonicRepository, Depends(get_mnemonic_repository)]
 RecallSettingsRepo = Annotated[SqlAlchemyRecallSettingsRepository, Depends(get_recall_settings_repository)]
+ReminderRepo = Annotated[SqlAlchemyReminderRepository, Depends(get_reminder_repository)]
 OptionalAIProvider = Annotated[AIProvider | None, Depends(get_ai_provider)]
 
 

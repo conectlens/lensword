@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable
 
 import pytest
+from zoneinfo import ZoneInfo
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 from sqlalchemy.orm import Session
@@ -110,10 +111,12 @@ class _SingleUserSettingsRepository:
 class _RecordingReminderScheduler:
     def __init__(self):
         self.scheduled: list[Reminder] = []
+        self.scheduled_zones: list[str] = []
         self.unscheduled: list[int] = []
 
-    def schedule(self, reminder: Reminder) -> None:
+    def schedule(self, reminder: Reminder, time_zone: str = "UTC") -> None:
         self.scheduled.append(reminder)
+        self.scheduled_zones.append(time_zone)
 
     def unschedule(self, reminder_id: int) -> None:
         self.unscheduled.append(reminder_id)
@@ -243,20 +246,24 @@ def test_adapter_registers_a_recurring_cron_job_for_a_daily_reminder():
 
 
 def test_a_recurring_reminder_is_registered_in_utc_not_the_hosts_local_time():
-    """Trigger times are stored as naive UTC, so the trigger must be pinned to
-    UTC as well. Dropping that leaves APScheduler to fall back on the host's
-    local zone, which fires every reminder at the wrong wall-clock hour on any
-    deployment outside UTC while a UTC continuous-integration host sees nothing
-    wrong. Identity against `timezone.utc` is what makes this detectable
-    everywhere: the fallback yields a ZoneInfo, which is never `timezone.utc`
-    even on a host whose local zone is UTC.
+    """A reminder is registered against its owner's zone, which defaults to
+    UTC. Dropping that leaves APScheduler to fall back on the *host's* local
+    zone, which fires every reminder at the wrong wall-clock hour on any
+    deployment outside UTC while a UTC continuous-integration host sees
+    nothing wrong.
+
+    Compared by equality against ZoneInfo("UTC") rather than by identity
+    against `timezone.utc`: since issue #44 the trigger legitimately carries a
+    ZoneInfo, so identity would no longer distinguish the owner's zone from
+    the host fallback. Equality still does — a host-local fallback on a
+    machine outside UTC yields a different zone.
     """
     scheduler = create_scheduler()
     adapter = ApSchedulerReminderScheduler(scheduler, dispatch=lambda reminder_id: None)
 
     adapter.schedule(_reminder(id=30, trigger_time="09:05", recurrence=Recurrence.DAILY))
 
-    assert scheduler.get_job(reminder_job_id(30)).trigger.timezone is timezone.utc
+    assert scheduler.get_job(reminder_job_id(30)).trigger.timezone == ZoneInfo("UTC")
 
 
 def test_adapter_registers_a_one_shot_job_at_the_next_occurrence():
