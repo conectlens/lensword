@@ -11,7 +11,9 @@
 //! performs is a check the webview can be persuaded to skip.
 
 use std::fmt;
+use std::path::Path;
 
+use serde::Serialize;
 use url::{Host, Url};
 
 /// Why a candidate endpoint was refused.
@@ -117,6 +119,41 @@ pub struct Resolved {
 /// The endpoint used when nothing is configured: a local backend on its
 /// documented development port.
 pub const DEFAULT_API_BASE: &str = "http://127.0.0.1:8000";
+
+/// What crosses the process boundary into the webview.
+///
+/// The field names are a wire contract with `frontend/src/lib/runtimeConfig.ts`.
+/// Renaming one breaks the frontend at runtime without breaking any Rust
+/// caller, so `serializes_with_the_field_names_the_frontend_reads` pins them.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct ApiConfig {
+    pub base_url: String,
+    pub source: String,
+}
+
+impl From<Resolved> for ApiConfig {
+    fn from(resolved: Resolved) -> Self {
+        Self {
+            base_url: resolved.base_url,
+            source: resolved.source.as_str().to_string(),
+        }
+    }
+}
+
+/// Read a configured endpoint from `path`.
+///
+/// `Ok(None)` means "no file", which is a legitimate unconfigured state.
+/// Anything else — unreadable, or present but not UTF-8 — is an error and must
+/// stay one. Collapsing it into `Ok(None)` would send the caller to the
+/// loopback default while the user believes their configured endpoint is in
+/// force, which is the failure [`resolve`] refuses to produce.
+pub fn read_endpoint_file(path: &Path) -> Result<Option<String>, std::io::Error> {
+    match std::fs::read_to_string(path) {
+        Ok(contents) => Ok(Some(contents)),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err),
+    }
+}
 
 /// Pick an endpoint from the configuration layers, highest precedence first,
 /// and validate whichever one wins.
@@ -261,6 +298,106 @@ mod tests {
         // An exported-but-empty variable must not shadow a real config file.
         let got = resolve(Some("   "), Some("https://file.example.com")).unwrap();
         assert_eq!(got.source, Source::ConfigFile);
+    }
+
+    // The reject direction of the numeric loopback arms. Without these, making
+    // `Host::Ipv4`/`Host::Ipv6` return `true` unconditionally passes every other
+    // test in this module while accepting plain HTTP to a LAN or public address.
+    #[test]
+    fn rejects_plain_http_to_a_remote_ipv4_address() {
+        assert_eq!(
+            validate_api_base("http://192.168.1.5:8000"),
+            Err(ApiConfigError::InsecureRemote("192.168.1.5".into()))
+        );
+    }
+
+    #[test]
+    fn rejects_plain_http_to_a_remote_ipv6_address() {
+        assert!(matches!(
+            validate_api_base("http://[2001:db8::1]:8000"),
+            Err(ApiConfigError::InsecureRemote(_))
+        ));
+    }
+
+    // `file:///…` exits at the missing-host check before the scheme match, so it
+    // never exercised this arm. A scheme that carries a host does.
+    #[test]
+    fn rejects_a_non_http_scheme_that_has_a_host() {
+        assert_eq!(
+            validate_api_base("ws://evil.example.com"),
+            Err(ApiConfigError::UnsupportedScheme("ws".into()))
+        );
+        assert_eq!(
+            validate_api_base("ftp://evil.example.com"),
+            Err(ApiConfigError::UnsupportedScheme("ftp".into()))
+        );
+    }
+
+    #[test]
+    fn the_default_endpoint_is_the_backend_development_port() {
+        // Asserted as a literal. Comparing against DEFAULT_API_BASE would pass
+        // for any value the constant happened to hold, including a typo that
+        // ships a shell unable to reach the backend on a clean install.
+        assert_eq!(
+            resolve(None, None).unwrap().base_url,
+            "http://127.0.0.1:8000"
+        );
+    }
+
+    #[test]
+    fn error_messages_say_what_was_refused_and_why() {
+        // These strings are the only diagnostic that crosses into the webview.
+        assert_eq!(
+            ApiConfigError::InsecureRemote("api.example.com".into()).to_string(),
+            "refusing plain http to remote host `api.example.com`: use https, or a loopback address"
+        );
+        assert_eq!(
+            ApiConfigError::UnsupportedScheme("ws".into()).to_string(),
+            "unsupported scheme `ws`: expected http (loopback only) or https"
+        );
+        assert_eq!(
+            ApiConfigError::Malformed("/api/v1".into()).to_string(),
+            "not a valid absolute URL: /api/v1"
+        );
+        assert_eq!(ApiConfigError::MissingHost.to_string(), "URL has no host");
+    }
+
+    #[test]
+    fn serializes_with_the_field_names_the_frontend_reads() {
+        // Wire contract with frontend/src/lib/runtimeConfig.ts. A serde rename
+        // here would leave `config.base_url` undefined in the webview with no
+        // Rust caller breaking.
+        let json = serde_json::to_value(ApiConfig::from(Resolved {
+            base_url: "https://api.example.com".into(),
+            source: Source::ConfigFile,
+        }))
+        .unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({"base_url": "https://api.example.com", "source": "config-file"})
+        );
+    }
+
+    #[test]
+    fn a_missing_config_file_is_not_configured_but_an_unreadable_one_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let absent = dir.path().join("api-endpoint");
+        assert_eq!(read_endpoint_file(&absent).unwrap(), None);
+
+        let present = dir.path().join("present");
+        std::fs::write(&present, "https://api.example.com\n").unwrap();
+        assert_eq!(
+            read_endpoint_file(&present).unwrap(),
+            Some("https://api.example.com\n".to_string())
+        );
+
+        // Present but not UTF-8. Reporting this as "not configured" would send
+        // the shell to the loopback default while the user believes their
+        // configured endpoint is in force.
+        let binary = dir.path().join("binary");
+        std::fs::write(&binary, [0xff, 0xfe, 0x00, 0x41]).unwrap();
+        assert!(read_endpoint_file(&binary).is_err());
     }
 
     #[test]

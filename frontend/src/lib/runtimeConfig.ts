@@ -37,6 +37,15 @@ async function load(): Promise<string> {
   // its main chunk.
   const { invoke } = await import('@tauri-apps/api/core')
   const config = await invoke<ApiConfig>('get_api_config')
+
+  // The field name is a wire contract with the host process, pinned on that
+  // side by `serializes_with_the_field_names_the_frontend_reads`. Checking it
+  // here too means a rename fails loudly instead of memoizing `undefined` and
+  // sending every later request to `undefined/api/v1/...`.
+  if (typeof config?.base_url !== 'string' || config.base_url === '') {
+    throw new Error('the desktop shell returned no API endpoint')
+  }
+
   return config.base_url
 }
 
