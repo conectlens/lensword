@@ -20,6 +20,13 @@ class Settings(BaseSettings):
     first_admin_email: str | None = None
     first_admin_password: str | None = None
 
+    # AI provider. "none" (the default) builds no provider at all, so an
+    # existing deployment that sets none of these boots and behaves exactly
+    # as it did before. Set AI_PROVIDER=ollama to enable local suggestions.
+    ai_provider: str = "none"
+    ollama_model: str = "llama3.2"
+    ollama_base_url: str = "http://localhost:11434"
+
 
 @lru_cache
 def get_settings() -> Settings:

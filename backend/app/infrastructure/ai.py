@@ -1,10 +1,11 @@
-"""Concrete AIProvider adapters.
+"""Concrete AIProvider adapters and the settings-driven factory that picks one.
 
 OllamaProvider is the first concrete adapter for the AIProvider port
 (ROADMAP.md Phase 1.0 / issue #15), talking to a local Ollama daemon over
-HTTP. Settings wiring (AI_PROVIDER / OLLAMA_MODEL / OLLAMA_BASE_URL) is
-Phase 1.1 — this class takes explicit constructor args with Ollama's own
-defaults and does not reach into app.config.
+HTTP. It deliberately takes explicit constructor arguments with Ollama's own
+defaults and never reaches into app.config — that keeps it injectable and
+testable in isolation. build_ai_provider (Phase 1.1 / issue #22) is the one
+place that reads Settings and passes them in.
 """
 from __future__ import annotations
 
@@ -12,9 +13,13 @@ import logging
 
 import httpx
 
+from app.config import Settings
 from app.domain.exceptions import AIProviderUnavailableError
+from app.domain.services.ai_provider import AIProvider
 
 logger = logging.getLogger(__name__)
+
+SUPPORTED_AI_PROVIDERS = ("none", "ollama")
 
 
 class OllamaProvider:
@@ -78,3 +83,21 @@ class OllamaProvider:
             raise AIProviderUnavailableError("Ollama's response was missing the generated text")
 
         return text.strip()
+
+
+def build_ai_provider(settings: Settings) -> AIProvider | None:
+    """Build the configured AIProvider, or None when AI is switched off.
+
+    Returning None rather than a null-object provider keeps "no AI
+    configured" a state the caller can see and report honestly, instead of
+    something indistinguishable from a provider that always fails.
+    """
+    provider = settings.ai_provider.strip().lower()
+    if provider == "none":
+        return None
+    if provider == "ollama":
+        return OllamaProvider(base_url=settings.ollama_base_url, model=settings.ollama_model)
+    raise ValueError(
+        f"Unknown AI_PROVIDER '{settings.ai_provider}' — supported values are: "
+        f"{', '.join(SUPPORTED_AI_PROVIDERS)}"
+    )
