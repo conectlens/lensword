@@ -61,7 +61,10 @@ depends on this.
       *(Shipped)*
 - [ ] **3.1** Scaffold the chosen shell around the existing `frontend/`
       build output; API client points at either a bundled local backend or
-      a remote server via config. *(Planned)*
+      a remote server via config. *(In Progress — the shell project, the
+      validated runtime endpoint, and the frontend adapter exist; the measured
+      startup/memory baseline on signed builds that ADR 0001 requires of this
+      item does not.)*
 - [ ] **3.2** Wire OS-native notifications through the shell's per-platform
       API. *(Planned)*
 - [ ] **3.3** CI build+package jobs producing installers for all three
