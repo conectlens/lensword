@@ -62,3 +62,13 @@ class NoWordsDueError(DomainError):
 class ValidationError(DomainError):
     def __init__(self, message: str):
         super().__init__(message)
+
+
+class AIProviderUnavailableError(DomainError):
+    """Raised by an AIProvider adapter when the configured backend can't be
+    reached or returns something unusable — never let a raw transport
+    exception (connection refused, timeout, mid-response drop) reach a
+    caller directly."""
+
+    def __init__(self, message: str = "The AI provider is currently unavailable"):
+        super().__init__(message)
