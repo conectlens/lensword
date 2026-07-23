@@ -1,11 +1,15 @@
+from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.domain.entities import User
+from app.domain.services.ai_provider import AIProvider
 from app.domain.value_objects import UserRole
+from app.infrastructure.ai import build_ai_provider
 from app.infrastructure.db import get_db
 from app.infrastructure.repositories import (
     SqlAlchemyGroupRepository,
@@ -51,6 +55,17 @@ def get_recall_settings_repository(db: DbSession) -> SqlAlchemyRecallSettingsRep
     return SqlAlchemyRecallSettingsRepository(db)
 
 
+@lru_cache
+def _ai_provider() -> AIProvider | None:
+    """Built once per process, not per request — the Ollama adapter owns a
+    pooled HTTP client that would otherwise be recreated on every call."""
+    return build_ai_provider(get_settings())
+
+
+def get_ai_provider() -> AIProvider | None:
+    return _ai_provider()
+
+
 UserRepo = Annotated[SqlAlchemyUserRepository, Depends(get_user_repository)]
 GroupRepo = Annotated[SqlAlchemyGroupRepository, Depends(get_group_repository)]
 WordRepo = Annotated[SqlAlchemyWordRepository, Depends(get_word_repository)]
@@ -58,6 +73,7 @@ RoomRepo = Annotated[SqlAlchemyRoomRepository, Depends(get_room_repository)]
 ReviewSessionRepo = Annotated[SqlAlchemyReviewSessionRepository, Depends(get_review_session_repository)]
 MnemonicRepo = Annotated[SqlAlchemyMnemonicRepository, Depends(get_mnemonic_repository)]
 RecallSettingsRepo = Annotated[SqlAlchemyRecallSettingsRepository, Depends(get_recall_settings_repository)]
+OptionalAIProvider = Annotated[AIProvider | None, Depends(get_ai_provider)]
 
 
 def get_current_user(token: Annotated[str | None, Depends(oauth2_scheme)], user_repo: UserRepo) -> User:

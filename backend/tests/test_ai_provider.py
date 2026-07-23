@@ -1,4 +1,5 @@
 import ast
+import asyncio
 import inspect
 from pathlib import Path
 
@@ -45,13 +46,21 @@ def test_ai_provider_protocol_signature_is_word_and_context():
 
 
 class _FakeAIProvider:
-    def suggest_mnemonic(self, word: str, context: str) -> str:
+    async def suggest_mnemonic(self, word: str, context: str) -> str:
         return f"mnemonic for {word} ({context})"
 
 
 def test_fake_provider_satisfies_the_port():
     provider: AIProvider = _FakeAIProvider()
 
-    result = provider.suggest_mnemonic("perro", "dog in Spanish")
+    result = asyncio.run(provider.suggest_mnemonic("perro", "dog in Spanish"))
 
     assert result == "mnemonic for perro (dog in Spanish)"
+
+
+def test_the_port_is_awaitable():
+    """Generation takes seconds. A synchronous port would put every caller on
+    an OS thread for the duration, which is what made unrelated endpoints
+    stall under load — so 'awaitable' is part of the contract, not an
+    implementation detail of one adapter."""
+    assert inspect.iscoroutinefunction(AIProvider.suggest_mnemonic)

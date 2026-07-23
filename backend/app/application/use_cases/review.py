@@ -2,13 +2,22 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from app.domain.entities import MnemonicNote, ReviewSession, User, Word
-from app.domain.exceptions import EntityNotFoundError, NoWordsDueError, PermissionDeniedError, ValidationError
+from app.domain.exceptions import (
+    AIProviderNotConfiguredError,
+    EntityNotFoundError,
+    NoWordsDueError,
+    PermissionDeniedError,
+    ValidationError,
+)
+from app.application.use_cases.vocabulary import _require_word_owner
 from app.domain.repositories import (
+    GroupRepository,
     MnemonicRepository,
     ReviewSessionRepository,
     UserRepository,
     WordRepository,
 )
+from app.domain.services.ai_provider import AIProvider
 from app.domain.services.spaced_repetition import Scheduler
 from app.domain.value_objects import ReviewOutcome, SessionMode
 
@@ -109,35 +118,100 @@ class GetWeeklyProgressUseCase:
 
 
 class AddMnemonicUseCase:
-    def __init__(self, mnemonic_repo: MnemonicRepository, word_repo: WordRepository):
+    def __init__(
+        self, mnemonic_repo: MnemonicRepository, word_repo: WordRepository, group_repo: GroupRepository
+    ):
         self.mnemonic_repo = mnemonic_repo
         self.word_repo = word_repo
+        self.group_repo = group_repo
 
     def execute(self, user_id: int, word_id: int, text: str) -> MnemonicNote:
         if not text.strip():
             raise ValidationError("Mnemonic text cannot be empty")
-        word = self.word_repo.get_by_id(word_id)
-        if word is None:
-            raise EntityNotFoundError("Word", word_id)
+        _require_word_owner(self.word_repo, self.group_repo, word_id, user_id)
         note = MnemonicNote(id=None, word_id=word_id, author_id=user_id, text=text.strip())
         return self.mnemonic_repo.add(note)
 
 
 class ListMnemonicsUseCase:
-    def __init__(self, mnemonic_repo: MnemonicRepository):
+    def __init__(
+        self, mnemonic_repo: MnemonicRepository, word_repo: WordRepository, group_repo: GroupRepository
+    ):
         self.mnemonic_repo = mnemonic_repo
+        self.word_repo = word_repo
+        self.group_repo = group_repo
 
-    def execute(self, word_id: int) -> list[MnemonicNote]:
+    def execute(self, owner_id: int, word_id: int) -> list[MnemonicNote]:
+        _require_word_owner(self.word_repo, self.group_repo, word_id, owner_id)
         return self.mnemonic_repo.list_by_word(word_id)
 
 
-class VoteMnemonicUseCase:
-    def __init__(self, mnemonic_repo: MnemonicRepository):
-        self.mnemonic_repo = mnemonic_repo
+class SuggestMnemonicUseCase:
+    """Ask the configured AI provider for a mnemonic for one word.
 
-    def execute(self, mnemonic_id: int, upvote: bool) -> MnemonicNote:
+    The provider is optional by design: AI is off by default, so the use
+    case is constructed with None and says so explicitly rather than the
+    caller having to know whether wiring succeeded.
+    """
+
+    def __init__(
+        self, word_repo: WordRepository, group_repo: GroupRepository, provider: AIProvider | None
+    ):
+        self.word_repo = word_repo
+        self.group_repo = group_repo
+        self.provider = provider
+
+    def resolve_word(self, owner_id: int, word_id: int) -> Word:
+        """Authorize and load the word. Synchronous and database-bound.
+
+        Split from generation so a caller can release its database
+        connection before the slow await — the repositories return detached
+        domain objects, so the returned Word stays usable afterwards.
+
+        Ownership is resolved here, before any provider work. A generated
+        mnemonic restates the word it was built from, so answering for
+        someone else's id would hand back their vocabulary; and checking
+        before the provider branch keeps a foreign id from being
+        distinguishable by its 'disabled' answer when AI is switched off.
+        """
+        return _require_word_owner(self.word_repo, self.group_repo, word_id, owner_id)
+
+    async def generate(self, word: Word) -> str:
+        """The slow half. Touches no repository."""
+        if self.provider is None:
+            raise AIProviderNotConfiguredError()
+        return await self.provider.suggest_mnemonic(word.term, self._context_for(word))
+
+    async def execute(self, owner_id: int, word_id: int) -> str:
+        """Both halves, for callers with no connection to release."""
+        return await self.generate(self.resolve_word(owner_id, word_id))
+
+    @staticmethod
+    def _context_for(word: Word) -> str:
+        language = word.target_language.value
+        if word.translations:
+            return f"a {language} word meaning {', '.join(word.translations)}"
+        return f"a {language} word"
+
+
+class VoteMnemonicUseCase:
+    def __init__(
+        self, mnemonic_repo: MnemonicRepository, word_repo: WordRepository, group_repo: GroupRepository
+    ):
+        self.mnemonic_repo = mnemonic_repo
+        self.word_repo = word_repo
+        self.group_repo = group_repo
+
+    def execute(self, owner_id: int, word_id: int, mnemonic_id: int, upvote: bool) -> MnemonicNote:
+        _require_word_owner(self.word_repo, self.group_repo, word_id, owner_id)
         note = self.mnemonic_repo.get_by_id(mnemonic_id)
         if note is None:
+            raise EntityNotFoundError("MnemonicNote", mnemonic_id)
+        if note.word_id != word_id:
+            # Ownership was checked against the word in the path, so a
+            # mnemonic hanging off a different word has not been authorized
+            # by that check — pairing your own word_id with someone else's
+            # mnemonic_id must not slip through.
             raise EntityNotFoundError("MnemonicNote", mnemonic_id)
         note.upvote() if upvote else note.downvote()
         return self.mnemonic_repo.update(note)
