@@ -27,6 +27,8 @@ pub enum ApiConfigError {
     InsecureRemote(String),
     /// Parsed, but carries no host to connect to.
     MissingHost,
+    /// Carries a query or fragment, so it cannot be used as a base to join paths onto.
+    NotABase(String),
 }
 
 impl fmt::Display for ApiConfigError {
@@ -46,6 +48,9 @@ impl fmt::Display for ApiConfigError {
                 "refusing plain http to remote host `{host}`: use https, or a loopback address"
             ),
             Self::MissingHost => write!(f, "URL has no host"),
+            Self::NotABase(raw) => {
+                write!(f, "an API base URL cannot carry a query or fragment: {raw}")
+            }
         }
     }
 }
@@ -84,9 +89,24 @@ pub fn validate_api_base(raw: &str) -> Result<String, ApiConfigError> {
         other => return Err(ApiConfigError::UnsupportedScheme(other.to_string())),
     }
 
-    // Trailing slashes are stripped so callers can join paths as `{base}{path}`
-    // without producing a double slash. `Url` always renders at least "/".
-    Ok(trimmed.trim_end_matches('/').to_string())
+    // Callers join paths as `{base}{path}`. A query or fragment on the base
+    // swallows everything appended after it: `https://api.example.com#x` plus
+    // `/api/v1/auth/login` parses as a fragment of `x/api/v1/auth/login`, and
+    // the request that actually leaves is `GET /`. Every call would quietly hit
+    // the root and the user would see only an unexplained login failure.
+    if parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err(ApiConfigError::NotABase(trimmed.to_string()));
+    }
+
+    // The serialized form of the URL that was validated, not the text that was
+    // typed. `http://2130706433:8000` and `http://0177.0.0.1:8000` are both
+    // loopback and both accepted, but returning them verbatim would hand the
+    // caller a string that no longer matches what was checked — and that the
+    // CSP's `http://127.0.0.1:*` entry does not name.
+    //
+    // Trailing slashes are stripped so `{base}{path}` cannot produce a double
+    // slash; `Url` always renders at least "/".
+    Ok(parsed.as_str().trim_end_matches('/').to_string())
 }
 
 /// Where a resolved endpoint came from. Reported to the frontend so the shell
@@ -334,6 +354,53 @@ mod tests {
     }
 
     #[test]
+    fn rejects_a_base_carrying_a_fragment_or_query() {
+        // Both swallow every path joined onto them, so each request would leave
+        // as `GET /` and the user would see an unexplained failure rather than a
+        // configuration error.
+        assert_eq!(
+            validate_api_base("https://api.example.com#sentinel"),
+            Err(ApiConfigError::NotABase(
+                "https://api.example.com#sentinel".into()
+            ))
+        );
+        assert_eq!(
+            validate_api_base("https://api.example.com?token=x"),
+            Err(ApiConfigError::NotABase(
+                "https://api.example.com?token=x".into()
+            ))
+        );
+    }
+
+    #[test]
+    fn returns_the_url_that_was_validated_not_the_text_that_was_typed() {
+        // Every one of these is 127.0.0.1 to the parser, so each is accepted as
+        // loopback. Returning them verbatim would hand the caller a string that
+        // no longer matches what was checked, and that the shell's CSP
+        // `http://127.0.0.1:*` entry does not name.
+        for raw in [
+            "http://2130706433:8000", // decimal
+            "http://0x7f.0.0.1:8000", // hex
+            "http://0177.0.0.1:8000", // octal
+            "http://127.1:8000",      // short form
+        ] {
+            assert_eq!(
+                validate_api_base(raw).unwrap(),
+                "http://127.0.0.1:8000",
+                "{raw} should normalize to dotted-quad loopback"
+            );
+        }
+    }
+
+    #[test]
+    fn keeps_a_base_path_so_a_reverse_proxied_deployment_still_works() {
+        assert_eq!(
+            validate_api_base("https://example.com/lensword/").unwrap(),
+            "https://example.com/lensword"
+        );
+    }
+
+    #[test]
     fn the_default_endpoint_is_the_backend_development_port() {
         // Asserted as a literal. Comparing against DEFAULT_API_BASE would pass
         // for any value the constant happened to hold, including a typo that
@@ -360,6 +427,10 @@ mod tests {
             "not a valid absolute URL: /api/v1"
         );
         assert_eq!(ApiConfigError::MissingHost.to_string(), "URL has no host");
+        assert_eq!(
+            ApiConfigError::NotABase("https://api.example.com#x".into()).to_string(),
+            "an API base URL cannot carry a query or fragment: https://api.example.com#x"
+        );
     }
 
     #[test]
