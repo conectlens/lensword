@@ -99,9 +99,10 @@ def test_returns_unavailable_when_the_provider_cannot_be_reached(client, auth_he
     resp = client.post(f"/api/v1/words/{word['id']}/mnemonics/suggest", headers=headers)
 
     assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["status"] == "unavailable"
-    assert body["detail"].strip() != ""
+    assert resp.json() == {
+        "status": "unavailable",
+        "detail": "The AI provider is not reachable — try again shortly.",
+    }
 
 
 def test_unavailable_detail_never_leaks_the_provider_address(client, auth_headers, override_provider):

@@ -10,7 +10,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError as PydanticValidationError
 
-from app.config import Settings
+from app.api.deps import _ai_provider, get_ai_provider
+from app.config import Settings, get_settings
 from app.infrastructure.ai import OllamaProvider, build_ai_provider
 
 _AI_ENV_VARS = ("AI_PROVIDER", "OLLAMA_MODEL", "OLLAMA_BASE_URL")
@@ -67,6 +68,49 @@ def test_settings_reject_an_unknown_provider_name_up_front(unset_env):
 def test_settings_accept_the_supported_values_in_any_casing(unset_env):
     assert _settings(ai_provider="OLLAMA").ai_provider == "ollama"
     assert _settings(ai_provider=" none ").ai_provider == "none"
+
+
+def _enable_ollama(monkeypatch, model="mistral", base_url="http://ollama.internal:9999"):
+    """Configure AI the way an operator would — environment only — and drop
+    the process-wide caches so the app rebuilds from it."""
+    monkeypatch.setenv("AI_PROVIDER", "ollama")
+    monkeypatch.setenv("OLLAMA_MODEL", model)
+    monkeypatch.setenv("OLLAMA_BASE_URL", base_url)
+    get_settings.cache_clear()
+    _ai_provider.cache_clear()
+
+
+def test_the_app_dependency_builds_the_provider_the_settings_ask_for(monkeypatch):
+    """Covers the one line that connects Settings to the running app.
+
+    Every other AI-enabled test injects a provider through
+    dependency_overrides, so without this the whole feature could be dead in
+    production — get_ai_provider returning None for everyone — with a fully
+    green suite.
+    """
+    _enable_ollama(monkeypatch)
+
+    provider = get_ai_provider()
+
+    assert isinstance(provider, OllamaProvider)
+    assert provider._model == "mistral"
+    assert str(provider._client.base_url) == "http://ollama.internal:9999"
+
+
+def test_the_app_dependency_yields_no_provider_when_ai_is_off(monkeypatch):
+    """The other half of the same wiring: the default really does disable."""
+    get_settings.cache_clear()
+    _ai_provider.cache_clear()
+
+    assert get_ai_provider() is None
+
+
+def test_the_built_provider_is_reused_rather_than_rebuilt_per_request(monkeypatch):
+    """The adapter owns a pooled httpx client; rebuilding it per request
+    would discard the connection pool every time."""
+    _enable_ollama(monkeypatch)
+
+    assert get_ai_provider() is get_ai_provider()
 
 
 def test_build_ai_provider_rejects_an_unknown_provider_name():
