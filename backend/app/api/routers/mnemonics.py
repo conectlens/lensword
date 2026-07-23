@@ -69,7 +69,11 @@ def add_mnemonic(
 
 @router.post("/suggest", response_model=MnemonicSuggestionResponse)
 def suggest_mnemonic(
-    word_id: int, current_user: CurrentUser, word_repo: WordRepo, ai_provider: OptionalAIProvider
+    word_id: int,
+    current_user: CurrentUser,
+    word_repo: WordRepo,
+    group_repo: GroupRepo,
+    ai_provider: OptionalAIProvider,
 ) -> MnemonicSuggestionResponse:
     """Always 200, with the outcome carried in `status`.
 
@@ -80,9 +84,9 @@ def suggest_mnemonic(
     having to parse an error message.
     """
     try:
-        text = SuggestMnemonicUseCase(word_repo, ai_provider).execute(word_id)
-    except EntityNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        text = SuggestMnemonicUseCase(word_repo, group_repo, ai_provider).execute(current_user.id, word_id)
+    except (EntityNotFoundError, PermissionDeniedError) as exc:
+        _handle_common_errors(exc)
     except AIProviderNotConfiguredError:
         return MnemonicSuggestionDisabled()
     except AIProviderUnavailableError as exc:

@@ -79,7 +79,13 @@ class AIProviderUnavailableError(DomainError):
     """Raised by an AIProvider adapter when the configured backend can't be
     reached or returns something unusable — never let a raw transport
     exception (connection refused, timeout, mid-response drop) reach a
-    caller directly."""
+    caller directly.
 
-    def __init__(self, message: str = "The AI provider is currently unavailable"):
+    The default message is deliberately generic and operator-agnostic: it is
+    surfaced verbatim to API clients, and the provider address may carry
+    credentials (`str(httpx.URL)` does not mask userinfo, only `repr` does).
+    Which backend failed, and why, belongs in the server log instead.
+    """
+
+    def __init__(self, message: str = "The AI provider is not reachable — try again shortly."):
         super().__init__(message)

@@ -154,16 +154,20 @@ class SuggestMnemonicUseCase:
     caller having to know whether wiring succeeded.
     """
 
-    def __init__(self, word_repo: WordRepository, provider: AIProvider | None):
+    def __init__(
+        self, word_repo: WordRepository, group_repo: GroupRepository, provider: AIProvider | None
+    ):
         self.word_repo = word_repo
+        self.group_repo = group_repo
         self.provider = provider
 
-    def execute(self, word_id: int) -> str:
-        # Resolved before the provider check so that an unknown word is
-        # reported as such whether or not AI happens to be enabled.
-        word = self.word_repo.get_by_id(word_id)
-        if word is None:
-            raise EntityNotFoundError("Word", word_id)
+    def execute(self, owner_id: int, word_id: int) -> str:
+        # Ownership is resolved before anything else. A generated mnemonic
+        # restates the word it was built from, so answering for someone
+        # else's id would hand back their vocabulary; and checking before the
+        # provider branch keeps a foreign id from being distinguishable by
+        # its 'disabled' answer when AI is switched off.
+        word = _require_word_owner(self.word_repo, self.group_repo, word_id, owner_id)
         if self.provider is None:
             raise AIProviderNotConfiguredError()
         return self.provider.suggest_mnemonic(word.term, self._context_for(word))

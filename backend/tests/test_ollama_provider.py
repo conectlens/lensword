@@ -9,6 +9,7 @@ check required by issue #15's Verify line.
 from __future__ import annotations
 
 import json
+import logging
 
 import httpx
 import pytest
@@ -37,14 +38,20 @@ def test_suggest_mnemonic_returns_generated_text():
     assert result == "Think 'you-BIK-wit-us'"
 
 
-def test_suggest_mnemonic_raises_clear_error_when_daemon_unreachable():
+def test_suggest_mnemonic_raises_clear_error_when_daemon_unreachable(caplog):
+    """The caller gets the generic domain error; the operator gets the
+    diagnosis in the log, which is where target addresses belong."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused", request=request)
 
     provider = _provider(handler)
 
-    with pytest.raises(AIProviderUnavailableError, match="not reachable"):
-        provider.suggest_mnemonic("perro", "dog in Spanish")
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(AIProviderUnavailableError):
+            provider.suggest_mnemonic("perro", "dog in Spanish")
+
+    assert "unreachable" in caplog.text
 
 
 def test_suggest_mnemonic_raises_clear_error_on_timeout():
@@ -53,7 +60,7 @@ def test_suggest_mnemonic_raises_clear_error_on_timeout():
 
     provider = _provider(handler)
 
-    with pytest.raises(AIProviderUnavailableError, match="timed out"):
+    with pytest.raises(AIProviderUnavailableError):
         provider.suggest_mnemonic("word", "context")
 
 
@@ -71,14 +78,18 @@ def test_suggest_mnemonic_raises_clear_error_when_connection_drops_mid_response(
         provider.suggest_mnemonic("word", "context")
 
 
-def test_suggest_mnemonic_raises_clear_error_when_model_not_pulled():
+def test_suggest_mnemonic_raises_clear_error_when_model_not_pulled(caplog):
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(404, json={"error": "model 'llama3.2' not found, try pulling it first"})
 
     provider = _provider(handler, model="llama3.2")
 
-    with pytest.raises(AIProviderUnavailableError, match="llama3.2"):
-        provider.suggest_mnemonic("word", "context")
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(AIProviderUnavailableError):
+            provider.suggest_mnemonic("word", "context")
+
+    # The operator still needs to know *which* model to pull.
+    assert "llama3.2" in caplog.text
 
 
 def test_suggest_mnemonic_strips_surrounding_whitespace():
@@ -118,6 +129,49 @@ def test_suggest_mnemonic_raises_on_unexpected_server_error():
 
     with pytest.raises(AIProviderUnavailableError):
         provider.suggest_mnemonic("word", "context")
+
+
+def test_read_timeout_stays_within_what_a_ui_can_wait_on():
+    """Every route in this app is a sync `def`, so each in-flight request
+    holds an anyio worker thread (default pool 40) and the image runs a
+    single uvicorn worker. A long read timeout lets a handful of slow
+    generations exhaust the pool and stall unrelated routes, health check
+    included."""
+    provider = OllamaProvider()
+
+    assert provider._client.timeout.read <= 20.0
+
+
+def test_unreachable_daemon_log_masks_credentials_in_the_url(caplog):
+    """str(httpx.URL) leaves userinfo intact; only repr() masks it. Logs are
+    shipped and grepped, so the masked form is the one that belongs there."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    provider = _provider(handler, base_url="http://svc:hunter2@ollama.internal:11434")
+
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(AIProviderUnavailableError):
+            provider.suggest_mnemonic("word", "context")
+
+    assert caplog.text.strip() != ""
+    assert "hunter2" not in caplog.text
+
+
+def test_transport_failure_message_does_not_echo_the_raw_exception():
+    """The catch-all branch used to interpolate the httpx exception text,
+    which can carry the target address."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadError("connect to 10.0.0.5:11434 failed", request=request)
+
+    provider = _provider(handler)
+
+    with pytest.raises(AIProviderUnavailableError) as excinfo:
+        provider.suggest_mnemonic("word", "context")
+
+    assert "10.0.0.5" not in str(excinfo.value)
 
 
 def _ollama_model_available(model: str, base_url: str = "http://localhost:11434") -> bool:

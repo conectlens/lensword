@@ -29,9 +29,15 @@ class OllamaProvider:
         model: str = "llama3.2",
         *,
         connect_timeout: float = 2.0,
-        read_timeout: float = 60.0,
+        read_timeout: float = 20.0,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
+        # read_timeout is deliberately short. Routes here are sync `def`, so
+        # each in-flight request holds an anyio worker thread (pool of 40)
+        # and the image runs one uvicorn worker: a handful of slow
+        # generations would otherwise exhaust the pool and stall unrelated
+        # routes, health check included. It is also longer than anyone will
+        # sit and watch a suggestion spinner.
         self._model = model
         timeout = httpx.Timeout(
             connect=connect_timeout, read=read_timeout, write=connect_timeout, pool=connect_timeout
@@ -46,41 +52,35 @@ class OllamaProvider:
                 json={"model": self._model, "prompt": prompt, "stream": False},
             )
         except httpx.ConnectError as exc:
-            logger.warning("Ollama unreachable at %s: %s", self._client.base_url, exc)
-            raise AIProviderUnavailableError(
-                f"Ollama is not reachable at {self._client.base_url} — is it running?"
-            ) from exc
+            logger.warning("Ollama unreachable at %r: %s", self._client.base_url, exc)
+            raise AIProviderUnavailableError() from exc
         except httpx.TimeoutException as exc:
-            logger.warning("Ollama at %s timed out: %s", self._client.base_url, exc)
-            raise AIProviderUnavailableError(f"Ollama at {self._client.base_url} timed out") from exc
+            logger.warning("Ollama at %r timed out: %s", self._client.base_url, exc)
+            raise AIProviderUnavailableError() from exc
         except httpx.RequestError as exc:
             # Catch-all for the rest of httpx's transport-failure surface (a
             # connection accepted then dropped mid-response, a protocol
             # error, an unsupported proxy, ...) — anything that isn't a
             # clean refusal or a timeout still must not leak past this
             # method as a raw transport exception.
-            logger.warning("Ollama request to %s failed: %s", self._client.base_url, exc)
-            raise AIProviderUnavailableError(f"Ollama request failed: {exc}") from exc
+            logger.warning("Ollama request to %r failed: %s", self._client.base_url, exc)
+            raise AIProviderUnavailableError() from exc
 
         if response.status_code == 404:
             logger.warning("Ollama model '%s' isn't pulled", self._model)
-            raise AIProviderUnavailableError(
-                f"Ollama model '{self._model}' isn't pulled — run `ollama pull {self._model}`."
-            )
+            raise AIProviderUnavailableError()
         if response.is_error:
             logger.warning("Ollama returned HTTP %s", response.status_code)
-            raise AIProviderUnavailableError(
-                f"Ollama returned an unexpected error (HTTP {response.status_code})"
-            )
+            raise AIProviderUnavailableError()
 
         try:
             text = response.json()["response"]
         except (ValueError, KeyError) as exc:
             logger.warning("Ollama response missing 'response' field: %s", exc)
-            raise AIProviderUnavailableError("Ollama's response was missing the generated text") from exc
+            raise AIProviderUnavailableError() from exc
         if not isinstance(text, str):
             logger.warning("Ollama response 'response' field was not a string: %r", text)
-            raise AIProviderUnavailableError("Ollama's response was missing the generated text")
+            raise AIProviderUnavailableError()
 
         return text.strip()
 

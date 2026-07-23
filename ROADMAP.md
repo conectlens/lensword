@@ -29,9 +29,9 @@ depends on this.
 
 ## Phase 1 — Local AI support (Ollama)
 
-- [ ] **1.0** `OllamaProvider` implementing the `AIProvider` port (HTTP client
+- [x] **1.0** `OllamaProvider` implementing the `AIProvider` port (HTTP client
       to a local Ollama instance), with a clear "provider unavailable" error
-      instead of a silent failure. *(Planned)*
+      instead of a silent failure. *(Shipped)*
 - [x] **1.1** `AI_PROVIDER` / `OLLAMA_MODEL` / `OLLAMA_BASE_URL` settings,
       defaulting to disabled — preserving current stubbed behavior when
       unset. *(Shipped)*
