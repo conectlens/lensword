@@ -16,3 +16,8 @@ tauri-build = { version = "2", features = [] }
 lensword-api-config = { path = "../api-config" }
 serde = { version = "1", features = ["derive"] }
 tauri = { version = "2", features = [] }
+# Native OS credential storage (ADR 0001): macOS Keychain, Windows Credential
+# Manager, Linux Secret Service. The `sync-secret-service` + `crypto-rust`
+# defaults keep the Linux backend pure-Rust, so CI compiles it without extra
+# system packages.
+keyring = "3"

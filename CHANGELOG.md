@@ -10,6 +10,17 @@ releases exist yet).
 
 ### Security
 
+- Desktop authentication tokens are kept in the operating-system credential
+  store (macOS Keychain, Windows Credential Manager, Linux Secret Service)
+  rather than webview `localStorage`, as ADR 0001 requires. A typed adapter
+  feature-detects the shell: the browser build is unchanged, while the shell
+  routes through native `credential_get`/`credential_set`/`credential_clear`
+  commands and never writes the token to `localStorage`. Clearing the
+  credential on logout surfaces a failure rather than swallowing it, so a
+  transiently unreachable store cannot silently leave a token behind for the
+  next launch to re-authenticate. Unit tests assert the token never reaches
+  `localStorage` in the shell; the packaged-app verification ADR 0001 also
+  requires, on each operating system, is still outstanding.
 - Mnemonic suggestion prompts now separate instruction from data. The task
   description is sent in the request's system field, and the word and its
   context travel inside a delimited block introduced as data, so a term
