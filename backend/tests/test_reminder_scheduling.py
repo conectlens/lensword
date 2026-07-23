@@ -1,9 +1,11 @@
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from typing import Callable
 
 import pytest
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
+from sqlalchemy.orm import Session
 
 from app.application.use_cases.reminders import (
     CancelReminderUseCase,
@@ -13,7 +15,6 @@ from app.application.use_cases.reminders import (
 from app.config import Settings
 from app.domain.entities import Group, RecallSettings, Reminder, User
 from app.domain.exceptions import EntityNotFoundError, PermissionDeniedError
-from app.domain.services.reminder_scheduler import ReminderScheduler
 from app.domain.value_objects import Recurrence, SupportedLanguage, UserRole, utcnow
 from app.infrastructure.reminders import ApSchedulerReminderScheduler, reminder_job_id
 from app.infrastructure.scheduler import create_scheduler, register_jobs
@@ -77,6 +78,21 @@ class _InMemoryGroupRepository:
         return self.rows.get(group_id)
 
 
+def _independent_sessions(db_session) -> Callable[[], Session]:
+    """Hand production code a session of its own, bound to the same engine.
+
+    `restore_reminder_jobs` closes whatever its factory returns. Passing the
+    test's own fixture session would have the code under test close the
+    fixture out from under the test, which is harmless only for as long as
+    nobody adds an assertion after the call.
+
+    Seeded rows are committed first so the independent session can see them.
+    """
+    engine = db_session.get_bind()
+    db_session.commit()
+    return lambda: Session(bind=engine)
+
+
 def _groups(group_id: int = 2, owner_id: int = 1) -> _InMemoryGroupRepository:
     return _InMemoryGroupRepository(
         [Group(id=group_id, owner_id=owner_id, name="Verbs", target_language=SupportedLanguage.SPANISH)]
@@ -114,14 +130,6 @@ class _RecordingChannel:
 # ---------------------------------------------------------------------------
 # ScheduleReminderUseCase
 # ---------------------------------------------------------------------------
-
-
-def test_recording_scheduler_satisfies_the_reminder_scheduler_port():
-    port: ReminderScheduler = _RecordingReminderScheduler()
-
-    port.schedule(_reminder(id=1))
-
-    assert len(port.scheduled) == 1
 
 
 def test_scheduling_a_reminder_persists_it_and_registers_exactly_one_job():
@@ -234,6 +242,23 @@ def test_adapter_registers_a_recurring_cron_job_for_a_daily_reminder():
     assert {f.name: str(f) for f in job.trigger.fields}["minute"] == "5"
 
 
+def test_a_recurring_reminder_is_registered_in_utc_not_the_hosts_local_time():
+    """Trigger times are stored as naive UTC, so the trigger must be pinned to
+    UTC as well. Dropping that leaves APScheduler to fall back on the host's
+    local zone, which fires every reminder at the wrong wall-clock hour on any
+    deployment outside UTC while a UTC continuous-integration host sees nothing
+    wrong. Identity against `timezone.utc` is what makes this detectable
+    everywhere: the fallback yields a ZoneInfo, which is never `timezone.utc`
+    even on a host whose local zone is UTC.
+    """
+    scheduler = create_scheduler()
+    adapter = ApSchedulerReminderScheduler(scheduler, dispatch=lambda reminder_id: None)
+
+    adapter.schedule(_reminder(id=30, trigger_time="09:05", recurrence=Recurrence.DAILY))
+
+    assert scheduler.get_job(reminder_job_id(30)).trigger.timezone is timezone.utc
+
+
 def test_adapter_registers_a_one_shot_job_at_the_next_occurrence():
     scheduler = create_scheduler()
     clock = lambda: datetime(2026, 3, 1, 8, 30)  # noqa: E731
@@ -244,6 +269,41 @@ def test_adapter_registers_a_one_shot_job_at_the_next_occurrence():
     job = scheduler.get_job(reminder_job_id(4))
     assert isinstance(job.trigger, DateTrigger)
     assert job.trigger.run_date.replace(tzinfo=None) == datetime(2026, 3, 1, 9, 0)
+
+
+def test_a_one_shot_reminder_is_registered_in_utc_not_the_hosts_local_time():
+    """The same UTC guarantee as above, for the other trigger type."""
+    scheduler = create_scheduler()
+    clock = lambda: datetime(2026, 3, 1, 8, 30)  # noqa: E731
+    adapter = ApSchedulerReminderScheduler(scheduler, dispatch=lambda reminder_id: None, clock=clock)
+
+    adapter.schedule(_reminder(id=40, trigger_time="09:00", recurrence=Recurrence.ONCE))
+
+    run_date = scheduler.get_job(reminder_job_id(40)).trigger.run_date
+    assert run_date.tzinfo is timezone.utc
+    assert run_date == datetime(2026, 3, 1, 9, 0, tzinfo=timezone.utc)
+
+
+@pytest.mark.parametrize("recurrence", [Recurrence.DAILY, Recurrence.ONCE])
+def test_a_reminders_job_is_configured_so_a_backlog_cannot_become_a_burst(recurrence):
+    """The duplicate-delivery guarantee, pinned.
+
+    Every one of these settings is load-bearing: `coalesce` collapses runs the
+    scheduler missed into a single notification instead of replaying each one,
+    `max_instances` stops a slow delivery from overlapping with the next, and
+    the misfire grace period is what makes a late reminder still arrive rather
+    than being dropped. Without assertions they are three defaults nothing
+    protects.
+    """
+    scheduler = create_scheduler()
+    adapter = ApSchedulerReminderScheduler(scheduler, dispatch=lambda reminder_id: None)
+
+    adapter.schedule(_reminder(id=50, recurrence=recurrence))
+
+    job = scheduler.get_job(reminder_job_id(50))
+    assert job.coalesce is True
+    assert job.max_instances == 1
+    assert job.misfire_grace_time == 300
 
 
 def test_registering_the_same_reminder_twice_leaves_exactly_one_job():
@@ -269,11 +329,14 @@ def test_unscheduling_removes_the_job():
     assert scheduler.get_jobs() == []
 
 
-def test_unscheduling_an_unregistered_reminder_is_a_no_op():
+def test_unscheduling_an_unregistered_reminder_leaves_other_jobs_alone():
     scheduler = create_scheduler()
     adapter = ApSchedulerReminderScheduler(scheduler, dispatch=lambda reminder_id: None)
+    adapter.schedule(_reminder(id=8))
 
     adapter.unschedule(999)  # must not raise
+
+    assert [job.id for job in scheduler.get_jobs()] == [reminder_job_id(8)]
 
 
 def test_scheduling_an_unsaved_reminder_is_rejected():
@@ -290,6 +353,7 @@ def test_scheduling_an_unsaved_reminder_is_rejected():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.slow
 def test_a_reminder_five_seconds_out_fires_and_notifies_exactly_once():
     """Issue #25's stated verification. Settings permit exactly one channel,
     so the notification port's call count measures nothing but how many times
@@ -360,7 +424,7 @@ def test_register_jobs_restores_a_job_for_every_enabled_reminder(db_session):
     register_jobs(
         scheduler,
         Settings(environment="production"),
-        session_factory=lambda: db_session,
+        session_factory=_independent_sessions(db_session),
         channel=_RecordingChannel(),
     )
 
@@ -397,7 +461,7 @@ def test_app_startup_restores_reminder_jobs(db_session, monkeypatch):
 
     import app.main as main_module
 
-    monkeypatch.setattr(main_module, "SessionLocal", lambda: db_session)
+    monkeypatch.setattr(main_module, "SessionLocal", _independent_sessions(db_session))
 
     with TestClient(main_module.app):
         job_ids = {job.id for job in main_module.app.state.scheduler.get_jobs()}
@@ -433,7 +497,9 @@ def test_register_jobs_skips_an_unusable_recurrence_and_restores_the_rest(db_ses
     after = _row(trigger_time="08:00")
 
     scheduler = create_scheduler()
-    register_jobs(scheduler, Settings(environment="production"), session_factory=lambda: db_session)
+    register_jobs(
+        scheduler, Settings(environment="production"), session_factory=_independent_sessions(db_session)
+    )
 
     assert [job.id for job in scheduler.get_jobs()] == [
         reminder_job_id(before.id),
@@ -481,7 +547,7 @@ def test_app_startup_survives_a_corrupt_reminders_table(db_session, monkeypatch)
 
     import app.main as main_module
 
-    monkeypatch.setattr(main_module, "SessionLocal", lambda: db_session)
+    monkeypatch.setattr(main_module, "SessionLocal", _independent_sessions(db_session))
 
     with TestClient(main_module.app) as test_client:
         assert test_client.get("/api/v1/health").status_code == 200
@@ -515,6 +581,8 @@ def test_register_jobs_skips_a_reminder_whose_trigger_time_is_unusable(db_sessio
     db_session.flush()
 
     scheduler = create_scheduler()
-    register_jobs(scheduler, Settings(environment="production"), session_factory=lambda: db_session)
+    register_jobs(
+        scheduler, Settings(environment="production"), session_factory=_independent_sessions(db_session)
+    )
 
     assert [job.id for job in scheduler.get_jobs()] == [reminder_job_id(good.id)]

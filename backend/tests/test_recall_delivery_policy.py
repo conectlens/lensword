@@ -153,9 +153,28 @@ def test_unconfigured_quiet_hours_never_suppress_anything():
     assert RecallDeliveryPolicy.decide(_settings(), _at("03:00")) == ALL_CHANNELS
 
 
-def test_an_unparseable_quiet_hours_value_is_treated_as_unconfigured():
+@pytest.mark.parametrize(
+    "malformed",
+    [
+        "tonight",  # no separator at all
+        "",  # empty string
+        "25:00",  # separates and converts, but is not a real hour
+        "12:61",  # ... nor a real minute
+        "ab:cd",  # separates, but neither part is a number
+        "-1:00",  # negative hour
+    ],
+    ids=repr,
+)
+def test_an_unparseable_quiet_hours_value_is_treated_as_unconfigured(malformed):
     """A malformed setting must not silently swallow every notification; the
-    documented product rule is that a review is never lost."""
-    settings = _settings(quiet_hours_start="tonight", quiet_hours_end="07:00")
+    documented product rule is that a review is never lost.
 
-    assert RecallDeliveryPolicy.decide(settings, _at("03:00")) == ALL_CHANNELS
+    The cases deliberately span both rejection paths — the values that never
+    split into two parts, and the values that split cleanly but are not a real
+    time of day.
+    """
+    starts_bad = _settings(quiet_hours_start=malformed, quiet_hours_end="07:00")
+    ends_bad = _settings(quiet_hours_start="22:00", quiet_hours_end=malformed)
+
+    assert RecallDeliveryPolicy.decide(starts_bad, _at("03:00")) == ALL_CHANNELS
+    assert RecallDeliveryPolicy.decide(ends_bad, _at("03:00")) == ALL_CHANNELS
