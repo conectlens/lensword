@@ -8,6 +8,7 @@ changes.
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError as PydanticValidationError
 
 from app.config import Settings
 from app.infrastructure.ai import OllamaProvider, build_ai_provider
@@ -56,13 +57,28 @@ def test_build_ai_provider_passes_configured_model_and_base_url(unset_env):
     assert str(provider._client.base_url) == "http://ollama.internal:9999"
 
 
-def test_build_ai_provider_rejects_an_unknown_provider_name(unset_env):
+def test_settings_reject_an_unknown_provider_name_up_front(unset_env):
+    """A typo in AI_PROVIDER must stop the app from starting, not lie dormant
+    until the first suggestion request turns it into a 500."""
+    with pytest.raises(PydanticValidationError, match="ollama"):
+        _settings(ai_provider="bogus")
+
+
+def test_settings_accept_the_supported_values_in_any_casing(unset_env):
+    assert _settings(ai_provider="OLLAMA").ai_provider == "ollama"
+    assert _settings(ai_provider=" none ").ai_provider == "none"
+
+
+def test_build_ai_provider_rejects_an_unknown_provider_name():
+    """Defence in depth: settings validation is the first line, but the
+    factory must not fall through to None for a value it does not know.
+    model_construct skips validation so the factory's own guard is reached."""
     with pytest.raises(ValueError, match="gpt5000"):
-        build_ai_provider(_settings(ai_provider="gpt5000"))
+        build_ai_provider(Settings.model_construct(ai_provider="gpt5000"))
 
 
-def test_build_ai_provider_error_lists_the_supported_values(unset_env):
+def test_build_ai_provider_error_lists_the_supported_values():
     """An operator who typos AI_PROVIDER should be told what is valid, not
     just that their value was wrong."""
     with pytest.raises(ValueError, match="ollama"):
-        build_ai_provider(_settings(ai_provider="olama"))
+        build_ai_provider(Settings.model_construct(ai_provider="olama"))

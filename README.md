@@ -71,10 +71,13 @@ features/      one folder per bounded context (auth, groups, rooms, review, ...)
   (decoupled from each user's personal `Word` row) is a bigger modeling change
   than time allowed. The schema supports authorship and voting; each user
   currently sees mnemonics attached to their own word entries.
-- **AI/image generation is honestly stubbed, not faked.** The MnemoLab "AI
-  Suggestion" tag and image-generation panel in the templates imply an LLM/image
-  provider. None is configured in this build, so the UI says so explicitly
-  instead of pretending to call one.
+- **AI mnemonic suggestions are real, opt-in, and local.** MnemoLab can ask a
+  locally hosted [Ollama](https://ollama.com) model for a mnemonic. It is off
+  by default, so an install that configures nothing behaves exactly as before
+  and the UI says plainly that suggestions are unavailable rather than
+  pretending to call a provider. See
+  [Optional: local AI mnemonic suggestions](#optional-local-ai-mnemonic-suggestions-ollama).
+  Image generation is still not implemented — no image provider is wired up.
 - **Notification delivery is configured but not dispatched.** Recall settings
   (channels, quiet hours, triggers) persist for real. Actually sending a push,
   email, or desktop notification on a schedule needs a credentialed provider and
@@ -116,15 +119,78 @@ cp .env.example .env   # VITE_API_URL=http://localhost:8000
 npm run dev
 ```
 
+### Optional: local AI mnemonic suggestions (Ollama)
+
+MnemoLab can ask a locally hosted model for a mnemonic. Everything runs on your
+machine — no API key, no account, and nothing leaves the host. The feature is
+**off by default**: an install that sets none of these settings builds no
+provider at all and behaves exactly as it did before.
+
+**1. Install Ollama** — download it from [ollama.com/download](https://ollama.com/download),
+or on macOS with Homebrew:
+
+```bash
+brew install ollama
+ollama serve            # leave running; listens on http://localhost:11434
+```
+
+**2. Pull a model** (a few GB — this is the slow step, and it is a one-off):
+
+```bash
+ollama pull llama3.2
+```
+
+**3. Turn the provider on** in `backend/.env`:
+
+```bash
+AI_PROVIDER=ollama
+OLLAMA_MODEL=llama3.2
+OLLAMA_BASE_URL=http://localhost:11434
+```
+
+| Setting | Default | What it does |
+|---|---|---|
+| `AI_PROVIDER` | `none` | `none` disables AI entirely; `ollama` enables local suggestions. Any other value is rejected at startup with a message listing the supported values. |
+| `OLLAMA_MODEL` | `llama3.2` | The model name passed to Ollama. Must be one you have pulled. |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Where the Ollama daemon is listening. |
+
+Restart the backend, open **MnemoLab**, pick a word and use **Suggest with AI**.
+
+The endpoint (`POST /api/v1/words/{word_id}/mnemonics/suggest`) always answers
+HTTP 200 and reports what happened in a `status` field, because a provider
+being switched off or temporarily down is a normal state of a healthy install
+rather than a server error:
+
+| `status` | When | What MnemoLab shows |
+|---|---|---|
+| `disabled` | `AI_PROVIDER` is `none` | A calm "AI suggestions unavailable" notice, with no retry — retrying cannot change a setting. |
+| `unavailable` | Provider configured but unreachable, timed out, or the model isn't pulled | The reason, plus a retry. |
+| `ok` | Success | The suggestion, which you can drop straight into your draft. |
+
+Setting names above match the `Settings` fields `ai_provider`, `ollama_model`
+and `ollama_base_url` in `backend/app/config.py`.
+
 ## Verification actually run
 
-- **Backend: 49/49 tests passing** (`cd backend && .venv/bin/pytest`) — SM-2
+- **Backend: 96/96 tests passing** (`cd backend && .venv/bin/pytest`) — SM-2
   scheduler edge cases, badge thresholds, full auth/group/word/room/review/
   mnemonic/settings/admin flows, cross-user permission checks, cascade deletes.
   Also boot-tested with a real `uvicorn` process and `curl`, not just
   `TestClient`.
-- **Frontend: type-checks clean** (`tsc -b`), **builds clean** (`vite build`),
-  **8/8 unit tests passing** (`vitest run`).
+- **Frontend: lints clean** (`eslint`), **type-checks and builds clean**
+  (`tsc -b && vite build`), **16/16 unit tests passing** (`vitest run`).
+- **Ollama suggestions checked live** against a real daemon running
+  `llama3.2`, via `uvicorn` + `curl` rather than mocks. All three documented
+  states were observed end to end: `ok` with generated text, `disabled` with
+  no AI settings present, and `unavailable` with the provider pointed at a
+  port nothing is listening on.
+- **The Ollama walkthrough above was followed literally from a clean shell**
+  — fresh virtualenv, `pip install`, `.env`, boot, first suggestion — and
+  took well under a minute, comfortably inside the 10-minute target.
+  Installing Ollama and running `ollama pull llama3.2` are excluded from that
+  figure: the model download is several GB and dominated entirely by your
+  connection. The MnemoLab suggestion UI itself is covered by unit tests; it
+  has not been click-tested in a browser.
 - Three real bugs were caught and fixed by the test suite along the way: an
   SM-2 interval that could overflow on long correct streaks, a naive/aware
   datetime mismatch against SQLite, and a SQLAlchemy identity-map staleness bug
@@ -139,9 +205,14 @@ npm run dev
 - Blog/About marketing pages from the templates aren't built — the landing page
   is real; a full blog would need a content backend, which felt out of scope for
   the app itself.
-- MnemoLab AI suggestions and image generation, and scheduled notification
-  delivery, are intentionally not implemented (see above) — real credentials/
-  infrastructure decisions for you to make, not something to fake.
+- MnemoLab image generation and scheduled notification delivery are
+  intentionally not implemented (see above) — real credentials/infrastructure
+  decisions for you to make, not something to fake. AI *mnemonic* suggestions
+  are implemented and opt-in via Ollama.
+- Ollama suggestions have been verified with the backend run directly on the
+  host. Reaching a host-installed Ollama daemon from inside the Docker
+  containers has not been tested, and `http://localhost:11434` will not resolve
+  to the host from within a container.
 
 ## Contributing
 

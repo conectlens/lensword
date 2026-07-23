@@ -32,14 +32,14 @@ depends on this.
 - [ ] **1.0** `OllamaProvider` implementing the `AIProvider` port (HTTP client
       to a local Ollama instance), with a clear "provider unavailable" error
       instead of a silent failure. *(Planned)*
-- [ ] **1.1** `AI_PROVIDER` / `OLLAMA_MODEL` / `OLLAMA_BASE_URL` settings,
+- [x] **1.1** `AI_PROVIDER` / `OLLAMA_MODEL` / `OLLAMA_BASE_URL` settings,
       defaulting to disabled — preserving current stubbed behavior when
-      unset. *(Planned)*
-- [ ] **1.2** Wire MnemoLab's "AI Suggestion" UI to the new endpoint; keep
+      unset. *(Shipped)*
+- [x] **1.2** Wire MnemoLab's "AI Suggestion" UI to the new endpoint; keep
       the existing honest "no provider configured" message when none is
-      set up. *(Planned)*
-- [ ] **1.3** README section documenting Ollama install, model pull, and
-      configuration. *(Planned)*
+      set up. *(Shipped)*
+- [x] **1.3** README section documenting Ollama install, model pull, and
+      configuration. *(Shipped)*
 
 ## Phase 2 — Notifications + local cron reminders
 

@@ -1,6 +1,9 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+SUPPORTED_AI_PROVIDERS = ("none", "ollama")
 
 
 class Settings(BaseSettings):
@@ -26,6 +29,22 @@ class Settings(BaseSettings):
     ai_provider: str = "none"
     ollama_model: str = "llama3.2"
     ollama_base_url: str = "http://localhost:11434"
+
+    @field_validator("ai_provider")
+    @classmethod
+    def _known_ai_provider(cls, value: str) -> str:
+        """Reject a typo while the operator is still watching the console.
+
+        Validating here rather than only in the factory means a misspelled
+        AI_PROVIDER stops startup outright, instead of lying dormant until
+        someone's first suggestion request turns it into a 500.
+        """
+        normalized = value.strip().lower()
+        if normalized not in SUPPORTED_AI_PROVIDERS:
+            raise ValueError(
+                f"must be one of {', '.join(SUPPORTED_AI_PROVIDERS)} (got '{value}')"
+            )
+        return normalized
 
 
 @lru_cache
