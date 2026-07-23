@@ -56,9 +56,33 @@ DEFAULT_MAX_OUTPUT_TOKENS = 200
 # records survive unchanged.
 _DELIMITER_RUN = re.compile(r"-{3,}")
 
+# Collapsing ASCII hyphens alone would only move the problem. The boundary
+# has to hold at the model's eye level, not merely at the byte level, and two
+# cheap tricks defeat a literal-hyphen filter:
+#
+#   - Dash lookalikes (U+2010 hyphen through U+2015 horizontal bar, U+2212
+#     minus, U+FF0D fullwidth) are different code points that render as a
+#     hyphen, so a run of them never matches the pattern above.
+#   - Zero-width characters interleaved between ASCII hyphens break the
+#     contiguous run the pattern requires while leaving the text visually
+#     identical.
+#
+# Zero-width characters are removed first, so the hyphens they were splitting
+# become adjacent again; dash lookalikes are then folded to ASCII, so a mixed
+# run is normalized before the collapse rather than after it.
+_ZERO_WIDTH = re.compile(r"[​-‏⁠﻿]")
+_DASH_LIKE = re.compile(r"[‐-―−－]")
+
 
 def _as_data(value: str, max_chars: int) -> str:
-    """Prepare one user-supplied field for the data block."""
+    """Prepare one user-supplied field for the data block.
+
+    Neutralize before truncating: slicing an already-collapsed string can only
+    drop trailing characters, whereas truncating first could leave a run
+    partially intact at the boundary.
+    """
+    value = _ZERO_WIDTH.sub("", value)
+    value = _DASH_LIKE.sub("-", value)
     return _DELIMITER_RUN.sub("-", value)[:max_chars]
 
 

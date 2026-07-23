@@ -13,9 +13,13 @@ releases exist yet).
 - Mnemonic suggestion prompts now separate instruction from data. The task
   description is sent in the request's system field, and the word and its
   context travel inside a delimited block introduced as data, so a term
-  carrying its own directive is described rather than obeyed. Both fields are
-  truncated before sending, and generation is bounded by `AI_MAX_OUTPUT_TOKENS`
-  (default 200) so a response cannot grow without limit.
+  carrying its own directive is described rather than obeyed. Delimiter
+  forgery is blocked for dash lookalikes and zero-width padding as well as
+  plain hyphens, so a record cannot fake a boundary that merely renders like
+  one. Both fields are truncated before sending (`AI_CONTEXT_MAX_CHARS`,
+  default 500), and generation is bounded by `AI_MAX_OUTPUT_TOKENS` (default
+  200) so a response cannot grow without limit. Both bounds are rejected at
+  startup if set to zero or less.
 
 ### Added
 
