@@ -22,6 +22,9 @@ Aggregate boundaries chosen for this domain:
     all the data needed to compute them; no external service should
     recompute this from scratch).
   - MnemonicNote: small, independent aggregate root.
+  - Reminder: its own aggregate root. Holds only the *schedule* (when to
+    fire, how often, which group), never delivery preferences — those live
+    on RecallSettings and change independently of any single reminder.
   - RecallSettings: 1:1 with User, independent aggregate root (kept
     separate from User because it changes for different reasons and at a
     different rate than identity/auth data — divergent change avoidance).
@@ -29,10 +32,11 @@ Aggregate boundaries chosen for this domain:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
-from app.domain.exceptions import InvalidPlacementError, SessionAlreadyCompletedError
+from app.domain.exceptions import InvalidPlacementError, SessionAlreadyCompletedError, ValidationError
 from app.domain.value_objects import (
+    Recurrence,
     ReviewOutcome,
     ReviewState,
     SessionMode,
@@ -294,6 +298,61 @@ class MnemonicNote:
     @property
     def score(self) -> int:
         return self.upvotes - self.downvotes
+
+
+@dataclass(slots=True)
+class Reminder:
+    """A user's standing instruction to be prompted to review a group.
+
+    `trigger_time` is a wall-clock time of day, "HH:MM" or "HH:MM:SS", and is
+    interpreted in UTC — the same naive-UTC convention every other datetime in
+    this domain follows (see value_objects.utcnow). Per-user local time zones
+    would be a user-profile concern, not a reminder one, and are not modeled.
+
+    The entity knows *when* it should next fire but nothing about how jobs are
+    registered or how notifications are delivered: computing the next
+    occurrence is pure arithmetic that must stay testable without a scheduler.
+    """
+
+    id: int | None
+    user_id: int
+    group_id: int
+    trigger_time: str
+    recurrence: Recurrence
+    enabled: bool = True
+    created_at: datetime = field(default_factory=utcnow)
+
+    def enable(self) -> None:
+        self.enabled = True
+
+    def disable(self) -> None:
+        self.enabled = False
+
+    @property
+    def time_of_day(self) -> time:
+        parts = self.trigger_time.split(":")
+        if len(parts) not in (2, 3):
+            raise ValidationError(f"Reminder trigger time '{self.trigger_time}' is not HH:MM or HH:MM:SS")
+        try:
+            hour, minute = int(parts[0]), int(parts[1])
+            second = int(parts[2]) if len(parts) == 3 else 0
+            return time(hour=hour, minute=minute, second=second)
+        except ValueError as exc:
+            raise ValidationError(
+                f"Reminder trigger time '{self.trigger_time}' is not a valid time of day"
+            ) from exc
+
+    def next_occurrence(self, now: datetime) -> datetime:
+        """The next instant this reminder is due, strictly after `now`.
+
+        An exact hit on `now` rolls forward to the following day rather than
+        returning `now` itself, so a caller can never register a job whose run
+        time has already elapsed by the time it is added.
+        """
+        candidate = datetime.combine(now.date(), self.time_of_day)
+        if candidate <= now:
+            candidate += timedelta(days=1)
+        return candidate
 
 
 @dataclass(slots=True)
