@@ -11,7 +11,7 @@ from app.application.use_cases.reminders import (
     ScheduleReminderUseCase,
 )
 from app.config import Settings
-from app.domain.entities import Reminder, User
+from app.domain.entities import RecallSettings, Reminder, User
 from app.domain.services.reminder_scheduler import ReminderScheduler
 from app.domain.value_objects import Recurrence, UserRole, utcnow
 from app.infrastructure.reminders import ApSchedulerReminderScheduler, reminder_job_id
@@ -66,6 +66,14 @@ class _InMemoryUserRepository:
 
     def get_by_id(self, user_id):
         return self.rows.get(user_id)
+
+
+class _SingleUserSettingsRepository:
+    def __init__(self, settings: RecallSettings):
+        self.settings = settings
+
+    def get_by_user(self, user_id):
+        return self.settings
 
 
 class _RecordingReminderScheduler:
@@ -212,57 +220,23 @@ def test_scheduling_an_unsaved_reminder_is_rejected():
 
 
 # ---------------------------------------------------------------------------
-# Job body
-# ---------------------------------------------------------------------------
-
-
-def test_delivery_notifies_the_reminders_owner():
-    reminder = _reminder(id=1)
-    channel = _RecordingChannel()
-    use_case = DeliverReminderUseCase(
-        _InMemoryReminderRepository([reminder]), _InMemoryUserRepository([_user()]), channel
-    )
-
-    use_case.execute(1)
-
-    assert len(channel.calls) == 1
-    user, message, _ = channel.calls[0]
-    assert user.id == 1
-    assert message
-
-
-def test_delivery_skips_a_reminder_disabled_after_its_job_was_registered():
-    reminder = _reminder(id=1, enabled=False)
-    channel = _RecordingChannel()
-    use_case = DeliverReminderUseCase(
-        _InMemoryReminderRepository([reminder]), _InMemoryUserRepository([_user()]), channel
-    )
-
-    use_case.execute(1)
-
-    assert channel.calls == []
-
-
-def test_delivery_of_a_deleted_reminder_is_silently_skipped():
-    channel = _RecordingChannel()
-    use_case = DeliverReminderUseCase(
-        _InMemoryReminderRepository(), _InMemoryUserRepository([_user()]), channel
-    )
-
-    use_case.execute(404)
-
-    assert channel.calls == []
-
-
-# ---------------------------------------------------------------------------
-# End-to-end timing (the one test that uses the scheduler's real clock)
+# End-to-end timing (the one test that uses the scheduler's real clock).
+# The job body's own rules are covered in test_reminder_delivery.py.
 # ---------------------------------------------------------------------------
 
 
 def test_a_reminder_five_seconds_out_fires_and_notifies_exactly_once():
+    """Issue #25's stated verification. Settings permit exactly one channel,
+    so the notification port's call count measures nothing but how many times
+    the reminder fired — two deliveries would show up as two calls."""
     channel = _RecordingChannel()
     repo = _InMemoryReminderRepository()
-    deliver = DeliverReminderUseCase(repo, _InMemoryUserRepository([_user()]), channel)
+    settings = RecallSettings(
+        user_id=1, push_enabled=True, email_enabled=False, desktop_enabled=False, in_app_enabled=False
+    )
+    deliver = DeliverReminderUseCase(
+        repo, _InMemoryUserRepository([_user()]), _SingleUserSettingsRepository(settings), channel
+    )
 
     async def _run() -> None:
         scheduler = create_scheduler()
@@ -281,6 +255,7 @@ def test_a_reminder_five_seconds_out_fires_and_notifies_exactly_once():
     asyncio.run(_run())
 
     assert len(channel.calls) == 1
+    assert channel.calls[0][2] == "push"
 
 
 # ---------------------------------------------------------------------------

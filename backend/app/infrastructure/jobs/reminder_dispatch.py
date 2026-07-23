@@ -13,7 +13,11 @@ from sqlalchemy.orm import Session
 
 from app.application.use_cases.reminders import DeliverReminderUseCase
 from app.domain.services.notification_channel import NotificationChannel
-from app.infrastructure.repositories import SqlAlchemyReminderRepository, SqlAlchemyUserRepository
+from app.infrastructure.repositories import (
+    SqlAlchemyRecallSettingsRepository,
+    SqlAlchemyReminderRepository,
+    SqlAlchemyUserRepository,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +41,7 @@ class ReminderDispatcher:
             DeliverReminderUseCase(
                 SqlAlchemyReminderRepository(db),
                 SqlAlchemyUserRepository(db),
+                SqlAlchemyRecallSettingsRepository(db),
                 self.channel,
             ).execute(reminder_id)
         except Exception:  # noqa: BLE001 - a failed delivery must not kill the scheduler
