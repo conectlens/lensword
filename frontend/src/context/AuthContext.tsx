@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { ApiRequestError, authApi, getToken, setToken } from '../lib/api'
+import { ApiRequestError, authApi, getToken, hydrateToken, setToken } from '../lib/api'
 import type { User } from '../lib/types'
 
 interface AuthContextValue {
@@ -18,6 +18,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   async function refreshUser() {
+    // Load the token from its backing store (the OS credential store in the
+    // desktop shell, localStorage in the browser) before reading it. In the
+    // shell the token is not in localStorage, so skipping this would always see
+    // none and force a re-login on every launch.
+    await hydrateToken()
     if (!getToken()) {
       setUser(null)
       setLoading(false)
