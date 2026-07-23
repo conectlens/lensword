@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.deps import CurrentUser, MnemonicRepo, OptionalAIProvider, WordRepo
+from app.api.deps import CurrentUser, GroupRepo, MnemonicRepo, OptionalAIProvider, WordRepo
 from app.api.mappers import mnemonic_to_response
 from app.api.schemas.review import (
     MnemonicCreateRequest,
@@ -21,26 +21,47 @@ from app.domain.exceptions import (
     AIProviderNotConfiguredError,
     AIProviderUnavailableError,
     EntityNotFoundError,
+    PermissionDeniedError,
     ValidationError,
 )
 
 router = APIRouter(prefix="/api/v1/words/{word_id}/mnemonics", tags=["mnemolab"])
 
 
+def _handle_common_errors(exc: Exception):
+    if isinstance(exc, EntityNotFoundError):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    if isinstance(exc, PermissionDeniedError):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    raise exc
+
+
 @router.get("", response_model=list[MnemonicResponse])
-def list_mnemonics(word_id: int, current_user: CurrentUser, mnemonic_repo: MnemonicRepo) -> list[MnemonicResponse]:
-    notes = ListMnemonicsUseCase(mnemonic_repo).execute(word_id)
+def list_mnemonics(
+    word_id: int, current_user: CurrentUser, mnemonic_repo: MnemonicRepo, word_repo: WordRepo, group_repo: GroupRepo
+) -> list[MnemonicResponse]:
+    try:
+        notes = ListMnemonicsUseCase(mnemonic_repo, word_repo, group_repo).execute(current_user.id, word_id)
+    except (EntityNotFoundError, PermissionDeniedError) as exc:
+        _handle_common_errors(exc)
     return [mnemonic_to_response(n) for n in notes]
 
 
 @router.post("", response_model=MnemonicResponse, status_code=status.HTTP_201_CREATED)
 def add_mnemonic(
-    word_id: int, payload: MnemonicCreateRequest, current_user: CurrentUser, mnemonic_repo: MnemonicRepo, word_repo: WordRepo
+    word_id: int,
+    payload: MnemonicCreateRequest,
+    current_user: CurrentUser,
+    mnemonic_repo: MnemonicRepo,
+    word_repo: WordRepo,
+    group_repo: GroupRepo,
 ) -> MnemonicResponse:
     try:
-        note = AddMnemonicUseCase(mnemonic_repo, word_repo).execute(current_user.id, word_id, payload.text)
-    except EntityNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        note = AddMnemonicUseCase(mnemonic_repo, word_repo, group_repo).execute(
+            current_user.id, word_id, payload.text
+        )
+    except (EntityNotFoundError, PermissionDeniedError) as exc:
+        _handle_common_errors(exc)
     except ValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return mnemonic_to_response(note)
@@ -71,10 +92,18 @@ def suggest_mnemonic(
 
 @router.post("/{mnemonic_id}/vote", response_model=MnemonicResponse)
 def vote_mnemonic(
-    word_id: int, mnemonic_id: int, payload: MnemonicVoteRequest, current_user: CurrentUser, mnemonic_repo: MnemonicRepo
+    word_id: int,
+    mnemonic_id: int,
+    payload: MnemonicVoteRequest,
+    current_user: CurrentUser,
+    mnemonic_repo: MnemonicRepo,
+    word_repo: WordRepo,
+    group_repo: GroupRepo,
 ) -> MnemonicResponse:
     try:
-        note = VoteMnemonicUseCase(mnemonic_repo).execute(mnemonic_id, payload.upvote)
-    except EntityNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        note = VoteMnemonicUseCase(mnemonic_repo, word_repo, group_repo).execute(
+            current_user.id, word_id, mnemonic_id, payload.upvote
+        )
+    except (EntityNotFoundError, PermissionDeniedError) as exc:
+        _handle_common_errors(exc)
     return mnemonic_to_response(note)

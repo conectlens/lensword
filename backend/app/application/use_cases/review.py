@@ -9,7 +9,9 @@ from app.domain.exceptions import (
     PermissionDeniedError,
     ValidationError,
 )
+from app.application.use_cases.vocabulary import _require_word_owner
 from app.domain.repositories import (
+    GroupRepository,
     MnemonicRepository,
     ReviewSessionRepository,
     UserRepository,
@@ -116,25 +118,31 @@ class GetWeeklyProgressUseCase:
 
 
 class AddMnemonicUseCase:
-    def __init__(self, mnemonic_repo: MnemonicRepository, word_repo: WordRepository):
+    def __init__(
+        self, mnemonic_repo: MnemonicRepository, word_repo: WordRepository, group_repo: GroupRepository
+    ):
         self.mnemonic_repo = mnemonic_repo
         self.word_repo = word_repo
+        self.group_repo = group_repo
 
     def execute(self, user_id: int, word_id: int, text: str) -> MnemonicNote:
         if not text.strip():
             raise ValidationError("Mnemonic text cannot be empty")
-        word = self.word_repo.get_by_id(word_id)
-        if word is None:
-            raise EntityNotFoundError("Word", word_id)
+        _require_word_owner(self.word_repo, self.group_repo, word_id, user_id)
         note = MnemonicNote(id=None, word_id=word_id, author_id=user_id, text=text.strip())
         return self.mnemonic_repo.add(note)
 
 
 class ListMnemonicsUseCase:
-    def __init__(self, mnemonic_repo: MnemonicRepository):
+    def __init__(
+        self, mnemonic_repo: MnemonicRepository, word_repo: WordRepository, group_repo: GroupRepository
+    ):
         self.mnemonic_repo = mnemonic_repo
+        self.word_repo = word_repo
+        self.group_repo = group_repo
 
-    def execute(self, word_id: int) -> list[MnemonicNote]:
+    def execute(self, owner_id: int, word_id: int) -> list[MnemonicNote]:
+        _require_word_owner(self.word_repo, self.group_repo, word_id, owner_id)
         return self.mnemonic_repo.list_by_word(word_id)
 
 
@@ -169,12 +177,23 @@ class SuggestMnemonicUseCase:
 
 
 class VoteMnemonicUseCase:
-    def __init__(self, mnemonic_repo: MnemonicRepository):
+    def __init__(
+        self, mnemonic_repo: MnemonicRepository, word_repo: WordRepository, group_repo: GroupRepository
+    ):
         self.mnemonic_repo = mnemonic_repo
+        self.word_repo = word_repo
+        self.group_repo = group_repo
 
-    def execute(self, mnemonic_id: int, upvote: bool) -> MnemonicNote:
+    def execute(self, owner_id: int, word_id: int, mnemonic_id: int, upvote: bool) -> MnemonicNote:
+        _require_word_owner(self.word_repo, self.group_repo, word_id, owner_id)
         note = self.mnemonic_repo.get_by_id(mnemonic_id)
         if note is None:
+            raise EntityNotFoundError("MnemonicNote", mnemonic_id)
+        if note.word_id != word_id:
+            # Ownership was checked against the word in the path, so a
+            # mnemonic hanging off a different word has not been authorized
+            # by that check — pairing your own word_id with someone else's
+            # mnemonic_id must not slip through.
             raise EntityNotFoundError("MnemonicNote", mnemonic_id)
         note.upvote() if upvote else note.downvote()
         return self.mnemonic_repo.update(note)
