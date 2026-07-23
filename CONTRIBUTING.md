@@ -17,11 +17,15 @@ the project, the conventions used, and how to submit changes.
 
 ```bash
 cd backend
-python3 -m venv .venv
+python3.12 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 cp .env.example .env
 .venv/bin/uvicorn app.main:app --reload
 ```
+
+The interpreter is pinned to the version CI runs (see the matrix in
+`.github/workflows/ci.yml`). A newer `python3` will usually work for day-to-day
+development, but tests that pass on it are not evidence that CI will pass.
 
 API docs are served at `http://localhost:8000/docs` while running.
 
@@ -66,6 +70,20 @@ docker compose up --build
 
 These are the same checks CI runs — run whichever apply to your change before
 opening a pull request.
+
+To run all of them at once:
+
+```bash
+scripts/verify.sh
+```
+
+Every gate runs even after one fails, so a single run reports everything that
+is broken — the same way CI does, since its jobs run in parallel with
+`fail-fast: false`. Pass `--fail-fast` to stop at the first failure instead, or
+`--docker` to also build both images. The script exits non-zero if any gate
+fails, and prints a per-gate summary either way.
+
+To run a single check directly:
 
 ```bash
 # Backend

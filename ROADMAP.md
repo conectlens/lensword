@@ -87,9 +87,9 @@ depends on this.
 
 ## Phase 5 — Documentation
 
-- [ ] **5.0** This file. *(Shipped)*
-- [ ] **5.1** Update README's AI/notification disclaimers once Phases 1–2
-      ship. *(Planned)*
+- [x] **5.0** This file. *(Shipped)*
+- [x] **5.1** Update README's AI/notification disclaimers once Phases 1–2
+      ship. *(Shipped)*
 - [ ] **5.2** Add a "Desktop" section to README once Phase 3 ships.
       *(Planned)*
 - [ ] **5.3** Add a hosted-deployment section to README once Phase 4 ships.

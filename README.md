@@ -78,11 +78,14 @@ features/      one folder per bounded context (auth, groups, rooms, review, ...)
   pretending to call a provider. See
   [Optional: local AI mnemonic suggestions](#optional-local-ai-mnemonic-suggestions-ollama).
   Image generation is still not implemented — no image provider is wired up.
-- **Notification delivery is configured but not dispatched.** Recall settings
-  (channels, quiet hours, triggers) persist for real. Actually sending a push,
-  email, or desktop notification on a schedule needs a credentialed provider and
-  a background scheduler, neither of which exists here — the settings page says
-  so rather than silently no-op'ing.
+- **Reminders are scheduled and delivered; no user-facing channel receives them
+  yet.** Recall settings (channels, quiet hours, triggers) persist for real, a
+  background scheduler registers each reminder and fires it at the configured
+  time on the account's own clock, and those settings gate the delivery before
+  it reaches the notification port. What is missing is a credentialed provider
+  behind that port: the only adapter writes the message to the application log,
+  so nothing arrives as a push, email, or desktop notification. The settings
+  page says so rather than silently no-op'ing.
 
 ## Running it
 
