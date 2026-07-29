@@ -10,6 +10,7 @@
 //! Tauri wiring.
 
 mod credential;
+mod mcp;
 
 use lensword_api_config::{read_endpoint_file, resolve, ApiConfig};
 use tauri::Manager;
@@ -53,11 +54,18 @@ fn get_api_config(app: tauri::AppHandle) -> Result<ApiConfig, String> {
 
 pub fn run() {
     tauri::Builder::default()
+        .manage(mcp::McpState::default())
         .invoke_handler(tauri::generate_handler![
             get_api_config,
             credential::credential_get,
             credential::credential_set,
             credential::credential_clear,
+            mcp::mcp_server_list,
+            mcp::mcp_server_save,
+            mcp::mcp_server_delete,
+            mcp::mcp_server_connect,
+            mcp::mcp_server_disconnect,
+            mcp::mcp_server_invoke,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start the LensWord desktop shell");
