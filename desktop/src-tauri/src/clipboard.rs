@@ -9,21 +9,12 @@ use std::{
 };
 use tauri::State;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClipboardConfig {
     pub enabled: bool,
     pub paused: bool,
     pub blocked_apps: Vec<String>,
-}
-impl Default for ClipboardConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            paused: false,
-            blocked_apps: vec![],
-        }
-    }
 }
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
