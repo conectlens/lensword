@@ -266,3 +266,14 @@ class MCPAuditEventModel(Base):
     previous_hash: Mapped[str] = mapped_column(String(64))
     event_hash: Mapped[str] = mapped_column(String(64), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class MCPIdempotencyKeyModel(Base):
+    __tablename__ = "mcp_idempotency_keys"
+    __table_args__ = (UniqueConstraint("requester", "request_id", name="uq_mcp_requester_request_id"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    requester: Mapped[str] = mapped_column(String(255), index=True)
+    request_id: Mapped[str] = mapped_column(String(128))
+    tool: Mapped[str] = mapped_column(String(255))
+    response: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
