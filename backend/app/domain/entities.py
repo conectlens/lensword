@@ -394,8 +394,38 @@ class RecallSettings:
     in_app_enabled: bool = True
     quiet_hours_start: str | None = None
     quiet_hours_end: str | None = None
+    # Kept with the user's review preferences so every answer in a session
+    # uses the same algorithm.  New accounts retain the established SM-2
+    # behaviour until they explicitly opt into FSRS.
+    scheduler: str = "sm2"
 
     def set_intensity(self, level: int) -> None:
         if not (1 <= level <= 5):
             raise InvalidPlacementError("Intensity must be between 1 and 5")
         self.intensity = level
+
+
+@dataclass(slots=True)
+class PracticeExercise:
+    """A generated, answerable practice item tied to one vocabulary word."""
+
+    id: int | None
+    user_id: int
+    word_id: int
+    kind: str
+    prompt: str
+    answer: str
+    options: list[str] = field(default_factory=list)
+    answered: bool = False
+    correct: bool | None = None
+    created_at: datetime = field(default_factory=utcnow)
+
+
+@dataclass(slots=True)
+class DailySessionPreference:
+    """A user's lightweight daily practice target and queue size."""
+
+    user_id: int
+    enabled: bool = True
+    goal_minutes: int = 10
+    review_limit: int = 20

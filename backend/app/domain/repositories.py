@@ -18,6 +18,8 @@ from app.domain.entities import (
     Group,
     MnemonicNote,
     RecallSettings,
+    DailySessionPreference,
+    PracticeExercise,
     Reminder,
     ReviewSession,
     Room,
@@ -94,3 +96,14 @@ class ReminderRepository(Protocol):
 class RecallSettingsRepository(Protocol):
     def get_by_user(self, user_id: int) -> RecallSettings | None: ...
     def upsert(self, settings: RecallSettings) -> RecallSettings: ...
+
+
+class DailySessionPreferenceRepository(Protocol):
+    def get_by_user(self, user_id: int) -> DailySessionPreference | None: ...
+    def upsert(self, preference: DailySessionPreference) -> DailySessionPreference: ...
+
+
+class PracticeExerciseRepository(Protocol):
+    def get_by_id(self, exercise_id: int) -> PracticeExercise | None: ...
+    def add(self, exercise: PracticeExercise) -> PracticeExercise: ...
+    def update(self, exercise: PracticeExercise) -> PracticeExercise: ...

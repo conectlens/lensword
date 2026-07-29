@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { groupsApi, reviewApi } from '../../lib/api'
-import type { Group } from '../../lib/types'
+import { groupsApi, practiceApi, reviewApi } from '../../lib/api'
+import type { DailySession, Group } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { Icon } from '../../components/ui/Icon'
@@ -16,13 +16,15 @@ export function DashboardPage() {
   const navigate = useNavigate()
   const [groups, setGroups] = useState<Group[] | null>(null)
   const [weekly, setWeekly] = useState<Record<string, number> | null>(null)
+  const [daily, setDaily] = useState<DailySession | null>(null)
 
   useEffect(() => {
     groupsApi.list().then(setGroups)
     reviewApi.weeklyProgress().then((r) => setWeekly(r.counts_by_day))
+    practiceApi.dailySession().then(setDaily)
   }, [])
 
-  if (!groups || !weekly) return <Spinner />
+  if (!groups || !weekly || !daily) return <Spinner />
 
   const dueCount = groups.reduce((sum, g) => sum + g.due_count, 0)
   const totalWords = groups.reduce((sum, g) => sum + g.word_count, 0)
@@ -64,6 +66,12 @@ export function DashboardPage() {
                 )}
               </div>
             </div>
+          </Card>
+
+          <Card className="p-6">
+            <p className="font-display text-lg font-bold text-white">Today&apos;s session</p>
+            <p className="mt-1 text-sm text-white/60">Aim for {daily.goal_minutes} minutes. {daily.due_count} review items are ready in your daily queue.</p>
+            <Button className="mt-4" size="sm" onClick={startQuickReview} disabled={!daily.enabled || daily.due_count === 0}>Start daily session</Button>
           </Card>
 
           <Card className="p-6">

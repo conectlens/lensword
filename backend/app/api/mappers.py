@@ -12,6 +12,7 @@ from app.api.schemas.vocabulary import (
 )
 from app.application.use_cases.vocabulary import GroupSummary, RoomSummary
 from app.domain.entities import MnemonicNote, Room, Word
+from app.domain.services.spaced_repetition import FSRSScheduler
 
 
 def word_to_response(word: Word) -> WordResponse:
@@ -44,6 +45,7 @@ def word_to_response(word: Word) -> WordResponse:
             due_at=word.review_state.due_at,
             last_reviewed_at=word.review_state.last_reviewed_at,
             status=word.review_state.status,
+            fsrs_retrievability=FSRSScheduler.retrievability(word.review_state),
         ),
         created_at=word.created_at,
     )

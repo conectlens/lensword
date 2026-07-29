@@ -33,6 +33,7 @@ class ReviewStateResponse(BaseModel):
     due_at: datetime
     last_reviewed_at: datetime | None
     status: WordStatus
+    fsrs_retrievability: float | None = None
 
 
 class WordResponse(BaseModel):

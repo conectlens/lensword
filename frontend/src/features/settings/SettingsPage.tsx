@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
-import { aiSettingsApi, settingsApi } from '../../lib/api'
-import type { AISettings, RecallSettings } from '../../lib/types'
+import { aiSettingsApi, practiceApi, settingsApi } from '../../lib/api'
+import type { AISettings, DailySession, RecallSettings } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { Icon } from '../../components/ui/Icon'
@@ -15,9 +15,11 @@ export function SettingsPage() {
   const [settings, setSettings] = useState<RecallSettings | null>(null)
   const [saved, setSaved] = useState(false)
   const [aiSettings, setAiSettings] = useState<AISettings | null>(null)
+  const [dailySession, setDailySession] = useState<DailySession | null>(null)
 
   useEffect(() => {
     settingsApi.getRecallSettings().then(setSettings)
+    practiceApi.dailySession().then(setDailySession)
     if (user?.role === 'admin') aiSettingsApi.get().then(setAiSettings).catch(() => setAiSettings(null))
   }, [user?.role])
 
@@ -53,6 +55,19 @@ export function SettingsPage() {
         </div>
       </Card>
 
+      {dailySession && <Card className="p-6">
+        <div className="flex items-center justify-between">
+          <div><h2 className="font-display text-lg font-bold text-white">Daily practice session</h2><p className="text-sm text-white/50">Set a realistic daily target for your adaptive review queue.</p></div>
+          <Toggle checked={dailySession.enabled} onChange={async (enabled) => setDailySession(await practiceApi.updateDailySession({ ...dailySession, enabled }))} />
+        </div>
+        <label className="mt-4 flex flex-col gap-1 text-sm text-white/70">Daily goal (minutes)
+          <input aria-label="Daily goal minutes" type="number" min={1} max={180} value={dailySession.goal_minutes} onChange={async (event) => setDailySession(await practiceApi.updateDailySession({ ...dailySession, goal_minutes: Number(event.target.value) }))} className="rounded-lg bg-white/5 px-3 py-2 text-white" />
+        </label>
+        <label className="mt-4 flex flex-col gap-1 text-sm text-white/70">Daily review limit
+          <input aria-label="Daily review limit" type="number" min={1} max={100} value={dailySession.review_limit} onChange={async (event) => setDailySession(await practiceApi.updateDailySession({ ...dailySession, review_limit: Number(event.target.value) }))} className="rounded-lg bg-white/5 px-3 py-2 text-white" />
+        </label>
+      </Card>}
+
       {user?.role === 'admin' && aiSettings && (
         <AISettingsCard
           settings={aiSettings}
@@ -84,6 +99,20 @@ export function SettingsPage() {
             <span>Intense</span>
           </div>
         </div>
+
+        <label className="mb-4 flex flex-col gap-1 text-sm text-white/70">
+          Review scheduler
+          <select
+            aria-label="Review scheduler"
+            value={settings.scheduler}
+            onChange={(event) => patch({ scheduler: event.target.value as RecallSettings['scheduler'] })}
+            className="rounded-lg bg-white/5 px-3 py-2 text-white"
+          >
+            <option value="sm2">SM-2 (classic)</option>
+            <option value="fsrs">FSRS (adaptive)</option>
+          </select>
+          <span className="text-xs text-white/40">FSRS schedules each next review from its estimated retrievability.</span>
+        </label>
 
         <div className="flex flex-col divide-y divide-white/10">
           <ToggleRow
