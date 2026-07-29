@@ -9,6 +9,7 @@
 //! exercised without a webview toolchain. What remains in this file is the
 //! Tauri wiring.
 
+mod clipboard;
 mod credential;
 mod mcp;
 
@@ -55,11 +56,15 @@ fn get_api_config(app: tauri::AppHandle) -> Result<ApiConfig, String> {
 pub fn run() {
     tauri::Builder::default()
         .manage(mcp::McpState::default())
+        .manage(clipboard::ClipboardState::default())
         .invoke_handler(tauri::generate_handler![
             get_api_config,
             credential::credential_get,
             credential::credential_set,
             credential::credential_clear,
+            clipboard::clipboard_configure,
+            clipboard::clipboard_status,
+            clipboard::clipboard_capture,
             mcp::mcp_server_list,
             mcp::mcp_server_save,
             mcp::mcp_server_delete,
