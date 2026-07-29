@@ -4,7 +4,9 @@ from typing import Any
 from app.api.mappers import word_to_response
 from app.application.use_cases.vocabulary import AddWordUseCase, WordInput
 from app.application.use_cases.review import GetWeeklyProgressUseCase
-from app.domain.repositories import GroupRepository, WordRepository
+from app.application.use_cases.practice import GenerateExerciseUseCase
+from app.application.use_cases.vocabulary import _require_word_owner
+from app.domain.repositories import GroupRepository, PracticeExerciseRepository, WordRepository
 from app.domain.repositories import ReviewSessionRepository
 from app.domain.value_objects import SupportedLanguage
 
@@ -34,4 +36,12 @@ def due_reviews_handler(words: WordRepository):
 def learning_progress_handler(sessions: ReviewSessionRepository):
     def handle(user_id: int, _payload: dict[str, Any]) -> dict[str, Any]:
         return {"weekly_counts": GetWeeklyProgressUseCase(sessions).execute(user_id)}
+    return handle
+
+
+def generate_exercises_handler(exercises: PracticeExerciseRepository, words: WordRepository, groups: GroupRepository):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        word = _require_word_owner(words, groups, int(payload["word_id"]), user_id)
+        exercise = GenerateExerciseUseCase(exercises, words).execute(user_id, word, str(payload.get("kind", "translation")))
+        return {"id": exercise.id, "word_id": exercise.word_id, "kind": exercise.kind, "prompt": exercise.prompt, "options": exercise.options}
     return handle
