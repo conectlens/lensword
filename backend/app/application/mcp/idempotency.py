@@ -12,21 +12,25 @@ class IdempotencyStore:
     def __init__(self, db: Session):
         self.db = db
 
-    def replay(self, requester: str, request_id: str) -> dict | None:
+    def replay(self, requester: str, request_id: str, tool: str) -> dict | None:
         item = self.db.query(MCPIdempotencyKeyModel).filter_by(requester=requester, request_id=request_id).one_or_none()
+        if item is not None and item.tool != tool:
+            raise ValueError("request_id was already used for another MCP tool")
         return item.response if item else None
 
     def record(self, requester: str, request_id: str, tool: str, response: dict, now: datetime) -> dict:
         item = MCPIdempotencyKeyModel(
             requester=requester, request_id=request_id, tool=tool, response=response, created_at=now
         )
-        self.db.add(item)
         try:
-            self.db.flush()
+            # A duplicate request must not roll back the caller's surrounding
+            # audit/grant transaction. Restrict its race recovery to a savepoint.
+            with self.db.begin_nested():
+                self.db.add(item)
+                self.db.flush()
             return response
         except IntegrityError:
-            self.db.rollback()
-            replay = self.replay(requester, request_id)
+            replay = self.replay(requester, request_id, tool)
             if replay is None:
                 raise
             return replay

@@ -36,3 +36,43 @@ TOOL_CONTRACTS = tuple(ToolContract(name, f"https://lensword.app/mcp/{CONTRACT_V
 
 def capabilities() -> dict:
     return {"version": CONTRACT_VERSION, "compatibility": "minor versions are additive; major versions require explicit client opt-in", "tools": [{"name": tool.name, "schema_id": tool.schema_id, "access": tool.access.value, "input_schema": tool.input_schema, "errors": tool.errors} for tool in TOOL_CONTRACTS]}
+
+
+def validate_payload(contract: ToolContract, payload: dict) -> str | None:
+    """Validate the bounded JSON-schema subset used by MCP contracts.
+
+    Keeping this small validator beside the registry makes contract enforcement
+    available without accepting arbitrary schema features or adding a second
+    dynamic execution surface. It deliberately fails closed on every unknown
+    property and malformed primitive.
+    """
+    schema = contract.input_schema
+    if not isinstance(payload, dict):
+        return "payload must be an object"
+    properties = schema["properties"]
+    unknown = set(payload) - set(properties)
+    if unknown:
+        return f"unsupported payload field: {sorted(unknown)[0]}"
+    missing = [name for name in schema.get("required", []) if name not in payload]
+    if missing:
+        return f"missing required payload field: {missing[0]}"
+    for name, value in payload.items():
+        rules = properties[name]
+        if "enum" in rules and value not in rules["enum"]:
+            return f"invalid value for {name}"
+        expected = rules.get("type")
+        if expected == "string":
+            if not isinstance(value, str): return f"{name} must be a string"
+            if len(value) < rules.get("minLength", 0) or len(value) > rules.get("maxLength", float("inf")):
+                return f"{name} has an invalid length"
+        elif expected == "integer" and (not isinstance(value, int) or isinstance(value, bool)):
+            return f"{name} must be an integer"
+        elif expected == "integer" and not rules.get("minimum", float("-inf")) <= value <= rules.get("maximum", float("inf")):
+            return f"{name} is out of range"
+        elif expected == "array":
+            if not isinstance(value, list): return f"{name} must be an array"
+            if len(value) > rules.get("maxItems", float("inf")): return f"{name} has too many items"
+            item_rules = rules.get("items", {})
+            if item_rules.get("type") == "string" and any(not isinstance(item, str) or len(item) > item_rules.get("maxLength", float("inf")) for item in value):
+                return f"{name} contains an invalid item"
+    return None
