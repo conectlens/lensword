@@ -240,3 +240,29 @@ class WeeklyLearningReportModel(Base):
     snapshot: Mapped[dict] = mapped_column(JSON)
     narration: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class MCPGrantModel(Base):
+    __tablename__ = "mcp_grants"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    requester: Mapped[str] = mapped_column(String(255), index=True)
+    server: Mapped[str] = mapped_column(String(255))
+    tool: Mapped[str] = mapped_column(String(255))
+    access: Mapped[str] = mapped_column(String(32))
+    workspace: Mapped[str] = mapped_column(String(1024))
+    mode: Mapped[str] = mapped_column(String(16))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class MCPAuditEventModel(Base):
+    __tablename__ = "mcp_audit_events"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    requester: Mapped[str] = mapped_column(String(255), index=True)
+    tool: Mapped[str] = mapped_column(String(255))
+    decision: Mapped[str] = mapped_column(String(64))
+    event: Mapped[dict] = mapped_column(JSON)
+    previous_hash: Mapped[str] = mapped_column(String(64))
+    event_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
