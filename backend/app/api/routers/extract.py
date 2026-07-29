@@ -36,6 +36,7 @@ async def extract_vocabulary(
             payload.source_language,
             payload.target_language,
             payload.max_items,
+            payload.min_level,
         )
     except EntityNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
@@ -47,5 +48,5 @@ async def extract_vocabulary(
         return ExtractVocabularyUnavailable(detail=str(exc))
     return ExtractVocabularyOk(
         source=source,
-        items=[ExtractedVocabularyResponse(term=item.term, translations=item.translations, examples=item.examples) for item in items],
+        items=[ExtractedVocabularyResponse(term=item.term, translations=item.translations, examples=item.examples, cefr_level=item.cefr_level) for item in items],
     )

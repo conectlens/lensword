@@ -28,6 +28,7 @@ class ExtractVocabularyUseCase:
         source_language: str | None,
         target_language: str,
         max_items: int,
+        min_level: str | None = None,
     ) -> tuple[list[ExtractedVocabulary], str]:
         group = self.group_repo.get_by_id(group_id)
         if group is None:
@@ -36,13 +37,19 @@ class ExtractVocabularyUseCase:
             raise PermissionDeniedError("This group belongs to another account")
 
         if self.provider is not None:
-            return (
-                await self.provider.extract_vocabulary(text, source_language, target_language, max_items),
-                "ai",
-            )
+            items = await self.provider.extract_vocabulary(text, source_language, target_language, max_items)
+            return self._filter_level(items, min_level, max_items), "ai"
         if not self.fallback_enabled:
             raise AIProviderNotConfiguredError()
         return self._fallback(text, max_items), "fallback"
+
+    @staticmethod
+    def _filter_level(items: list[ExtractedVocabulary], min_level: str | None, max_items: int) -> list[ExtractedVocabulary]:
+        if min_level is None:
+            return items[:max_items]
+        ranks = {level: index for index, level in enumerate(("A1", "A2", "B1", "B2", "C1", "C2"))}
+        minimum = ranks[min_level]
+        return [item for item in items if item.cefr_level is None or ranks.get(item.cefr_level.upper(), minimum) >= minimum][:max_items]
 
     @staticmethod
     def _fallback(text: str, max_items: int) -> list[ExtractedVocabulary]:

@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { groupsApi, wordsApi } from '../../lib/api'
-import type { Group, Word } from '../../lib/types'
+import { aiVocabularyApi, groupsApi, wordsApi } from '../../lib/api'
+import type { Group, Word, WordEnrichment } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Icon } from '../../components/ui/Icon'
 import { Spinner } from '../../components/ui/Spinner'
 import { StatusChip } from '../../components/ui/StatusChip'
+import { Modal } from '../../components/ui/Modal'
 
 export function GroupDetailPage() {
   const { groupId } = useParams()
@@ -15,6 +16,10 @@ export function GroupDetailPage() {
   const [group, setGroup] = useState<Group | null>(null)
   const [words, setWords] = useState<Word[] | null>(null)
   const [sortBy, setSortBy] = useState<'strength' | 'term' | 'next_review'>('strength')
+  const [aiTerm, setAiTerm] = useState('')
+  const [enrichment, setEnrichment] = useState<WordEnrichment | null>(null)
+  const [aiError, setAiError] = useState<string | null>(null)
+  const [aiLoading, setAiLoading] = useState(false)
 
   function load() {
     if (!groupId) return
@@ -25,6 +30,7 @@ export function GroupDetailPage() {
   useEffect(load, [groupId])
 
   if (!group || !words) return <Spinner />
+  const currentGroup = group
 
   const sorted = [...words].sort((a, b) => {
     if (sortBy === 'term') return a.term.localeCompare(b.term)
@@ -42,6 +48,43 @@ export function GroupDetailPage() {
     load()
   }
 
+  async function enrich() {
+    if (!aiTerm.trim()) return
+    setAiLoading(true)
+    setAiError(null)
+    try {
+      setEnrichment(await aiVocabularyApi.enrich(aiTerm.trim(), null, currentGroup.target_language))
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : 'AI enrichment failed')
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  async function saveEnrichment() {
+    if (!enrichment) return
+    await groupsApi.addWord(currentGroup.id, {
+      term: enrichment.term,
+      target_language: currentGroup.target_language,
+      translations: enrichment.translations,
+      example_sentence: enrichment.examples[0] ?? null,
+      mnemonic: enrichment.mnemonic,
+      category: enrichment.category,
+      definition: enrichment.definitions[0] ?? null,
+      part_of_speech: enrichment.part_of_speech,
+      cefr_level: enrichment.cefr_level,
+      pronunciation: enrichment.pronunciation,
+      collocations: enrichment.collocations,
+      tags: enrichment.tags,
+      ai_confidence: enrichment.confidence,
+      ai_provider: enrichment.provider,
+      ai_model: enrichment.model,
+    })
+    setEnrichment(null)
+    setAiTerm('')
+    load()
+  }
+
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -50,6 +93,15 @@ export function GroupDetailPage() {
           <p className="text-white/50">{group.target_language} · Group details and vocabulary list</p>
         </div>
         <div className="flex gap-3">
+          <Button variant="secondary" icon="auto_awesome" onClick={() => setEnrichment({} as WordEnrichment)}>
+            Create with AI
+          </Button>
+          <Button variant="secondary" icon="text_snippet" onClick={() => navigate(`/groups/${group.id}/extract`)}>
+            Extract text
+          </Button>
+          <Button variant="secondary" icon="upload_file" onClick={() => navigate(`/groups/${group.id}/import`)}>
+            Import
+          </Button>
           <Button variant="secondary" icon="add" onClick={() => navigate(`/groups/${group.id}/words/new`)}>
             Add word
           </Button>
@@ -143,6 +195,33 @@ export function GroupDetailPage() {
             </table>
           </div>
         </Card>
+      )}
+      {enrichment && (
+        <Modal title="Create word with AI" onClose={() => { setEnrichment(null); setAiError(null) }}>
+          <div className="flex flex-col gap-4">
+            {!enrichment.term ? (
+              <>
+                <label className="text-sm text-white/70">Word to enrich
+                  <input autoFocus value={aiTerm} onChange={(e) => setAiTerm(e.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 p-3 text-white" />
+                </label>
+                <p className="text-xs text-white/50">The generated card will be tailored for {group.target_language}.</p>
+                {aiError && <p className="text-sm text-red-300">{aiError}</p>}
+                <Button onClick={enrich} loading={aiLoading} disabled={!aiTerm.trim()}>Enrich word</Button>
+              </>
+            ) : (
+              <>
+                <div className="rounded-lg bg-white/5 p-4 text-sm text-white/80">
+                  <p className="font-bold text-white">{enrichment.term}</p>
+                  <p>{enrichment.translations.join(', ') || 'No translation generated'}</p>
+                  {enrichment.definitions[0] && <p className="mt-2 text-white/60">{enrichment.definitions[0]}</p>}
+                  <p className="mt-2 text-xs text-white/40">{enrichment.provider} · {enrichment.model}</p>
+                </div>
+                <Button onClick={saveEnrichment}>Save enriched card</Button>
+                <Button variant="ghost" onClick={() => setEnrichment({} as WordEnrichment)}>Try another word</Button>
+              </>
+            )}
+          </div>
+        </Modal>
       )}
     </div>
   )

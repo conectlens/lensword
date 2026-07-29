@@ -112,6 +112,15 @@ class WordInput:
     example_sentence: str | None = None
     mnemonic: str | None = None
     category: str | None = None
+    definition: str | None = None
+    part_of_speech: str | None = None
+    cefr_level: str | None = None
+    pronunciation: str | None = None
+    collocations: list[str] | None = None
+    tags: list[str] | None = None
+    ai_confidence: float | None = None
+    ai_provider: str | None = None
+    ai_model: str | None = None
 
 
 class AddWordUseCase:
@@ -128,6 +137,15 @@ class AddWordUseCase:
             target_language=data.target_language,
             example_sentence=data.example_sentence,
             category=data.category,
+            definition=data.definition,
+            part_of_speech=data.part_of_speech,
+            cefr_level=data.cefr_level,
+            pronunciation=data.pronunciation,
+            collocations=list(data.collocations or []),
+            tags=list(data.tags or []),
+            ai_confidence=data.ai_confidence,
+            ai_provider=data.ai_provider,
+            ai_model=data.ai_model,
         )
         for t in data.translations:
             word.add_translation(t)
@@ -150,6 +168,15 @@ class UpdateWordUseCase:
         word.example_sentence = data.example_sentence
         word.set_mnemonic(data.mnemonic)
         word.category = data.category
+        if data.definition is not None: word.definition = data.definition
+        if data.part_of_speech is not None: word.part_of_speech = data.part_of_speech
+        if data.cefr_level is not None: word.cefr_level = data.cefr_level
+        if data.pronunciation is not None: word.pronunciation = data.pronunciation
+        if data.collocations is not None: word.collocations = list(data.collocations)
+        if data.tags is not None: word.tags = list(data.tags)
+        if data.ai_confidence is not None: word.ai_confidence = data.ai_confidence
+        if data.ai_provider is not None: word.ai_provider = data.ai_provider
+        if data.ai_model is not None: word.ai_model = data.ai_model
         return self.word_repo.update(word)
 
 

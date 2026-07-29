@@ -128,6 +128,15 @@ class Word:
     example_sentence: str | None = None
     mnemonic: str | None = None
     category: str | None = None
+    definition: str | None = None
+    part_of_speech: str | None = None
+    cefr_level: str | None = None
+    pronunciation: str | None = None
+    collocations: list[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
+    ai_confidence: float | None = None
+    ai_provider: str | None = None
+    ai_model: str | None = None
     synonyms: list[str] = field(default_factory=list)
     antonyms: list[str] = field(default_factory=list)
     topics: list[str] = field(default_factory=list)
