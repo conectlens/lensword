@@ -227,3 +227,16 @@ class DailySessionPreferenceModel(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     goal_minutes: Mapped[int] = mapped_column(Integer, default=10)
     review_limit: Mapped[int] = mapped_column(Integer, default=20)
+
+
+class WeeklyLearningReportModel(Base):
+    __tablename__ = "weekly_learning_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    week_start: Mapped[datetime] = mapped_column(DateTime)
+    week_end: Mapped[datetime] = mapped_column(DateTime)
+    time_zone: Mapped[str] = mapped_column(String(64))
+    snapshot: Mapped[dict] = mapped_column(JSON)
+    narration: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)

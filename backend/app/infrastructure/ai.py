@@ -376,6 +376,13 @@ class OllamaProvider:
             )
             feedback = payload.get("feedback")
             return feedback.strip() if isinstance(feedback, str) else ""
+        if field == "weekly_report":
+            payload = await self._json_generation(
+                "Return JSON only with a concise `feedback` learning summary. Use only the supplied factual snapshot; never invent numbers or events.",
+                f"{DATA_BLOCK_BEGIN}\nsnapshot: {_as_data(context or '', self._context_max_chars)}\n{DATA_BLOCK_END}",
+            )
+            feedback = payload.get("feedback")
+            return feedback.strip() if isinstance(feedback, str) else ""
         result = await self.enrich_word(term, source_language, target_language)
         values = {
             "example": result.examples, "mnemonic": [result.mnemonic or ""], "definition": result.definitions,
