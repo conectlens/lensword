@@ -16,6 +16,8 @@ import { SettingsPage } from './features/settings/SettingsPage'
 import { AdminPage } from './features/admin/AdminPage'
 import { LandingPage } from './features/marketing/LandingPage'
 import { OnboardingPage } from './features/marketing/OnboardingPage'
+import { ExtractPage } from './features/extract/ExtractPage'
+import { ImportPage } from './features/import/ImportPage'
 
 export default function App() {
   return (
@@ -31,6 +33,8 @@ export default function App() {
       <Route path="/groups/:groupId" element={<ProtectedRoute><GroupDetailPage /></ProtectedRoute>} />
       <Route path="/groups/:groupId/words/new" element={<ProtectedRoute><WordFormPage /></ProtectedRoute>} />
       <Route path="/groups/:groupId/words/:wordId" element={<ProtectedRoute><WordFormPage /></ProtectedRoute>} />
+      <Route path="/groups/:groupId/extract" element={<ProtectedRoute><ExtractPage /></ProtectedRoute>} />
+      <Route path="/groups/:groupId/import" element={<ProtectedRoute><ImportPage /></ProtectedRoute>} />
 
       <Route path="/rooms" element={<ProtectedRoute><RoomsPage /></ProtectedRoute>} />
       <Route path="/rooms/:roomId" element={<ProtectedRoute><RoomDetailPage /></ProtectedRoute>} />

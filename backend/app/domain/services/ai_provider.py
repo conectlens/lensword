@@ -24,6 +24,28 @@ class ExtractedVocabulary:
     term: str
     translations: list[str] = field(default_factory=list)
     examples: list[str] = field(default_factory=list)
+    cefr_level: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class WordEnrichment:
+    term: str
+    target_language: str
+    translations: list[str] = field(default_factory=list)
+    definitions: list[str] = field(default_factory=list)
+    part_of_speech: str | None = None
+    cefr_level: str | None = None
+    pronunciation: str | None = None
+    examples: list[str] = field(default_factory=list)
+    synonyms: list[str] = field(default_factory=list)
+    antonyms: list[str] = field(default_factory=list)
+    collocations: list[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
+    mnemonic: str | None = None
+    category: str | None = None
+    confidence: float | None = None
+    provider: str = "unknown"
+    model: str = "unknown"
 
 
 class AIProvider(Protocol):
@@ -41,3 +63,15 @@ class AIProvider(Protocol):
     async def extract_vocabulary(
         self, text: str, source_language: str | None, target_language: str, max_items: int
     ) -> list[ExtractedVocabulary]: ...
+
+    async def enrich_word(
+        self, term: str, source_language: str | None, target_language: str
+    ) -> WordEnrichment: ...
+
+    async def translate_in_context(
+        self, word: str, sentence: str, source_language: str | None, target_language: str
+    ) -> WordEnrichment: ...
+
+    async def generate_field(
+        self, field: str, term: str, source_language: str | None, target_language: str, context: str | None = None
+    ) -> str: ...

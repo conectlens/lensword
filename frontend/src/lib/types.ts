@@ -46,11 +46,40 @@ export interface Word {
   example_sentence: string | null
   mnemonic: string | null
   category: string | null
+  definition: string | null
+  part_of_speech: string | null
+  cefr_level: string | null
+  pronunciation: string | null
+  collocations: string[]
+  tags: string[]
+  ai_confidence: number | null
+  ai_provider: string | null
+  ai_model: string | null
   synonyms: string[]
   antonyms: string[]
   topics: string[]
   review_state: ReviewState
   created_at: string
+}
+
+export interface WordEnrichment {
+  term: string
+  target_language: string
+  translations: string[]
+  definitions: string[]
+  part_of_speech: string | null
+  cefr_level: string | null
+  pronunciation: string | null
+  examples: string[]
+  synonyms: string[]
+  antonyms: string[]
+  collocations: string[]
+  tags: string[]
+  mnemonic: string | null
+  category: string | null
+  confidence: number | null
+  provider: string
+  model: string
 }
 
 export interface Group {

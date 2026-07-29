@@ -1,6 +1,6 @@
 import type {
   AdminStats, Group, MnemonicNote, ProfileOverview, RecallSettings, Room,
-  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings,
+  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment,
 } from './types'
 import { resolveApiBase } from './runtimeConfig'
 
@@ -66,6 +66,47 @@ export interface WordInput {
   example_sentence?: string | null
   mnemonic?: string | null
   category?: string | null
+  definition?: string | null
+  part_of_speech?: string | null
+  cefr_level?: string | null
+  pronunciation?: string | null
+  collocations?: string[]
+  tags?: string[]
+  ai_confidence?: number | null
+  ai_provider?: string | null
+  ai_model?: string | null
+}
+
+export const aiVocabularyApi = {
+  enrich: (term: string, source_language: string | null, target_language: string) =>
+    request<WordEnrichment>('/api/v1/ai/enrich', { method: 'POST', body: JSON.stringify({ term, source_language, target_language }) }),
+  translateInContext: (word: string, sentence: string, source_language: string | null, target_language: string) =>
+    request<WordEnrichment>('/api/v1/ai/translate-in-context', { method: 'POST', body: JSON.stringify({ word, sentence, source_language, target_language }) }),
+  regenerateField: (field: 'example' | 'mnemonic' | 'definition' | 'translation', term: string, target_language: string) =>
+    request<{ field: string; value: string }>('/api/v1/ai/regenerate-field', { method: 'POST', body: JSON.stringify({ field, term, target_language }) }),
+}
+
+export interface ExtractedCandidate { term: string; translations: string[]; examples: string[]; cefr_level: string | null }
+export type ExtractVocabularyResult =
+  | { status: 'ok'; source: 'ai' | 'fallback'; items: ExtractedCandidate[] }
+  | { status: 'disabled' }
+  | { status: 'unavailable'; detail: string }
+
+export const extractionApi = {
+  extract: (group_id: number, text: string, target_language: string, min_level: string | null, source_language: string | null = null) =>
+    request<ExtractVocabularyResult>('/api/v1/extract', { method: 'POST', body: JSON.stringify({ group_id, text, source_language, target_language, min_level }) }),
+}
+
+export interface ImportPreviewRecord { term: string; translations: string[]; definition: string | null; part_of_speech: string | null; cefr_level: string | null; pronunciation: string | null; source_language: string; status: 'ready' | 'ai_cleaned' | 'duplicate'; duplicate_of: string | null; provider: string | null; model: string | null }
+export const importsApi = {
+  parseFile: async (file: File) => {
+    const data = new FormData(); data.append('file', file)
+    const token = getToken(); const response = await fetch(`${await resolveApiBase()}/api/v1/imports/parse`, { method: 'POST', body: data, headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    if (!response.ok) throw new ApiRequestError(response.status, (await response.json()).detail ?? 'Could not parse file')
+    return response.json() as Promise<{ records: { term: string; translations: string[]; definition?: string | null; part_of_speech?: string | null; cefr_level?: string | null; pronunciation?: string | null }[] }>
+  },
+  preview: (group_id: number, records: { term: string; translations?: string[]; definition?: string | null; part_of_speech?: string | null; cefr_level?: string | null; pronunciation?: string | null }[], enrich_with_ai: boolean) => request<{ records: ImportPreviewRecord[] }>('/api/v1/imports/preview', { method: 'POST', body: JSON.stringify({ group_id, records, enrich_with_ai }) }),
+  commit: (group_id: number, records: ImportPreviewRecord[]) => request<{ added: number }>('/api/v1/imports/commit', { method: 'POST', body: JSON.stringify({ group_id, records }) }),
 }
 
 export const groupsApi = {

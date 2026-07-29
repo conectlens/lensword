@@ -56,7 +56,7 @@ def test_extract_uses_the_configured_provider(client, auth_headers):
     assert response.json() == {
         "status": "ok",
         "source": "ai",
-        "items": [{"term": "perro", "translations": ["dog"], "examples": ["El perro corre."]}],
+        "items": [{"term": "perro", "translations": ["dog"], "examples": ["El perro corre."], "cefr_level": None}],
     }
 
 

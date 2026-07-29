@@ -67,6 +67,15 @@ def add_word_to_group(
                 example_sentence=payload.example_sentence,
                 mnemonic=payload.mnemonic,
                 category=payload.category,
+                definition=payload.definition,
+                part_of_speech=payload.part_of_speech,
+                cefr_level=payload.cefr_level,
+                pronunciation=payload.pronunciation,
+                collocations=payload.collocations,
+                tags=payload.tags,
+                ai_confidence=payload.ai_confidence,
+                ai_provider=payload.ai_provider,
+                ai_model=payload.ai_model,
             ),
         )
     except EntityNotFoundError as exc:
