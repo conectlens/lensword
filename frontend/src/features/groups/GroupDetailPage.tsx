@@ -102,6 +102,9 @@ export function GroupDetailPage() {
           <Button variant="secondary" icon="upload_file" onClick={() => navigate(`/groups/${group.id}/import`)}>
             Import
           </Button>
+          <Button variant="secondary" icon="quiz" onClick={() => navigate(`/groups/${group.id}/practice`)}>
+            Practice
+          </Button>
           <Button variant="secondary" icon="add" onClick={() => navigate(`/groups/${group.id}/words/new`)}>
             Add word
           </Button>

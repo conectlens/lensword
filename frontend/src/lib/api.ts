@@ -1,6 +1,6 @@
 import type {
   AdminStats, Group, MnemonicNote, ProfileOverview, RecallSettings, Room,
-  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment,
+  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise,
 } from './types'
 import { resolveApiBase } from './runtimeConfig'
 
@@ -212,6 +212,20 @@ export const settingsApi = {
   updateRecallSettings: (settings: RecallSettings) =>
     request<RecallSettings>('/api/v1/recall-settings', { method: 'PUT', body: JSON.stringify(settings) }),
   profile: () => request<ProfileOverview>('/api/v1/profile'),
+}
+
+export const practiceApi = {
+  dailySession: () => request<DailySession>('/api/v1/practice/daily-session'),
+  updateDailySession: (payload: Omit<DailySession, 'due_count'>) =>
+    request<DailySession>('/api/v1/practice/daily-session', { method: 'PUT', body: JSON.stringify(payload) }),
+  generateExercise: (word_id: number, kind: PracticeExercise['kind'] = 'translation') =>
+    request<PracticeExercise>('/api/v1/practice/exercises', { method: 'POST', body: JSON.stringify({ word_id, kind }) }),
+  answerExercise: (exerciseId: number, response: string) =>
+    request<PracticeExercise>(`/api/v1/practice/exercises/${exerciseId}/answer`, { method: 'POST', body: JSON.stringify({ response }) }),
+  pronunciationFeedback: (word_id: number, transcript: string) =>
+    request<{ accepted: boolean; feedback: string }>('/api/v1/practice/pronunciation-feedback', { method: 'POST', body: JSON.stringify({ word_id, transcript }) }),
+  writingCorrection: (word_id: number, text: string) =>
+    request<{ corrected_text: string; feedback: string }>('/api/v1/practice/writing-correction', { method: 'POST', body: JSON.stringify({ word_id, text }) }),
 }
 
 export const aiSettingsApi = {

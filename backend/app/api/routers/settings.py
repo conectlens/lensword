@@ -41,6 +41,7 @@ def _settings_to_response(s: RecallSettings, time_zone: str) -> RecallSettingsRe
         in_app_enabled=s.in_app_enabled,
         quiet_hours_start=s.quiet_hours_start,
         quiet_hours_end=s.quiet_hours_end,
+        scheduler=s.scheduler,
     )
 
 

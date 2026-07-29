@@ -35,6 +35,7 @@ export interface ReviewState {
   due_at: string
   last_reviewed_at: string | null
   status: WordStatus
+  fsrs_retrievability?: number | null
 }
 
 export interface Word {
@@ -123,6 +124,7 @@ export interface MnemonicNote {
 }
 
 export interface RecallSettings {
+  scheduler: 'sm2' | 'fsrs'
   enabled: boolean
   intensity: number
   morning_checkin_enabled: boolean
@@ -143,6 +145,23 @@ export interface RecallSettings {
   /** IANA identifier, e.g. 'Europe/Istanbul'. Reminder times and quiet
    *  hours are interpreted in this zone. */
   time_zone: string
+}
+
+export interface DailySession {
+  enabled: boolean
+  goal_minutes: number
+  review_limit: number
+  due_count: number
+}
+
+export interface PracticeExercise {
+  id: number
+  word_id: number
+  kind: 'translation' | 'definition' | 'cloze'
+  prompt: string
+  options: string[]
+  answered: boolean
+  correct: boolean | null
 }
 
 export interface Badge {

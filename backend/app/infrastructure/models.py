@@ -202,3 +202,28 @@ class RecallSettingsModel(Base):
     in_app_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     quiet_hours_start: Mapped[str | None] = mapped_column(String(8), nullable=True)
     quiet_hours_end: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    scheduler: Mapped[str] = mapped_column(String(16), default="sm2")
+
+
+class PracticeExerciseModel(Base):
+    __tablename__ = "practice_exercises"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    word_id: Mapped[int] = mapped_column(ForeignKey("words.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    prompt: Mapped[str] = mapped_column(Text)
+    answer: Mapped[str] = mapped_column(Text)
+    options: Mapped[list] = mapped_column(JSON, default=list)
+    answered: Mapped[bool] = mapped_column(Boolean, default=False)
+    correct: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class DailySessionPreferenceModel(Base):
+    __tablename__ = "daily_session_preferences"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    goal_minutes: Mapped[int] = mapped_column(Integer, default=10)
+    review_limit: Mapped[int] = mapped_column(Integer, default=20)
