@@ -7,6 +7,8 @@ import { Card } from '../../components/ui/Card'
 import { Icon } from '../../components/ui/Icon'
 import { Spinner } from '../../components/ui/Spinner'
 import { Toggle } from '../../components/ui/Toggle'
+import { connectMcpServer, deleteMcpServer, disconnectMcpServer, isMcpDesktopAvailable, listMcpServers, saveMcpServer } from '../../lib/mcpClient'
+import type { McpServer, McpServerSave } from '../../lib/mcpClient'
 
 const INTENSITY_LABELS = ['', 'Gentle', 'Light', 'Balanced', 'Firm', 'Intense']
 
@@ -74,6 +76,8 @@ export function SettingsPage() {
           onSave={async (next) => setAiSettings(await aiSettingsApi.update(next))}
         />
       )}
+
+      <McpServersCard />
 
       <Card className="p-6">
         <div className="mb-4 flex items-center justify-between">
@@ -177,6 +181,61 @@ export function SettingsPage() {
       </Card>
     </div>
   )
+}
+
+const EMPTY_MCP_SERVER: McpServerSave = {
+  id: '', name: '', command: '', args: [], enabled: true, workspaceRoots: [], allowedTools: [], timeoutMs: 10_000,
+}
+
+function McpServersCard() {
+  const [servers, setServers] = useState<McpServer[]>([])
+  const [draft, setDraft] = useState<McpServerSave>(EMPTY_MCP_SERVER)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const desktop = isMcpDesktopAvailable()
+
+  async function refresh() {
+    try { setServers(await listMcpServers()) } catch (err) { setError(err instanceof Error ? err.message : 'Could not load MCP connections.') }
+  }
+  useEffect(() => { if (desktop) void refresh() }, [desktop])
+  if (!desktop) return null
+
+  async function save() {
+    try {
+      setBusy(true); setError(null)
+      await saveMcpServer(draft)
+      setDraft(EMPTY_MCP_SERVER)
+      await refresh()
+    } catch (err) { setError(err instanceof Error ? err.message : 'Could not save the MCP server.') } finally { setBusy(false) }
+  }
+
+  async function withServer(action: () => Promise<void>) {
+    try { setBusy(true); setError(null); await action(); await refresh() } catch (err) { setError(err instanceof Error ? err.message : 'MCP server operation failed.') } finally { setBusy(false) }
+  }
+
+  return <Card className="p-6">
+    <h2 className="font-display text-lg font-bold text-white">MCP connections</h2>
+    <p className="mt-1 text-sm text-white/50">Local stdio servers run outside the webview. Their definitions and optional credentials are stored in your operating system&apos;s credential store.</p>
+    <div className="mt-5 space-y-3">
+      {servers.map((server) => <div key={server.id} className="rounded-lg border border-white/10 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="font-medium text-white">{server.name} <span className="text-xs text-white/40">{server.identity && `· ${server.identity}`}</span></p><p className="text-xs text-white/50">{server.tools.map((tool) => tool.name).join(', ') || 'No approved tools discovered yet'}</p></div><span className={`text-xs ${server.health === 'connected' ? 'text-success' : 'text-white/50'}`}>{server.health}</span></div>
+        {server.capabilityChanged && <p className="mt-2 text-xs text-warning">Server capabilities changed; newly discovered tools remain blocked until you explicitly allow them.</p>}
+        <div className="mt-3 flex gap-2"><Button disabled={busy || !server.enabled} onClick={() => withServer(() => connectMcpServer(server.id).then(() => undefined))}>{server.health === 'connected' ? 'Reconnect' : 'Connect'}</Button>{server.health === 'connected' && <Button disabled={busy} onClick={() => withServer(() => disconnectMcpServer(server.id))}>Disconnect</Button>}<Button disabled={busy} onClick={() => withServer(() => deleteMcpServer(server.id))}>Remove</Button></div>
+      </div>)}
+    </div>
+    <div className="mt-5 grid gap-3 border-t border-white/10 pt-5 sm:grid-cols-2">
+      <label className="text-sm text-white/70">Name<input aria-label="MCP server name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="mt-1 w-full rounded-lg bg-white/5 px-3 py-2 text-white" /></label>
+      <label className="text-sm text-white/70">ID<input aria-label="MCP server ID" value={draft.id} onChange={(e) => setDraft({ ...draft, id: e.target.value })} className="mt-1 w-full rounded-lg bg-white/5 px-3 py-2 text-white" /></label>
+      <label className="text-sm text-white/70 sm:col-span-2">Command<input aria-label="MCP server command" value={draft.command} onChange={(e) => setDraft({ ...draft, command: e.target.value })} className="mt-1 w-full rounded-lg bg-white/5 px-3 py-2 text-white" /></label>
+      <label className="text-sm text-white/70">Arguments (space-separated)<input aria-label="MCP server arguments" value={draft.args.join(' ')} onChange={(e) => setDraft({ ...draft, args: e.target.value.split(/\s+/).filter(Boolean) })} className="mt-1 w-full rounded-lg bg-white/5 px-3 py-2 text-white" /></label>
+      <label className="text-sm text-white/70">Allowed tools (comma-separated)<input aria-label="MCP allowed tools" value={draft.allowedTools.join(', ')} onChange={(e) => setDraft({ ...draft, allowedTools: e.target.value.split(',').map((item) => item.trim()).filter(Boolean) })} className="mt-1 w-full rounded-lg bg-white/5 px-3 py-2 text-white" /></label>
+      <label className="text-sm text-white/70 sm:col-span-2">Approved workspace roots (comma-separated absolute paths)<input aria-label="MCP workspace roots" value={draft.workspaceRoots.join(', ')} onChange={(e) => setDraft({ ...draft, workspaceRoots: e.target.value.split(',').map((item) => item.trim()).filter(Boolean) })} className="mt-1 w-full rounded-lg bg-white/5 px-3 py-2 text-white" /></label>
+      <label className="text-sm text-white/70">Credential (optional)<input aria-label="MCP server credential" type="password" value={draft.credential ?? ''} onChange={(e) => setDraft({ ...draft, credential: e.target.value || undefined })} className="mt-1 w-full rounded-lg bg-white/5 px-3 py-2 text-white" /></label>
+      <label className="text-sm text-white/70">Timeout (milliseconds)<input aria-label="MCP timeout" type="number" min={250} max={120000} value={draft.timeoutMs} onChange={(e) => setDraft({ ...draft, timeoutMs: Number(e.target.value) })} className="mt-1 w-full rounded-lg bg-white/5 px-3 py-2 text-white" /></label>
+    </div>
+    {error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
+    <div className="mt-4"><Button disabled={busy} onClick={save}>Save MCP server</Button></div>
+  </Card>
 }
 
 export function AISettingsCard({ settings, onSave }: { settings: AISettings; onSave: (settings: AISettings) => Promise<void> }) {
