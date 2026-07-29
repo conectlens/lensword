@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from typing import Any
+from inspect import isawaitable
 
 from app.application.mcp.contracts import TOOL_CONTRACTS, ToolContract
 
@@ -27,3 +28,7 @@ class MCPDispatcher:
         handler = self.handlers.get(name)
         if handler is None: raise UnboundMCPToolError(name)
         return handler(user_id, payload)
+
+    async def dispatch_async(self, user_id: int, name: str, payload: dict[str, Any]) -> dict[str, Any]:
+        result = self.dispatch(user_id, name, payload)
+        return await result if isawaitable(result) else result

@@ -5,12 +5,14 @@ from app.api.mappers import word_to_response
 from app.application.use_cases.vocabulary import AddWordUseCase, WordInput
 from app.application.use_cases.review import GetWeeklyProgressUseCase, StartReviewSessionUseCase, SubmitAnswerUseCase
 from app.application.use_cases.practice import GenerateExerciseUseCase
+from app.application.use_cases.extract import ExtractVocabularyUseCase
 from app.application.use_cases.vocabulary import _require_word_owner
 from app.domain.repositories import GroupRepository, PracticeExerciseRepository, WordRepository
 from app.domain.repositories import ReviewSessionRepository
 from app.domain.value_objects import SupportedLanguage
 from app.domain.value_objects import ReviewOutcome, SessionMode
 from app.domain.services.spaced_repetition import Scheduler
+from app.domain.services.ai_provider import AIProvider
 
 
 def add_word_handler(words: WordRepository, groups: GroupRepository):
@@ -60,4 +62,11 @@ def record_answer_handler(sessions, words: WordRepository, scheduler: Scheduler)
     def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         result = SubmitAnswerUseCase(sessions, words, scheduler).execute(user_id, int(payload["session_id"]), int(payload["word_id"]), ReviewOutcome(payload["outcome"]), payload.get("response_time_ms"))
         return {"word": word_to_response(result.word).model_dump(mode="json"), "was_new_word_learned": result.was_new_word}
+    return handle
+
+
+def extract_vocabulary_handler(groups: GroupRepository, provider: AIProvider | None):
+    async def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        items, source = await ExtractVocabularyUseCase(groups, provider).execute(user_id, int(payload["group_id"]), str(payload["text"]), payload.get("source_language"), str(payload["target_language"]), min(int(payload.get("max_items", 20)), 50), payload.get("min_level"))
+        return {"source": source, "items": [{"term": item.term, "translations": item.translations, "examples": item.examples, "cefr_level": item.cefr_level} for item in items]}
     return handle
