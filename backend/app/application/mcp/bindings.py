@@ -2,7 +2,7 @@
 from typing import Any
 
 from app.api.mappers import word_to_response
-from app.application.use_cases.vocabulary import AddWordUseCase, WordInput
+from app.application.use_cases.vocabulary import AddWordUseCase, SearchWordsUseCase, WordInput
 from app.application.use_cases.review import GetWeeklyProgressUseCase, StartReviewSessionUseCase, SubmitAnswerUseCase
 from app.application.use_cases.practice import GenerateExerciseUseCase
 from app.application.use_cases.extract import ExtractVocabularyUseCase
@@ -34,6 +34,13 @@ def due_reviews_handler(words: WordRepository):
         limit = min(int(payload.get("limit", 20)), 100)
         group_id = int(payload["group_id"]) if payload.get("group_id") is not None else None
         return {"items": [word_to_response(word).model_dump(mode="json") for word in words.list_due_for_user(user_id, limit, group_id)], "next_cursor": None}
+    return handle
+
+
+def search_words_handler(words: WordRepository, groups: GroupRepository):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        items = SearchWordsUseCase(words, groups).execute(user_id, str(payload.get("query", "")), min(int(payload.get("limit", 20)), 100))
+        return {"items": [word_to_response(word).model_dump(mode="json") for word in items], "next_cursor": None}
     return handle
 
 
