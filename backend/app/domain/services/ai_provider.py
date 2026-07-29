@@ -8,7 +8,22 @@ data-access ports).
 """
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Protocol
+
+
+@dataclass(frozen=True, slots=True)
+class ExtractedVocabulary:
+    """A bounded vocabulary candidate returned by an AI provider.
+
+    This transport-neutral record deliberately contains only the fields the
+    Phase 0 extraction API can prove. Rich enrichment belongs to the next
+    phase rather than being represented by loosely typed provider dictionaries.
+    """
+
+    term: str
+    translations: list[str] = field(default_factory=list)
+    examples: list[str] = field(default_factory=list)
 
 
 class AIProvider(Protocol):
@@ -22,3 +37,7 @@ class AIProvider(Protocol):
     """
 
     async def suggest_mnemonic(self, word: str, context: str) -> str: ...
+
+    async def extract_vocabulary(
+        self, text: str, source_language: str | None, target_language: str, max_items: int
+    ) -> list[ExtractedVocabulary]: ...

@@ -5,7 +5,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
-from app.config import get_settings
+from app.config import get_effective_ai_settings
 from app.domain.entities import User
 from app.domain.services.ai_provider import AIProvider
 from app.domain.value_objects import UserRole
@@ -64,7 +64,7 @@ def get_reminder_repository(db: DbSession) -> SqlAlchemyReminderRepository:
 def _ai_provider() -> AIProvider | None:
     """Built once per process, not per request — the Ollama adapter owns a
     pooled HTTP client that would otherwise be recreated on every call."""
-    return build_ai_provider(get_settings())
+    return build_ai_provider(get_effective_ai_settings())
 
 
 def get_ai_provider() -> AIProvider | None:

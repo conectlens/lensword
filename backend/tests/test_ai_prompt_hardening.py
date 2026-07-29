@@ -201,3 +201,18 @@ def test_build_suggestion_request_is_pure_and_independent_of_transport():
     assert "data" in system.lower()
     assert DATA_BLOCK_BEGIN in prompt and DATA_BLOCK_END in prompt
     assert "cat" in prompt
+
+
+def test_extraction_prompt_requires_examples_in_the_target_language():
+    sent: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.update(json.loads(request.read()))
+        return httpx.Response(200, json={"response": "[]", "done": True})
+
+    provider = OllamaProvider(transport=httpx.MockTransport(handler))
+    asyncio.run(provider.extract_vocabulary("A difficult English passage.", "English", "Turkish", 3))
+
+    assert "Turkish" in sent["system"]
+    assert "example" in sent["system"].lower()
+    assert sent["format"] == "json"

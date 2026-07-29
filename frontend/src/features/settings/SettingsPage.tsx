@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
-import { settingsApi } from '../../lib/api'
-import type { RecallSettings } from '../../lib/types'
+import { aiSettingsApi, settingsApi } from '../../lib/api'
+import type { AISettings, RecallSettings } from '../../lib/types'
+import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { Icon } from '../../components/ui/Icon'
 import { Spinner } from '../../components/ui/Spinner'
@@ -13,10 +14,12 @@ export function SettingsPage() {
   const { user } = useAuth()
   const [settings, setSettings] = useState<RecallSettings | null>(null)
   const [saved, setSaved] = useState(false)
+  const [aiSettings, setAiSettings] = useState<AISettings | null>(null)
 
   useEffect(() => {
     settingsApi.getRecallSettings().then(setSettings)
-  }, [])
+    if (user?.role === 'admin') aiSettingsApi.get().then(setAiSettings).catch(() => setAiSettings(null))
+  }, [user?.role])
 
   async function save(next: RecallSettings) {
     setSettings(next)
@@ -49,6 +52,13 @@ export function SettingsPage() {
           <span className="text-white/50">{user?.email}</span>
         </div>
       </Card>
+
+      {user?.role === 'admin' && aiSettings && (
+        <AISettingsCard
+          settings={aiSettings}
+          onSave={async (next) => setAiSettings(await aiSettingsApi.update(next))}
+        />
+      )}
 
       <Card className="p-6">
         <div className="mb-4 flex items-center justify-between">
@@ -137,6 +147,64 @@ export function SettingsPage() {
         <TimeZoneSelect value={settings.time_zone} onChange={(v) => patch({ time_zone: v })} />
       </Card>
     </div>
+  )
+}
+
+export function AISettingsCard({ settings, onSave }: { settings: AISettings; onSave: (settings: AISettings) => Promise<void> }) {
+  const [draft, setDraft] = useState(settings)
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => setDraft(settings), [settings])
+
+  async function saveAiSettings() {
+    if (!draft.model.trim()) return setError('Model is required.')
+    try {
+      const url = new URL(draft.base_url)
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error()
+    } catch {
+      return setError('Base URL must be a valid HTTP or HTTPS URL.')
+    }
+    if (draft.max_output_tokens <= 0 || draft.context_max_chars <= 0) {
+      return setError('Maximum tokens and context length must be greater than zero.')
+    }
+    try {
+      setError(null)
+      await onSave(draft)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 1500)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save AI settings.')
+    }
+  }
+
+  return (
+    <Card className="p-6">
+      <h2 className="font-display text-lg font-bold text-white">AI provider</h2>
+      <p className="mt-1 text-sm text-white/50">Deployment-wide configuration. Only administrators can change these values.</p>
+      <div className="mt-5 grid gap-4 sm:grid-cols-2">
+        <label className="flex flex-col gap-1 text-sm text-white/70">Provider
+          <select aria-label="AI provider" value={draft.provider} onChange={(e) => setDraft({ ...draft, provider: e.target.value as AISettings['provider'] })} className="rounded-lg bg-white/5 px-3 py-2 text-white">
+            <option value="none">Disabled</option>
+            <option value="ollama">Ollama</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-sm text-white/70">Model
+          <input aria-label="AI model" value={draft.model} onChange={(e) => setDraft({ ...draft, model: e.target.value })} className="rounded-lg bg-white/5 px-3 py-2 text-white" />
+        </label>
+        <label className="flex flex-col gap-1 text-sm text-white/70 sm:col-span-2">Base URL
+          <input aria-label="AI base URL" value={draft.base_url} onChange={(e) => setDraft({ ...draft, base_url: e.target.value })} className="rounded-lg bg-white/5 px-3 py-2 text-white" />
+        </label>
+        <label className="flex flex-col gap-1 text-sm text-white/70">Maximum output tokens
+          <input aria-label="Maximum output tokens" type="number" min={1} value={draft.max_output_tokens} onChange={(e) => setDraft({ ...draft, max_output_tokens: Number(e.target.value) })} className="rounded-lg bg-white/5 px-3 py-2 text-white" />
+        </label>
+        <label className="flex flex-col gap-1 text-sm text-white/70">Context length
+          <input aria-label="Context length" type="number" min={1} value={draft.context_max_chars} onChange={(e) => setDraft({ ...draft, context_max_chars: Number(e.target.value) })} className="rounded-lg bg-white/5 px-3 py-2 text-white" />
+        </label>
+      </div>
+      {error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
+      <div className="mt-5 flex items-center gap-3"><Button onClick={saveAiSettings}>Save AI settings</Button>{saved && <span className="text-sm text-success">Saved</span>}</div>
+    </Card>
   )
 }
 

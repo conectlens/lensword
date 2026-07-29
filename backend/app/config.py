@@ -1,6 +1,9 @@
 from functools import lru_cache
+import json
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 
-from pydantic import field_validator
+from pydantic import BaseModel, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 SUPPORTED_AI_PROVIDERS = ("none", "ollama")
@@ -35,6 +38,10 @@ class Settings(BaseSettings):
     # from returning an unbounded response body (issue #45).
     ai_max_output_tokens: int = 200
     ai_context_max_chars: int = 500
+    # Test/demo-only escape hatch. Production stays honest when AI is disabled:
+    # it reports that state instead of presenting heuristic output as AI work.
+    ai_extract_fallback_enabled: bool = False
+    ai_settings_path: str = "data/ai-settings.json"
 
     @field_validator("ai_max_output_tokens", "ai_context_max_chars")
     @classmethod
@@ -66,3 +73,59 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+_AI_OVERRIDE_FIELDS = (
+    "ai_provider",
+    "ollama_model",
+    "ollama_base_url",
+    "ai_max_output_tokens",
+    "ai_context_max_chars",
+)
+
+
+class AISettingsUpdate(BaseModel):
+    ai_provider: str
+    ollama_model: str
+    ollama_base_url: str
+    ai_max_output_tokens: int
+    ai_context_max_chars: int
+
+
+def _runtime_override_path(settings: Settings) -> Path:
+    return Path(settings.ai_settings_path)
+
+
+def get_effective_ai_settings() -> Settings:
+    """Return environment defaults overlaid by validated admin configuration."""
+    base = get_settings()
+    path = _runtime_override_path(base)
+    if not path.exists():
+        return base
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"AI settings override at {path} is unreadable") from exc
+    if not isinstance(raw, dict):
+        raise RuntimeError(f"AI settings override at {path} must be a JSON object")
+    override = {name: raw[name] for name in _AI_OVERRIDE_FIELDS if name in raw}
+    return Settings(**(base.model_dump() | override))
+
+
+def save_effective_ai_settings(update: AISettingsUpdate) -> Settings:
+    """Validate and atomically persist the deployment-wide AI configuration."""
+    base = get_settings()
+    values = update.model_dump()
+    if not values["ollama_model"].strip():
+        raise ValueError("ollama_model must not be blank")
+    if not values["ollama_base_url"].strip():
+        raise ValueError("ollama_base_url must not be blank")
+    validated = Settings(**(base.model_dump() | values))
+    path = _runtime_override_path(base)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as temporary:
+        json.dump({field: getattr(validated, field) for field in _AI_OVERRIDE_FIELDS}, temporary)
+        temporary.write("\n")
+        temporary_path = Path(temporary.name)
+    temporary_path.replace(path)
+    return validated
