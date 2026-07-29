@@ -17,6 +17,7 @@ from app.infrastructure.repositories import (
     SqlAlchemyRecallSettingsRepository,
     SqlAlchemyDailySessionPreferenceRepository,
     SqlAlchemyPracticeExerciseRepository,
+    SqlAlchemyWeeklyLearningReportRepository,
     SqlAlchemyReminderRepository,
     SqlAlchemyReviewSessionRepository,
     SqlAlchemyRoomRepository,
@@ -66,6 +67,10 @@ def get_practice_exercise_repository(db: DbSession) -> SqlAlchemyPracticeExercis
     return SqlAlchemyPracticeExerciseRepository(db)
 
 
+def get_weekly_learning_report_repository(db: DbSession) -> SqlAlchemyWeeklyLearningReportRepository:
+    return SqlAlchemyWeeklyLearningReportRepository(db)
+
+
 def get_reminder_repository(db: DbSession) -> SqlAlchemyReminderRepository:
     return SqlAlchemyReminderRepository(db)
 
@@ -90,6 +95,7 @@ MnemonicRepo = Annotated[SqlAlchemyMnemonicRepository, Depends(get_mnemonic_repo
 RecallSettingsRepo = Annotated[SqlAlchemyRecallSettingsRepository, Depends(get_recall_settings_repository)]
 DailySessionPreferenceRepo = Annotated[SqlAlchemyDailySessionPreferenceRepository, Depends(get_daily_session_preference_repository)]
 PracticeExerciseRepo = Annotated[SqlAlchemyPracticeExerciseRepository, Depends(get_practice_exercise_repository)]
+WeeklyLearningReportRepo = Annotated[SqlAlchemyWeeklyLearningReportRepository, Depends(get_weekly_learning_report_repository)]
 ReminderRepo = Annotated[SqlAlchemyReminderRepository, Depends(get_reminder_repository)]
 OptionalAIProvider = Annotated[AIProvider | None, Depends(get_ai_provider)]
 

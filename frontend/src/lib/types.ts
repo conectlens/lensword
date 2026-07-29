@@ -164,6 +164,25 @@ export interface PracticeExercise {
   correct: boolean | null
 }
 
+export interface WeeklyLearningReport {
+  id: number
+  snapshot: {
+    schema_version: number
+    week: { start: string; end: string; time_zone: string }
+    source_range: { session_count: number; attempt_count: number }
+    studied: number
+    retained: number
+    overdue: number
+    difficult_topics: Array<{ name: string; mistakes: number }>
+    repeated_mistake_categories: Array<{ name: string; mistakes: number }>
+    productive_time_windows: Array<{ label: string; attempts: number }>
+    data_completeness: { status: 'complete' | 'sparse'; warnings: string[]; missing_data: string[] }
+    generated_at: string
+  }
+  narration: string | null
+  created_at: string
+}
+
 export interface Badge {
   code: string
   name: string

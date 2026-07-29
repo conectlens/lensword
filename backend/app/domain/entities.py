@@ -429,3 +429,17 @@ class DailySessionPreference:
     enabled: bool = True
     goal_minutes: int = 10
     review_limit: int = 20
+
+
+@dataclass(slots=True)
+class WeeklyLearningReport:
+    """Immutable, reproducible weekly analytics snapshot for one learner."""
+
+    id: int | None
+    user_id: int
+    week_start: datetime
+    week_end: datetime
+    time_zone: str
+    snapshot: dict
+    narration: str | None = None
+    created_at: datetime = field(default_factory=utcnow)

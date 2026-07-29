@@ -19,6 +19,7 @@ import { OnboardingPage } from './features/marketing/OnboardingPage'
 import { ExtractPage } from './features/extract/ExtractPage'
 import { ImportPage } from './features/import/ImportPage'
 import { PracticePage } from './features/practice/PracticePage'
+import { WeeklyReportPage } from './features/reports/WeeklyReportPage'
 
 export default function App() {
   return (
@@ -29,6 +30,8 @@ export default function App() {
       <Route path="/onboarding" element={<OnboardingPage />} />
 
       <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+      <Route path="/reports/weekly" element={<ProtectedRoute><WeeklyReportPage /></ProtectedRoute>} />
+      <Route path="/reports/weekly/:reportId" element={<ProtectedRoute><WeeklyReportPage /></ProtectedRoute>} />
 
       <Route path="/groups" element={<ProtectedRoute><GroupsPage /></ProtectedRoute>} />
       <Route path="/groups/:groupId" element={<ProtectedRoute><GroupDetailPage /></ProtectedRoute>} />

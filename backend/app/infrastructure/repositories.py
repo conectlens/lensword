@@ -18,6 +18,7 @@ from app.domain.entities import (
     RecallSettings,
     DailySessionPreference,
     PracticeExercise,
+    WeeklyLearningReport,
     Reminder,
     ReviewAttempt,
     ReviewSession,
@@ -42,6 +43,7 @@ from app.infrastructure.models import (
     RecallSettingsModel,
     DailySessionPreferenceModel,
     PracticeExerciseModel,
+    WeeklyLearningReportModel,
     ReminderModel,
     ReviewAttemptModel,
     ReviewSessionModel,
@@ -300,6 +302,13 @@ def _exercise_to_domain(m: PracticeExerciseModel) -> PracticeExercise:
 def _daily_preference_to_domain(m: DailySessionPreferenceModel) -> DailySessionPreference:
     return DailySessionPreference(
         user_id=m.user_id, enabled=m.enabled, goal_minutes=m.goal_minutes, review_limit=m.review_limit,
+    )
+
+
+def _weekly_report_to_domain(m: WeeklyLearningReportModel) -> WeeklyLearningReport:
+    return WeeklyLearningReport(
+        id=m.id, user_id=m.user_id, week_start=m.week_start, week_end=m.week_end, time_zone=m.time_zone,
+        snapshot=m.snapshot or {}, narration=m.narration, created_at=m.created_at,
     )
 
 
@@ -768,3 +777,30 @@ class SqlAlchemyDailySessionPreferenceRepository:
         model.review_limit = preference.review_limit
         self.db.flush()
         return _daily_preference_to_domain(model)
+
+
+class SqlAlchemyWeeklyLearningReportRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_by_id(self, report_id: int) -> WeeklyLearningReport | None:
+        model = self.db.get(WeeklyLearningReportModel, report_id)
+        return _weekly_report_to_domain(model) if model else None
+
+    def list_by_user(self, user_id: int) -> list[WeeklyLearningReport]:
+        stmt = select(WeeklyLearningReportModel).where(WeeklyLearningReportModel.user_id == user_id).order_by(WeeklyLearningReportModel.created_at.desc())
+        return [_weekly_report_to_domain(model) for model in self.db.scalars(stmt)]
+
+    def add(self, report: WeeklyLearningReport) -> WeeklyLearningReport:
+        model = WeeklyLearningReportModel(user_id=report.user_id, week_start=report.week_start, week_end=report.week_end, time_zone=report.time_zone, snapshot=report.snapshot, narration=report.narration, created_at=report.created_at)
+        self.db.add(model)
+        self.db.flush()
+        return _weekly_report_to_domain(model)
+
+    def update(self, report: WeeklyLearningReport) -> WeeklyLearningReport:
+        model = self.db.get(WeeklyLearningReportModel, report.id)
+        if model is None:
+            raise ValueError(f"WeeklyLearningReport {report.id} not found")
+        model.narration = report.narration
+        self.db.flush()
+        return _weekly_report_to_domain(model)

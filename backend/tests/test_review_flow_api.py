@@ -259,6 +259,19 @@ def test_adaptive_practice_exercise_daily_preferences_and_pronunciation(client, 
     assert client.get("/api/v1/practice/daily-session", headers=headers).json()["review_limit"] == 12
 
 
+def test_weekly_learning_report_is_persisted_and_private(client, auth_headers):
+    headers = auth_headers(username="reporter", email="reporter@example.com")
+    _group, word = _setup_group_with_word(client, headers, term="hola", translation="hello")
+    session = client.post("/api/v1/review/sessions", json={"mode": "standard"}, headers=headers).json()
+    client.post(f"/api/v1/review/sessions/{session['session_id']}/answers", json={"word_id": word["id"], "outcome": "correct"}, headers=headers)
+    report = client.post("/api/v1/reports/weekly", headers=headers)
+    assert report.status_code == 201
+    assert report.json()["snapshot"]["studied"] == 1
+    assert client.get("/api/v1/reports/weekly", headers=headers).json()[0]["id"] == report.json()["id"]
+    stranger = auth_headers(username="other", email="other@example.com")
+    assert client.get(f"/api/v1/reports/weekly/{report.json()['id']}", headers=stranger).status_code == 403
+
+
 def test_profile_overview_reports_badge_progress(client, auth_headers):
     headers = auth_headers()
     resp = client.get("/api/v1/profile", headers=headers)

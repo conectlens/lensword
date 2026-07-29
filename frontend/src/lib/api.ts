@@ -1,6 +1,6 @@
 import type {
   AdminStats, Group, MnemonicNote, ProfileOverview, RecallSettings, Room,
-  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise,
+  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport,
 } from './types'
 import { resolveApiBase } from './runtimeConfig'
 
@@ -226,6 +226,13 @@ export const practiceApi = {
     request<{ accepted: boolean; feedback: string }>('/api/v1/practice/pronunciation-feedback', { method: 'POST', body: JSON.stringify({ word_id, transcript }) }),
   writingCorrection: (word_id: number, text: string) =>
     request<{ corrected_text: string; feedback: string }>('/api/v1/practice/writing-correction', { method: 'POST', body: JSON.stringify({ word_id, text }) }),
+}
+
+export const reportsApi = {
+  buildWeekly: () => request<WeeklyLearningReport>('/api/v1/reports/weekly', { method: 'POST' }),
+  listWeekly: () => request<WeeklyLearningReport[]>('/api/v1/reports/weekly'),
+  getWeekly: (reportId: number) => request<WeeklyLearningReport>(`/api/v1/reports/weekly/${reportId}`),
+  generateNarration: (reportId: number) => request<WeeklyLearningReport>(`/api/v1/reports/weekly/${reportId}/narration`, { method: 'POST' }),
 }
 
 export const aiSettingsApi = {

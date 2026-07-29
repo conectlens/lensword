@@ -68,6 +68,8 @@ export function DashboardPage() {
             </div>
           </Card>
 
+          <Card className="p-6"><p className="font-display text-lg font-bold text-white">Weekly learning report</p><p className="mt-1 text-sm text-white/60">Review retained words, overdue items, difficult topics, and your most productive study windows.</p><Button className="mt-4" size="sm" variant="secondary" onClick={() => navigate('/reports/weekly')}>View report</Button></Card>
+
           <Card className="p-6">
             <p className="font-display text-lg font-bold text-white">Today&apos;s session</p>
             <p className="mt-1 text-sm text-white/60">Aim for {daily.goal_minutes} minutes. {daily.due_count} review items are ready in your daily queue.</p>
