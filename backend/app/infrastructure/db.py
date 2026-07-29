@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from collections.abc import Generator
 
 from sqlalchemy import create_engine, inspect, text
@@ -73,8 +74,15 @@ def _apply_additive_columns() -> None:
 
 
 def init_db() -> None:
-    # Import models so they're registered on Base.metadata before create_all.
-    from app.infrastructure import models  # noqa: F401
+    """Bring the configured database to the Alembic head revision.
 
-    _apply_additive_columns()
-    Base.metadata.create_all(bind=engine)
+    Schema creation no longer lives in application startup. Keeping that DDL
+    path beside migrations would eventually let local development drift from
+    the deployed schema, so both the Docker entrypoint and a direct Uvicorn
+    launch use the same idempotent Alembic command.
+    """
+    from alembic import command
+    from alembic.config import Config
+
+    config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+    command.upgrade(config, "head")

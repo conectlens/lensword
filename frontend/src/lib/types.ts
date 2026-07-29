@@ -11,6 +11,7 @@ export type WordStatus = 'new' | 'learning' | 'review' | 'mastered' | 'needs_rev
 export type ReviewOutcome = 'correct' | 'incorrect' | 'skipped'
 export type SessionMode = 'standard' | 'focus' | 'walking' | 'night' | 'break'
 export type UserRole = 'user' | 'admin'
+export type AIProvider = 'none' | 'ollama'
 
 export interface User {
   id: number
@@ -150,4 +151,12 @@ export interface AdminStats {
 
 export interface ApiError {
   detail: string
+}
+
+export interface AISettings {
+  provider: AIProvider
+  model: string
+  base_url: string
+  max_output_tokens: number
+  context_max_chars: number
 }

@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routers import admin, auth, groups, mnemonics, review, rooms, settings, words
+from app.api.routers import admin, ai_settings, auth, extract, groups, mnemonics, review, rooms, settings, words
 from app.application.use_cases.auth import RegisterUserUseCase
 from app.config import get_settings
 from app.domain.exceptions import DomainError
@@ -51,6 +51,8 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(groups.router)
 app.include_router(words.router)
+app.include_router(extract.router)
+app.include_router(ai_settings.router)
 app.include_router(rooms.router)
 app.include_router(review.router)
 app.include_router(mnemonics.router)
