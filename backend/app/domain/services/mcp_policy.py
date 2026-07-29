@@ -52,9 +52,9 @@ class PolicyDecision:
 
 class MCPPolicyGate:
     """Pure deny-by-default policy evaluation with deterministic rate limits."""
-    def __init__(self, grants: list[MCPGrant], *, max_payload_bytes: int = 65_536, max_calls: int = 30, window: timedelta = timedelta(minutes=1)):
+    def __init__(self, grants: list[MCPGrant], *, max_payload_bytes: int = 65_536, max_calls: int = 30, window: timedelta = timedelta(minutes=1), calls: dict[tuple[str, str], list[datetime]] | None = None):
         self.grants, self.max_payload_bytes, self.max_calls, self.window = grants, max_payload_bytes, max_calls, window
-        self._calls: dict[tuple[str, str], list[datetime]] = {}
+        self._calls = calls if calls is not None else {}
 
     def authorize(self, requester: str, server: str, tool: str, access: AccessClass, workspace: str, payload_bytes: int, now: datetime) -> PolicyDecision:
         if payload_bytes > self.max_payload_bytes: return PolicyDecision(False, "payload_too_large")
@@ -71,7 +71,14 @@ class MCPPolicyGate:
 
 def redact_and_chain(previous_hash: str, event: dict) -> tuple[dict, str]:
     """Redact secret-bearing keys and return a tamper-evident hash-chain link."""
-    sensitive = {"token", "authorization", "clipboard", "screenshot", "password", "secret"}
-    redacted = {key: "[REDACTED]" if key.lower() in sensitive else value for key, value in event.items()}
+    sensitive = ("token", "authorization", "clipboard", "screenshot", "password", "secret", "api_key", "credential")
+
+    def redact(value):
+        if isinstance(value, dict):
+            return {key: "[REDACTED]" if any(word in key.lower() for word in sensitive) else redact(item) for key, item in value.items()}
+        if isinstance(value, list): return [redact(item) for item in value]
+        return value
+
+    redacted = redact(event)
     encoded = dumps({"previous_hash": previous_hash, "event": redacted}, sort_keys=True, separators=(",", ":"))
     return redacted, sha256(encoded.encode()).hexdigest()
