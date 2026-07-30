@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { aiSettingsApi, practiceApi, settingsApi } from '../../lib/api'
-import type { AISettings, DailySession, RecallSettings } from '../../lib/types'
+import { aiSettingsApi, groupsApi, practiceApi, settingsApi } from '../../lib/api'
+import type { AISettings, DailySession, Group, RecallSettings } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { Icon } from '../../components/ui/Icon'
@@ -11,6 +12,8 @@ import { connectMcpServer, deleteMcpServer, disconnectMcpServer, isMcpDesktopAva
 import type { McpServer, McpServerSave } from '../../lib/mcpClient'
 import { captureClipboard, clipboardStatus, configureClipboard, isClipboardDesktopAvailable } from '../../lib/clipboardCapture'
 import type { ClipboardCapture, ClipboardConfig } from '../../lib/clipboardCapture'
+import { captureSelectedText, configureSelectionCapture, isSelectionCaptureDesktopAvailable, selectionCaptureStatus } from '../../lib/selectionCapture'
+import type { SelectionCapture, SelectionCaptureStatus } from '../../lib/selectionCapture'
 
 const INTENSITY_LABELS = ['', 'Gentle', 'Light', 'Balanced', 'Firm', 'Intense']
 
@@ -80,6 +83,7 @@ export function SettingsPage() {
       )}
 
       <McpServersCard />
+      <SelectedTextCaptureCard />
       <ClipboardCaptureCard />
 
       <Card className="p-6">
@@ -184,6 +188,220 @@ export function SettingsPage() {
       </Card>
     </div>
   )
+}
+function SelectedTextCaptureCard() {
+  const desktop = isSelectionCaptureDesktopAvailable();
+  const navigate = useNavigate();
+  const [status, setStatus] = useState<SelectionCaptureStatus | null>(null);
+  const [candidate, setCandidate] = useState<SelectionCapture | null>(null);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [groupId, setGroupId] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  async function readSelection() {
+    try {
+      setError(null);
+      setCandidate(await captureSelectedText());
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Selected text could not be captured.",
+      );
+    }
+  }
+  useEffect(() => {
+    if (!desktop) return;
+    void selectionCaptureStatus()
+      .then(setStatus)
+      .catch((err) =>
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Selected-text capture is unavailable.",
+        ),
+      );
+    void groupsApi.list().then((next) => {
+      setGroups(next);
+      setGroupId((current) => current || String(next[0]?.id ?? ""));
+    });
+    let unlisten: (() => void) | undefined;
+    void import("@tauri-apps/api/event").then(({ listen }) =>
+      listen("selection-capture-requested", () => {
+        void readSelection();
+      }).then((stop) => {
+        unlisten = stop;
+      }),
+    );
+    return () => unlisten?.();
+    // The native event handler deliberately calls the latest capture command; it does not carry text in the event.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [desktop]);
+  if (!desktop || !status) return null;
+  async function configure(next: { enabled: boolean; shortcut: string }) {
+    try {
+      setError(null);
+      await configureSelectionCapture(next);
+      setStatus(await selectionCaptureStatus());
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "The shortcut is already in use or invalid.",
+      );
+    }
+  }
+  const selectedGroup = groups.find((group) => group.id === Number(groupId));
+  const candidateText = candidate?.text?.trim() ?? "";
+  function openWordForm() {
+    if (!selectedGroup || !candidateText) return;
+    const params = new URLSearchParams({
+      term: candidateText.split(/\s+/)[0],
+      context: candidateText,
+    });
+    navigate(`/groups/${selectedGroup.id}/words/new?${params}`);
+    setCandidate(null);
+  }
+  return (
+    <Card className="p-6">
+      <h2 className="font-display text-lg font-bold text-white">
+        Selected-text capture
+      </h2>
+      <p className="mt-1 text-sm text-white/50">
+        Press the configured global shortcut to request the current selection.
+        The candidate is held only in this screen until you explicitly review or
+        save it.
+      </p>
+      <div className="mt-4 flex flex-wrap items-end gap-3">
+        <label className="text-sm text-white/70">
+          Global shortcut
+          <input
+            aria-label="Selected-text capture shortcut"
+            value={status.shortcut}
+            onChange={(event) =>
+              setStatus({ ...status, shortcut: event.target.value })
+            }
+            onBlur={() =>
+              void configure({
+                enabled: status.enabled,
+                shortcut: status.shortcut,
+              })
+            }
+            className="ml-2 rounded-lg bg-white/5 px-3 py-2 text-white"
+          />
+        </label>
+        <Button
+          onClick={() =>
+            void configure({
+              enabled: !status.enabled,
+              shortcut: status.shortcut,
+            })
+          }
+        >
+          {status.enabled ? "Disable shortcut" : "Enable shortcut"}
+        </Button>
+        <Button disabled={!status.enabled} onClick={() => void readSelection()}>
+          Capture copied selection
+        </Button>
+      </div>
+      <p className="mt-3 text-xs text-white/50">
+        {status.platform} · {status.capability.replaceAll("_", " ")} · fallback:
+        copy text first or paste/type it into the word form.
+      </p>
+      {status.permissionRequired && (
+        <p className="mt-2 text-sm text-amber-200">
+          macOS needs Accessibility permission for automatic copy. Grant it in
+          System Settings → Privacy & Security → Accessibility, then retry.
+        </p>
+      )}
+      {candidate?.status === "permission_required" && (
+        <p className="mt-3 text-sm text-amber-200">
+          Accessibility permission was denied. Copy the selection, then use the
+          fallback button.
+        </p>
+      )}
+      {candidate?.status === "empty_selection" && (
+        <p className="mt-3 text-sm text-amber-200">
+          No selection was available. Select text and try again.
+        </p>
+      )}
+      {candidate?.status === "sensitive" && (
+        <p className="mt-3 text-sm text-amber-200">
+          That text looks sensitive and was discarded.
+        </p>
+      )}
+      {candidateText && (
+        <div className="mt-4 rounded-lg border border-white/10 p-3">
+          <p className="text-sm text-white/70">
+            {candidate?.sourceApplication
+              ? `From ${candidate.sourceApplication}`
+              : "Copied selection"}{" "}
+            · not saved
+          </p>
+          <p className="mt-2 whitespace-pre-wrap text-white">{candidateText}</p>
+          {groups.length > 0 && (
+            <label className="mt-3 block text-sm text-white/70">
+              Review group
+              <select
+                aria-label="Selected-text review group"
+                value={groupId}
+                onChange={(event) => setGroupId(event.target.value)}
+                className="ml-2 rounded bg-white/10 p-2 text-white"
+              >
+                {groups.map((group) => (
+                  <option key={group.id} value={group.id}>
+                    {group.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button onClick={openWordForm} disabled={!selectedGroup}>
+              Explain in context
+            </Button>
+            <Button onClick={openWordForm} disabled={!selectedGroup}>
+              Translate and save
+            </Button>
+            <Button
+              disabled={busy || !selectedGroup}
+              onClick={async () => {
+                const reviewGroup = selectedGroup;
+                if (!reviewGroup) return;
+                try {
+                  setBusy(true);
+                  await groupsApi.addWord(reviewGroup.id, {
+                    term: candidateText.split(/\s+/)[0],
+                    target_language: reviewGroup.target_language,
+                    translations: [],
+                    example_sentence: candidateText,
+                  });
+                  setCandidate(null);
+                  navigate("/review");
+                } catch (err) {
+                  setError(
+                    err instanceof Error
+                      ? err.message
+                      : "Could not add this candidate to review.",
+                  );
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              Add to review list
+            </Button>
+            <Button onClick={() => setCandidate(null)}>Discard</Button>
+          </div>
+        </div>
+      )}
+      {error && (
+        <p role="alert" className="mt-3 text-sm text-danger">
+          {error}
+        </p>
+      )}
+    </Card>
+  );
 }
 
 function ClipboardCaptureCard() {

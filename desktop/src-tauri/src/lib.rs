@@ -12,6 +12,7 @@
 mod clipboard;
 mod credential;
 mod mcp;
+mod selection_capture;
 
 use lensword_api_config::{read_endpoint_file, resolve, ApiConfig};
 use tauri::Manager;
@@ -55,8 +56,11 @@ fn get_api_config(app: tauri::AppHandle) -> Result<ApiConfig, String> {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(selection_capture::plugin())
         .manage(mcp::McpState::default())
         .manage(clipboard::ClipboardState::default())
+        .manage(selection_capture::SelectionCaptureState::default())
+        .setup(|app| selection_capture::install(app.handle()).map_err(Into::into))
         .invoke_handler(tauri::generate_handler![
             get_api_config,
             credential::credential_get,
@@ -65,6 +69,9 @@ pub fn run() {
             clipboard::clipboard_configure,
             clipboard::clipboard_status,
             clipboard::clipboard_capture,
+            selection_capture::selection_capture_status,
+            selection_capture::selection_capture_configure,
+            selection_capture::selection_capture,
             mcp::mcp_server_list,
             mcp::mcp_server_save,
             mcp::mcp_server_delete,
