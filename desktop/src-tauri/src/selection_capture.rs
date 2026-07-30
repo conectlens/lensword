@@ -5,7 +5,9 @@
 //! writes selected text to disk or emits it in an event payload.
 use crate::clipboard;
 use serde::{Deserialize, Serialize};
-use std::{process::Command, str::FromStr, sync::Mutex};
+#[cfg(target_os = "macos")]
+use std::process::Command;
+use std::{str::FromStr, sync::Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
