@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { aiVocabularyApi, groupsApi, wordsApi } from '../../lib/api'
 import { LANGUAGES, type Group, type SupportedLanguage } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
@@ -15,6 +15,7 @@ const SUGGESTED_CATEGORIES = ['Travel', 'Work', 'Daily Life', 'Technology', 'Foo
 export function WordFormPage() {
   const { groupId, wordId } = useParams()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const isEditing = Boolean(wordId)
 
   const [group, setGroup] = useState<Group | null>(null)
@@ -31,6 +32,10 @@ export function WordFormPage() {
   const [ready, setReady] = useState(!isEditing)
 
   useEffect(() => {
+    if (!isEditing) {
+      setTerm(searchParams.get('term') ?? '')
+      setContextSentence(searchParams.get('context') ?? '')
+    }
     if (groupId) {
       groupsApi.list().then((all) => setGroup(all.find((g) => g.id === Number(groupId)) ?? null))
     }
@@ -49,7 +54,7 @@ export function WordFormPage() {
       setLanguage(group.target_language)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupId, wordId])
+  }, [groupId, wordId, isEditing, searchParams])
 
   function addTranslation() {
     const value = translationDraft.trim()
