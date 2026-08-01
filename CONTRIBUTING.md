@@ -53,8 +53,34 @@ cargo clippy -p lensword-api-config -- -D warnings
 ```
 
 `lensword-api-config` deliberately has no Tauri dependency, so the endpoint
-rules can be tested on any machine without a GUI toolchain. Building and
-packaging the shell itself is not wired up yet — see ROADMAP Phase 3.
+rules can be tested on any machine without a GUI toolchain.
+
+To build an installer locally, build the frontend first — `generate_context!`
+embeds that output, and if it is missing the build fails inside a macro
+expansion rather than saying what is actually wrong:
+
+```bash
+(cd frontend && npm ci && npm run build)
+(cd desktop && npx @tauri-apps/cli@2 build)
+```
+
+The artifact lands under `desktop/target/release/bundle/`. Locally built
+installers are unsigned.
+
+On macOS, `.dmg` bundling ends with an AppleScript step that arranges the
+disk-image window in the Finder. It fails with `execution error: An error of
+type -10810` when there is no GUI session — over SSH, or from a headless
+process — after the `.app` has already been built successfully. Setting `CI=1`
+skips that cosmetic step and produces the same installer:
+
+```bash
+(cd desktop && CI=1 npx @tauri-apps/cli@2 build)
+```
+
+CI runners set `CI` themselves, so the release workflow is unaffected. CI produces the same artifacts for all three
+platforms on a `v*` tag (`.github/workflows/release.yml`), also unsigned unless
+the repository's signing secrets are configured — ADR 0001 requires signed and
+notarized artifacts before the measured baseline in #65 can be taken.
 
 The endpoint the shell connects to is read from `LENSWORD_API_URL`, then from
 an `api-endpoint` file in the OS application-config directory, then defaults to

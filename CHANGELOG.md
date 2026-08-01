@@ -34,6 +34,16 @@ releases exist yet).
 
 ### Added
 
+- Desktop installers are built by CI. Pushing a `v*` tag builds the shell on
+  macOS, Windows and Linux and attaches `.dmg`, `.msi`/`.exe` and
+  `.deb`/`.AppImage` artifacts to a **draft** GitHub release, so a tag never
+  publishes installers without someone looking at them first. The bundle is
+  enabled in the Tauri config with a full per-platform icon set. Builds are
+  **unsigned** unless the repository's signing secrets are configured; ADR 0001
+  requires signed and, on macOS, notarized artifacts before the measured
+  startup/memory baseline (#65) can be taken against them, so that gate is
+  unchanged by this. (ROADMAP Phase 3.3.)
+
 - Desktop shell scaffold (Tauri 2), under `desktop/`. The shell hosts the
   existing frontend production build and resolves its API endpoint at runtime
   rather than at build time, so one build can address either a local backend or
@@ -43,9 +53,9 @@ releases exist yet).
   from `LENSWORD_API_URL`, then a plain-text `api-endpoint` file in the
   application-config directory, then a loopback default; a configured endpoint
   that fails validation is an error rather than a fall-through to the default.
-  Browser behavior is unchanged — `VITE_API_URL` still applies there. **The
-  shell is not yet packaged or installable**: there is no signed build, no
-  installer, and no native notification support.
+  Browser behavior is unchanged — `VITE_API_URL` still applies there. The shell
+  is packaged by CI on a tag (see the installer entry above) but the artifacts
+  are **unsigned**, and it still has no native notification support.
 - Per-user time zones. An account carries an IANA identifier (for example
   `Europe/Istanbul`), set from the settings screen and defaulting to `UTC`, and
   reminder trigger times and Forced Recall quiet hours are both read on that
