@@ -443,3 +443,43 @@ class WeeklyLearningReport:
     snapshot: dict
     narration: str | None = None
     created_at: datetime = field(default_factory=utcnow)
+
+
+@dataclass(slots=True)
+class DesktopNotification:
+    """One desktop notification awaiting collection by a desktop shell.
+
+    ADR 0002 settled the desktop app as remote-only, which decides the shape
+    of this entity: the backend and the machine that owns the notification
+    tray are different processes, usually on different hosts, so the backend
+    cannot raise a toast itself. It can only record that one is owed and let
+    the shell collect it. That makes this an outbox record, not a delivery.
+
+    `delivered_at` is set when a shell acknowledges the row. It is deliberately
+    an acknowledgement of *collection*, not proof the operating system drew
+    anything on screen — the backend has no way to observe the latter, and
+    claiming otherwise in a field name would invite code that trusts it.
+
+    The entity carries the rendered `message` rather than a template and
+    arguments. Reminder text is decided at fire time by the delivery use case,
+    against settings read at that moment; storing the inputs instead would let
+    a shell that collects late render text the policy would no longer produce.
+    """
+
+    id: int | None
+    user_id: int
+    message: str
+    created_at: datetime = field(default_factory=utcnow)
+    delivered_at: datetime | None = None
+
+    @property
+    def pending(self) -> bool:
+        return self.delivered_at is None
+
+    def mark_delivered(self, at: datetime | None = None) -> None:
+        """Record collection by a shell. Idempotent: a repeated acknowledgement
+        keeps the first timestamp, because the OS callbacks that will drive
+        this (issue #88) are explicitly allowed to arrive more than once, and
+        the first collection is the one that actually happened."""
+        if self.delivered_at is None:
+            self.delivered_at = at or utcnow()
