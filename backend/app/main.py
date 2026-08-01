@@ -18,11 +18,11 @@ from app.infrastructure.scheduler import create_scheduler, register_jobs
 settings_ = get_settings()
 
 if settings_.environment == "development":
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=settings_.log_level)
     # basicConfig is intentionally a no-op once pytest/a host process has
     # installed a handler. Set the level explicitly so development diagnostics
     # do not disappear merely because the app is imported second.
-    logging.getLogger().setLevel(logging.INFO)
+    logging.getLogger().setLevel(settings_.log_level)
 
 
 @asynccontextmanager

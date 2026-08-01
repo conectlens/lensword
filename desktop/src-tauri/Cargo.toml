@@ -17,6 +17,11 @@ lensword-api-config = { path = "../api-config" }
 serde = { version = "1", features = ["derive"] }
 tauri = { version = "2", features = [] }
 tauri-plugin-global-shortcut = "2"
+# Debug-tooling: RUST_LOG-controlled tracing to stdout. `env_logger` reads
+# RUST_LOG at init and is a no-op overhead-wise once configured, so it's safe
+# to leave compiled into release builds rather than feature-gating it out.
+log = "0.4"
+env_logger = "0.11"
 # Native OS credential storage (ADR 0001): macOS Keychain, Windows Credential
 # Manager, Linux Secret Service. The `sync-secret-service` + `crypto-rust`
 # defaults keep the Linux backend pure-Rust, so CI compiles it without extra
