@@ -11,6 +11,7 @@ export type WordStatus = 'new' | 'learning' | 'review' | 'mastered' | 'needs_rev
 export type ReviewOutcome = 'correct' | 'incorrect' | 'skipped'
 export type SessionMode = 'standard' | 'focus' | 'walking' | 'night' | 'break'
 export type UserRole = 'user' | 'admin'
+export type AIProvider = 'none' | 'ollama'
 
 export interface User {
   id: number
@@ -34,6 +35,7 @@ export interface ReviewState {
   due_at: string
   last_reviewed_at: string | null
   status: WordStatus
+  fsrs_retrievability?: number | null
 }
 
 export interface Word {
@@ -45,11 +47,40 @@ export interface Word {
   example_sentence: string | null
   mnemonic: string | null
   category: string | null
+  definition: string | null
+  part_of_speech: string | null
+  cefr_level: string | null
+  pronunciation: string | null
+  collocations: string[]
+  tags: string[]
+  ai_confidence: number | null
+  ai_provider: string | null
+  ai_model: string | null
   synonyms: string[]
   antonyms: string[]
   topics: string[]
   review_state: ReviewState
   created_at: string
+}
+
+export interface WordEnrichment {
+  term: string
+  target_language: string
+  translations: string[]
+  definitions: string[]
+  part_of_speech: string | null
+  cefr_level: string | null
+  pronunciation: string | null
+  examples: string[]
+  synonyms: string[]
+  antonyms: string[]
+  collocations: string[]
+  tags: string[]
+  mnemonic: string | null
+  category: string | null
+  confidence: number | null
+  provider: string
+  model: string
 }
 
 export interface Group {
@@ -93,6 +124,7 @@ export interface MnemonicNote {
 }
 
 export interface RecallSettings {
+  scheduler: 'sm2' | 'fsrs'
   enabled: boolean
   intensity: number
   morning_checkin_enabled: boolean
@@ -113,6 +145,42 @@ export interface RecallSettings {
   /** IANA identifier, e.g. 'Europe/Istanbul'. Reminder times and quiet
    *  hours are interpreted in this zone. */
   time_zone: string
+}
+
+export interface DailySession {
+  enabled: boolean
+  goal_minutes: number
+  review_limit: number
+  due_count: number
+}
+
+export interface PracticeExercise {
+  id: number
+  word_id: number
+  kind: 'translation' | 'definition' | 'cloze'
+  prompt: string
+  options: string[]
+  answered: boolean
+  correct: boolean | null
+}
+
+export interface WeeklyLearningReport {
+  id: number
+  snapshot: {
+    schema_version: number
+    week: { start: string; end: string; time_zone: string }
+    source_range: { session_count: number; attempt_count: number }
+    studied: number
+    retained: number
+    overdue: number
+    difficult_topics: Array<{ name: string; mistakes: number }>
+    repeated_mistake_categories: Array<{ name: string; mistakes: number }>
+    productive_time_windows: Array<{ label: string; attempts: number }>
+    data_completeness: { status: 'complete' | 'sparse'; warnings: string[]; missing_data: string[] }
+    generated_at: string
+  }
+  narration: string | null
+  created_at: string
 }
 
 export interface Badge {
@@ -150,4 +218,12 @@ export interface AdminStats {
 
 export interface ApiError {
   detail: string
+}
+
+export interface AISettings {
+  provider: AIProvider
+  model: string
+  base_url: string
+  max_output_tokens: number
+  context_max_chars: number
 }

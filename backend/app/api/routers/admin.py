@@ -2,8 +2,8 @@ from dataclasses import asdict
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from app.api.deps import CurrentAdmin, ReviewSessionRepo, UserRepo, WordRepo
-from app.api.schemas.admin import AdminStatsResponse, AdminUserListResponse
+from app.api.deps import CurrentAdmin, DbSession, ReviewSessionRepo, UserRepo, WordRepo
+from app.api.schemas.admin import AdminStatsResponse, AdminUserListResponse, MCPAuditResponse, MCPGrantRequest, MCPGrantResponse
 from app.application.use_cases.admin import (
     DeleteUserUseCase,
     GetAdminStatsUseCase,
@@ -12,6 +12,8 @@ from app.application.use_cases.admin import (
     SuspendUserUseCase,
 )
 from app.domain.exceptions import EntityNotFoundError
+from app.domain.value_objects import utcnow
+from app.infrastructure.models import MCPAuditEventModel, MCPGrantModel
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
@@ -60,3 +62,25 @@ def delete_user(user_id: int, _admin: CurrentAdmin, user_repo: UserRepo) -> None
         DeleteUserUseCase(user_repo).execute(user_id)
     except EntityNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/mcp/grants", response_model=list[MCPGrantResponse])
+def list_mcp_grants(_admin: CurrentAdmin, db: DbSession) -> list[MCPGrantResponse]:
+    return [MCPGrantResponse(id=item.id, requester=item.requester, server=item.server, tool=item.tool, access=item.access, workspace=item.workspace, mode=item.mode, expires_at=item.expires_at, revoked_at=item.revoked_at) for item in db.query(MCPGrantModel).order_by(MCPGrantModel.id.desc())]
+
+@router.post("/mcp/grants", response_model=MCPGrantResponse, status_code=status.HTTP_201_CREATED)
+def create_mcp_grant(payload: MCPGrantRequest, _admin: CurrentAdmin, db: DbSession) -> MCPGrantResponse:
+    item = MCPGrantModel(**payload.model_dump())
+    db.add(item); db.flush()
+    return MCPGrantResponse(id=item.id, revoked_at=item.revoked_at, **payload.model_dump())
+
+@router.post("/mcp/grants/{grant_id}/revoke", response_model=MCPGrantResponse)
+def revoke_mcp_grant(grant_id: int, _admin: CurrentAdmin, db: DbSession) -> MCPGrantResponse:
+    item = db.get(MCPGrantModel, grant_id)
+    if item is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="MCP grant was not found")
+    item.revoked_at = utcnow(); db.flush()
+    return MCPGrantResponse(id=item.id, requester=item.requester, server=item.server, tool=item.tool, access=item.access, workspace=item.workspace, mode=item.mode, expires_at=item.expires_at, revoked_at=item.revoked_at)
+
+@router.get("/mcp/audit", response_model=list[MCPAuditResponse])
+def list_mcp_audit(_admin: CurrentAdmin, db: DbSession) -> list[MCPAuditResponse]:
+    return [MCPAuditResponse(id=item.id, requester=item.requester, tool=item.tool, decision=item.decision, event=item.event, event_hash=item.event_hash, created_at=item.created_at) for item in db.query(MCPAuditEventModel).order_by(MCPAuditEventModel.id.desc()).limit(200)]
