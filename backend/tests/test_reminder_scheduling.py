@@ -139,7 +139,7 @@ def test_scheduling_a_reminder_persists_it_and_registers_exactly_one_job():
     repo = _InMemoryReminderRepository()
     jobs = _RecordingReminderScheduler()
 
-    saved = ScheduleReminderUseCase(repo, _groups(), jobs).execute(_reminder())
+    saved = ScheduleReminderUseCase(repo, _groups(), jobs, _InMemoryUserRepository([])).execute(_reminder())
 
     assert saved.id is not None
     assert repo.get_by_id(saved.id) is saved
@@ -152,7 +152,7 @@ def test_a_reminder_is_persisted_before_its_job_is_registered():
     repo = _InMemoryReminderRepository()
     jobs = _RecordingReminderScheduler()
 
-    ScheduleReminderUseCase(repo, _groups(), jobs).execute(_reminder())
+    ScheduleReminderUseCase(repo, _groups(), jobs, _InMemoryUserRepository([])).execute(_reminder())
 
     assert jobs.scheduled[0].id is not None
 
@@ -161,7 +161,9 @@ def test_a_disabled_reminder_is_persisted_but_registers_no_job():
     repo = _InMemoryReminderRepository()
     jobs = _RecordingReminderScheduler()
 
-    saved = ScheduleReminderUseCase(repo, _groups(), jobs).execute(_reminder(enabled=False))
+    saved = ScheduleReminderUseCase(repo, _groups(), jobs, _InMemoryUserRepository([])).execute(
+        _reminder(enabled=False)
+    )
 
     assert repo.get_by_id(saved.id) is not None
     assert jobs.scheduled == []
@@ -189,7 +191,9 @@ def test_a_reminder_cannot_be_scheduled_against_someone_elses_group():
     groups = _groups(owner_id=99)
 
     with pytest.raises(PermissionDeniedError):
-        ScheduleReminderUseCase(repo, groups, jobs).execute(_reminder(user_id=1, group_id=2))
+        ScheduleReminderUseCase(repo, groups, jobs, _InMemoryUserRepository([])).execute(
+            _reminder(user_id=1, group_id=2)
+        )
 
     assert repo.rows == {}
     assert jobs.scheduled == []
@@ -200,7 +204,9 @@ def test_a_reminder_cannot_be_scheduled_against_a_group_that_does_not_exist():
     jobs = _RecordingReminderScheduler()
 
     with pytest.raises(EntityNotFoundError):
-        ScheduleReminderUseCase(repo, _InMemoryGroupRepository([]), jobs).execute(_reminder())
+        ScheduleReminderUseCase(repo, _InMemoryGroupRepository([]), jobs, _InMemoryUserRepository([])).execute(
+            _reminder()
+        )
 
     assert repo.rows == {}
     assert jobs.scheduled == []
@@ -370,9 +376,8 @@ def test_a_reminder_five_seconds_out_fires_and_notifies_exactly_once():
     settings = RecallSettings(
         user_id=1, push_enabled=True, email_enabled=False, desktop_enabled=False, in_app_enabled=False
     )
-    deliver = DeliverReminderUseCase(
-        repo, _InMemoryUserRepository([_user()]), _SingleUserSettingsRepository(settings), channel
-    )
+    users = _InMemoryUserRepository([_user()])
+    deliver = DeliverReminderUseCase(repo, users, _SingleUserSettingsRepository(settings), channel)
 
     async def _run() -> None:
         scheduler = create_scheduler()
@@ -380,7 +385,7 @@ def test_a_reminder_five_seconds_out_fires_and_notifies_exactly_once():
         adapter = ApSchedulerReminderScheduler(scheduler, dispatch=deliver.execute)
 
         fires_at = utcnow() + timedelta(seconds=5)
-        reminder = ScheduleReminderUseCase(repo, _groups(), adapter).execute(
+        reminder = ScheduleReminderUseCase(repo, _groups(), adapter, users).execute(
             _reminder(trigger_time=fires_at.strftime("%H:%M:%S"), recurrence=Recurrence.ONCE)
         )
         assert scheduler.get_job(reminder_job_id(reminder.id)) is not None
