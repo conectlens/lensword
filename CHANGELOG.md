@@ -34,6 +34,16 @@ releases exist yet).
 
 ### Added
 
+- A per-tenant isolation audit, kept as a test rather than a document. Every
+  endpoint that accepts a resource identifier is exercised from a second
+  account and must be denied, and the same request is checked to still succeed
+  for its owner — so a passing audit cannot be an endpoint that is broken for
+  everyone. A companion check fails when a new identifier-taking endpoint is
+  added without being audited, which stops the review going stale the way a
+  written one would. **Zero findings**: ownership is enforced in the use-case
+  layer on every route, and no collection endpoint returns another account's
+  rows. (ROADMAP Phase 4.1.)
+
 - Desktop shell scaffold (Tauri 2), under `desktop/`. The shell hosts the
   existing frontend production build and resolves its API endpoint at runtime
   rather than at build time, so one build can address either a local backend or

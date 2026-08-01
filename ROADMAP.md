@@ -78,8 +78,11 @@ depends on this.
 
 - [ ] **4.0** Migrate SQLite → Postgres; audit for SQLite-specific SQL.
       *(Planned)*
-- [ ] **4.1** Per-tenant data isolation audit across all repository
-      queries. *(Planned)*
+- [x] **4.1** Per-tenant data isolation audit across all repository
+      queries. *(Shipped — zero findings. The audit is executable rather than
+      written down: `backend/tests/test_tenant_isolation.py` denies a second
+      account on every endpoint that accepts a resource identifier, and fails
+      if a new such endpoint is added without being audited.)*
 - [ ] **4.2** Move the scheduler to a durable, horizontally-safe job store
       (Postgres-backed locking or a real queue) — required before running
       more than one backend instance. *(Planned)*
