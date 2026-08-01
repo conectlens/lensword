@@ -1,6 +1,9 @@
 fastapi==0.141.1
 uvicorn[standard]==0.52.0
 sqlalchemy==2.0.51
+# Postgres driver (ROADMAP 4.0). The [binary] extra ships prebuilt wheels, so
+# neither CI nor a contributor needs libpq headers and a compiler to install it.
+psycopg[binary]==3.2.12
 apscheduler==3.11.3
 alembic==1.18.5
 pydantic==2.13.4

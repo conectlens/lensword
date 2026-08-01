@@ -9,13 +9,49 @@ from app.config import get_settings
 
 settings = get_settings()
 
-_connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
+# Recycle below the 5-minute idle cutoff common to managed Postgres offerings
+# and connection poolers, so the pool retires a connection before the far end
+# does and a request never picks up one that was closed underneath it.
+POOL_RECYCLE_SECONDS = 280
+
+
+def engine_options(database_url: str, pool_size: int, max_overflow: int) -> tuple[dict, dict]:
+    """Return `(connect_args, engine_kwargs)` for a database URL.
+
+    A function rather than import-time branching so the dialect rules are
+    testable without reimporting this module against patched settings — the
+    engine below is built once, at import, and cannot be rebuilt afterwards.
+    """
+    if database_url.startswith("sqlite"):
+        # SQLite alone needs check_same_thread relaxed: the scheduler delivers
+        # reminders on worker threads that did not open the connection, which
+        # SQLite otherwise refuses. The pool arguments are omitted rather than
+        # set, because SQLite's default pool does not accept pool_size and
+        # passing it raises instead of being ignored.
+        return {"check_same_thread": False}, {}
+
+    # Server-side connections are a bounded resource, unlike SQLite's file
+    # handle, so the pool is sized explicitly rather than left at the default.
+    # pre_ping costs one round trip per checkout and buys immunity to
+    # connections killed underneath the pool — by an idle timeout, a failover,
+    # or a restart — which otherwise surface as an unrelated request failing.
+    return {}, {
+        "pool_pre_ping": True,
+        "pool_size": pool_size,
+        "max_overflow": max_overflow,
+        "pool_recycle": POOL_RECYCLE_SECONDS,
+    }
+
+
+_connect_args, _engine_kwargs = engine_options(
+    settings.database_url, settings.db_pool_size, settings.db_max_overflow
+)
 
 if settings.database_url.startswith("sqlite:///./"):
     db_path = settings.database_url.replace("sqlite:///./", "")
     os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
 
-engine = create_engine(settings.database_url, connect_args=_connect_args)
+engine = create_engine(settings.database_url, connect_args=_connect_args, **_engine_kwargs)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
