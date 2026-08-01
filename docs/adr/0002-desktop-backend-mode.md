@@ -1,7 +1,8 @@
 # ADR 0002: Desktop backend mode — bundled local backend vs. remote-only
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-07-23
+- Accepted: 2026-08-01
 - Decision owners: LensWord maintainers
 - Related issues: [#17](https://github.com/conectlens/lensword/issues/17),
   [#30](https://github.com/conectlens/lensword/issues/30),
@@ -57,8 +58,9 @@ Concretely:
    the triggers below are met — most naturally after Phase 4 has produced a
    hardened, packageable backend.
 
-This decision is a recommendation to the maintainers. Issue #17 remains open
-until it is accepted, amended, or rejected.
+This decision has been accepted by the maintainers. Issue #17 stays open to
+track the follow-up work items (loopback branch upkeep, revisit triggers)
+rather than the decision itself.
 
 ## Decision drivers
 
