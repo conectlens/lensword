@@ -33,6 +33,10 @@ def _suggest(provider: OllamaProvider, word: str = "word", context: str = "conte
     return asyncio.run(provider.suggest_mnemonic(word, context))
 
 
+def _extract(provider: OllamaProvider):
+    return asyncio.run(provider.extract_vocabulary("A useful passage.", "English", "Spanish", 2))
+
+
 def test_suggest_mnemonic_returns_generated_text():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/api/generate"
@@ -47,6 +51,54 @@ def test_suggest_mnemonic_returns_generated_text():
     result = _suggest(provider, "ubiquitous", "common in academic writing")
 
     assert result == "Think 'you-BIK-wit-us'"
+
+
+def test_extract_normalizes_a_single_nested_candidate_and_keeps_target_examples():
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.read())
+        assert payload["format"] == "json"
+        return httpx.Response(
+            200,
+            json={
+                "response": json.dumps(
+                    {
+                        "term": "diligent",
+                        "translations": [{"language": "Spanish", "translation": "diligente"}],
+                        "examples": [
+                            {"language": "English", "example": "A diligent student."},
+                            {"language": "Spanish", "example": "Un estudiante diligente."},
+                        ],
+                    }
+                )
+            },
+        )
+
+    candidates = _extract(_provider(handler))
+
+    assert [(candidate.term, candidate.translations, candidate.examples) for candidate in candidates] == [
+        ("diligent", ["diligente"], ["Un estudiante diligente."])
+    ]
+
+
+def test_extract_normalizes_translation_maps_and_discards_unlabelled_examples():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "response": json.dumps(
+                    {
+                        "term": "diligent",
+                        "translations": {"Spanish": "diligente"},
+                        "examples": ["An unlabelled example is not trusted as target language output."],
+                    }
+                )
+            },
+        )
+
+    candidate = _extract(_provider(handler))[0]
+
+    assert candidate.translations == ["diligente"]
+    assert candidate.examples == []
 
 
 def test_suggest_mnemonic_raises_clear_error_when_daemon_unreachable(caplog):

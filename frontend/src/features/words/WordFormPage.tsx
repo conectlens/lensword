@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
-import { groupsApi, wordsApi } from '../../lib/api'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { aiVocabularyApi, groupsApi, wordsApi } from '../../lib/api'
 import { LANGUAGES, type Group, type SupportedLanguage } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
@@ -15,6 +15,7 @@ const SUGGESTED_CATEGORIES = ['Travel', 'Work', 'Daily Life', 'Technology', 'Foo
 export function WordFormPage() {
   const { groupId, wordId } = useParams()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const isEditing = Boolean(wordId)
 
   const [group, setGroup] = useState<Group | null>(null)
@@ -25,10 +26,16 @@ export function WordFormPage() {
   const [exampleSentence, setExampleSentence] = useState('')
   const [mnemonic, setMnemonic] = useState('')
   const [category, setCategory] = useState('')
+  const [contextSentence, setContextSentence] = useState('')
+  const [aiLoading, setAiLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [ready, setReady] = useState(!isEditing)
 
   useEffect(() => {
+    if (!isEditing) {
+      setTerm(searchParams.get('term') ?? '')
+      setContextSentence(searchParams.get('context') ?? '')
+    }
     if (groupId) {
       groupsApi.list().then((all) => setGroup(all.find((g) => g.id === Number(groupId)) ?? null))
     }
@@ -48,7 +55,7 @@ export function WordFormPage() {
       setLanguage(group.target_language)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupId, wordId])
+  }, [groupId, wordId, isEditing, searchParams])
 
   function addTranslation() {
     const value = translationDraft.trim()
@@ -86,6 +93,26 @@ export function WordFormPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  async function translateInContext() {
+    if (!term.trim() || !contextSentence.trim()) return
+    setAiLoading(true)
+    try {
+      const enriched = await aiVocabularyApi.translateInContext(term, contextSentence, null, language)
+      setTranslations(enriched.translations)
+      if (enriched.examples[0]) setExampleSentence(enriched.examples[0])
+    } finally { setAiLoading(false) }
+  }
+
+  async function regenerate(field: 'example' | 'mnemonic') {
+    if (!term.trim()) return
+    setAiLoading(true)
+    try {
+      const result = await aiVocabularyApi.regenerateField(field, term, language)
+      if (field === 'example') setExampleSentence(result.value)
+      else setMnemonic(result.value)
+    } finally { setAiLoading(false) }
   }
 
   if (!ready) return <Spinner />
@@ -136,7 +163,9 @@ export function WordFormPage() {
             </div>
           </div>
 
-          <Textarea label="Example sentence" rows={3} value={exampleSentence} onChange={(e) => setExampleSentence(e.target.value)} placeholder="Use the word in a sentence" />
+          <div className="flex flex-col gap-2"><Textarea label="Example sentence" rows={3} value={exampleSentence} onChange={(e) => setExampleSentence(e.target.value)} placeholder="Use the word in a sentence" /><Button type="button" variant="ghost" size="sm" loading={aiLoading} onClick={() => regenerate('example')}>Regenerate example</Button></div>
+
+          <div className="flex flex-col gap-2"><Textarea label="Translate in context" rows={2} value={contextSentence} onChange={(e) => setContextSentence(e.target.value)} placeholder="Enter a sentence containing this word" /><Button type="button" variant="secondary" size="sm" loading={aiLoading} disabled={!contextSentence.trim() || !term.trim()} onClick={translateInContext}>Translate in context</Button></div>
 
           <div className="flex flex-col gap-2">
             <Textarea
@@ -147,6 +176,7 @@ export function WordFormPage() {
               placeholder="Write a short, funny or memorable story using this word."
             />
             <p className="px-1 text-xs text-white/40">Creating a personal story or sentence boosts recall.</p>
+            <Button type="button" variant="ghost" size="sm" loading={aiLoading} onClick={() => regenerate('mnemonic')}>Regenerate mnemonic</Button>
           </div>
 
           <div className="flex flex-col gap-2">

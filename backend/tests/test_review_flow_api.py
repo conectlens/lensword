@@ -206,18 +206,70 @@ def test_recall_settings_roundtrip(client, auth_headers):
     headers = auth_headers()
     defaults = client.get("/api/v1/recall-settings", headers=headers).json()
     assert defaults["intensity"] == 3
+    assert defaults["scheduler"] == "sm2"
 
     resp = client.put(
         "/api/v1/recall-settings",
-        json={"enabled": True, "intensity": 5, "walking_mode_enabled": True, "walking_steps_threshold": 2000},
+        json={
+            "enabled": True,
+            "intensity": 5,
+            "walking_mode_enabled": True,
+            "walking_steps_threshold": 2000,
+            "scheduler": "fsrs",
+        },
         headers=headers,
     )
     assert resp.status_code == 200
     assert resp.json()["intensity"] == 5
     assert resp.json()["walking_mode_enabled"] is True
+    assert resp.json()["scheduler"] == "fsrs"
 
     again = client.get("/api/v1/recall-settings", headers=headers).json()
     assert again["intensity"] == 5
+    assert again["scheduler"] == "fsrs"
+
+
+def test_adaptive_practice_exercise_daily_preferences_and_pronunciation(client, auth_headers):
+    headers = auth_headers()
+    _group, word = _setup_group_with_word(client, headers, term="hola", translation="hello")
+
+    exercise = client.post(
+        "/api/v1/practice/exercises", json={"word_id": word["id"], "kind": "translation"}, headers=headers
+    )
+    assert exercise.status_code == 201
+    assert exercise.json()["prompt"] == "Translate 'hola'."
+
+    answer = client.post(
+        f"/api/v1/practice/exercises/{exercise.json()['id']}/answer", json={"response": "hello"}, headers=headers
+    )
+    assert answer.status_code == 200
+    assert answer.json()["correct"] is True
+
+    feedback = client.post(
+        "/api/v1/practice/pronunciation-feedback", json={"word_id": word["id"], "transcript": "Hola"}, headers=headers
+    )
+    assert feedback.status_code == 200
+    assert feedback.json()["accepted"] is True
+
+    saved = client.put(
+        "/api/v1/practice/daily-session", json={"enabled": True, "goal_minutes": 15, "review_limit": 12}, headers=headers
+    )
+    assert saved.status_code == 200
+    assert saved.json()["goal_minutes"] == 15
+    assert client.get("/api/v1/practice/daily-session", headers=headers).json()["review_limit"] == 12
+
+
+def test_weekly_learning_report_is_persisted_and_private(client, auth_headers):
+    headers = auth_headers(username="reporter", email="reporter@example.com")
+    _group, word = _setup_group_with_word(client, headers, term="hola", translation="hello")
+    session = client.post("/api/v1/review/sessions", json={"mode": "standard"}, headers=headers).json()
+    client.post(f"/api/v1/review/sessions/{session['session_id']}/answers", json={"word_id": word["id"], "outcome": "correct"}, headers=headers)
+    report = client.post("/api/v1/reports/weekly", headers=headers)
+    assert report.status_code == 201
+    assert report.json()["snapshot"]["studied"] == 1
+    assert client.get("/api/v1/reports/weekly", headers=headers).json()[0]["id"] == report.json()["id"]
+    stranger = auth_headers(username="other", email="other@example.com")
+    assert client.get(f"/api/v1/reports/weekly/{report.json()['id']}", headers=stranger).status_code == 403
 
 
 def test_profile_overview_reports_badge_progress(client, auth_headers):

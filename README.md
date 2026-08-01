@@ -203,8 +203,8 @@ and `ollama_base_url` in `backend/app/config.py`.
 
 ## Known gaps
 
-- No Alembic migrations — `Base.metadata.create_all()` on startup. Fine for this
-  stage; add Alembic before your schema needs to evolve under real user data.
+- Alembic manages schema changes. Run `cd backend && alembic upgrade head`
+  before a direct local server start; the Docker backend runs this automatically.
 - No refresh-token rotation — a single 7-day access token. Fine for an MVP, not
   for a production launch.
 - Blog/About marketing pages from the templates aren't built — the landing page

@@ -112,6 +112,15 @@ class WordInput:
     example_sentence: str | None = None
     mnemonic: str | None = None
     category: str | None = None
+    definition: str | None = None
+    part_of_speech: str | None = None
+    cefr_level: str | None = None
+    pronunciation: str | None = None
+    collocations: list[str] | None = None
+    tags: list[str] | None = None
+    ai_confidence: float | None = None
+    ai_provider: str | None = None
+    ai_model: str | None = None
 
 
 class AddWordUseCase:
@@ -128,6 +137,15 @@ class AddWordUseCase:
             target_language=data.target_language,
             example_sentence=data.example_sentence,
             category=data.category,
+            definition=data.definition,
+            part_of_speech=data.part_of_speech,
+            cefr_level=data.cefr_level,
+            pronunciation=data.pronunciation,
+            collocations=list(data.collocations or []),
+            tags=list(data.tags or []),
+            ai_confidence=data.ai_confidence,
+            ai_provider=data.ai_provider,
+            ai_model=data.ai_model,
         )
         for t in data.translations:
             word.add_translation(t)
@@ -150,6 +168,15 @@ class UpdateWordUseCase:
         word.example_sentence = data.example_sentence
         word.set_mnemonic(data.mnemonic)
         word.category = data.category
+        if data.definition is not None: word.definition = data.definition
+        if data.part_of_speech is not None: word.part_of_speech = data.part_of_speech
+        if data.cefr_level is not None: word.cefr_level = data.cefr_level
+        if data.pronunciation is not None: word.pronunciation = data.pronunciation
+        if data.collocations is not None: word.collocations = list(data.collocations)
+        if data.tags is not None: word.tags = list(data.tags)
+        if data.ai_confidence is not None: word.ai_confidence = data.ai_confidence
+        if data.ai_provider is not None: word.ai_provider = data.ai_provider
+        if data.ai_model is not None: word.ai_model = data.ai_model
         return self.word_repo.update(word)
 
 
@@ -192,6 +219,22 @@ class GetWordUseCase:
 
     def execute(self, owner_id: int, word_id: int) -> Word:
         return _require_word_owner(self.word_repo, self.group_repo, word_id, owner_id)
+
+
+class SearchWordsUseCase:
+    """Search only words inside groups owned by the requesting learner."""
+    def __init__(self, word_repo: WordRepository, group_repo: GroupRepository):
+        self.word_repo, self.group_repo = word_repo, group_repo
+
+    def execute(self, owner_id: int, query: str, limit: int) -> list[Word]:
+        needle, matches = query.strip().casefold(), []
+        for group in self.group_repo.list_by_owner(owner_id):
+            for word in self.word_repo.list_by_group(group.id or 0):
+                if not needle or needle in word.term.casefold() or any(needle in value.casefold() for value in word.translations):
+                    matches.append(word)
+                    if len(matches) >= limit:
+                        return matches
+        return matches
 
 
 # --- Rooms (memory palace) -------------------------------------------------

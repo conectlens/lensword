@@ -3,9 +3,9 @@ import asyncio
 import inspect
 from pathlib import Path
 
-from app.domain.services.ai_provider import AIProvider
+from app.domain.services.ai_provider import AIProvider, ExtractedVocabulary
 
-_ALLOWED_MODULES = ("app.domain", "typing", "__future__")
+_ALLOWED_MODULES = ("app.domain", "dataclasses", "typing", "__future__")
 
 
 def _imported_module_names(source_path: Path) -> list[str]:
@@ -45,9 +45,20 @@ def test_ai_provider_protocol_signature_is_word_and_context():
     assert list(sig.parameters) == ["self", "word", "context"]
 
 
+def test_ai_provider_extraction_signature_is_typed_and_awaitable():
+    sig = inspect.signature(AIProvider.extract_vocabulary)
+    assert list(sig.parameters) == ["self", "text", "source_language", "target_language", "max_items"]
+    assert inspect.iscoroutinefunction(AIProvider.extract_vocabulary)
+
+
 class _FakeAIProvider:
     async def suggest_mnemonic(self, word: str, context: str) -> str:
         return f"mnemonic for {word} ({context})"
+
+    async def extract_vocabulary(
+        self, text: str, source_language: str | None, target_language: str, max_items: int
+    ) -> list[ExtractedVocabulary]:
+        return [ExtractedVocabulary(term="perro")]
 
 
 def test_fake_provider_satisfies_the_port():
@@ -56,6 +67,7 @@ def test_fake_provider_satisfies_the_port():
     result = asyncio.run(provider.suggest_mnemonic("perro", "dog in Spanish"))
 
     assert result == "mnemonic for perro (dog in Spanish)"
+    assert asyncio.run(provider.extract_vocabulary("dog", "English", "Spanish", 1))[0].term == "perro"
 
 
 def test_the_port_is_awaitable():

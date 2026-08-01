@@ -1,7 +1,8 @@
-fastapi==0.139.2
-uvicorn[standard]==0.51.0
+fastapi==0.141.1
+uvicorn[standard]==0.52.0
 sqlalchemy==2.0.51
 apscheduler==3.11.3
+alembic==1.18.5
 pydantic==2.13.4
 pydantic-settings==2.14.2
 email-validator==2.3.0
@@ -9,3 +10,4 @@ pyjwt==2.13.0
 bcrypt==5.0.0
 pytest==9.1.1
 httpx==0.28.1
+python-multipart==0.0.32
