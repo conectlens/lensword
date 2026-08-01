@@ -1,0 +1,96 @@
+name: Release
+
+# Phase 3.3 (#16): produce installers for all three desktop platforms on a
+# tagged release. Builds are unsigned unless the optional signing secrets
+# below are configured — see the "Code signing" note further down.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+          - platform: ubuntu-latest
+          - platform: windows-latest
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/target
+          key: cargo-release-${{ runner.os }}-${{ hashFiles('desktop/Cargo.lock') }}
+          restore-keys: cargo-release-${{ runner.os }}-
+
+      # Same rationale and flags as the `desktop` job in ci.yml.
+      - name: Install webview build dependencies
+        if: matrix.platform == 'ubuntu-latest'
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            patchelf
+
+      # Builds the app icon into per-platform installers (.dmg, .msi/.exe,
+      # .deb/.AppImage). `beforeBuildCommand` in tauri.conf.json builds the
+      # embedded frontend first.
+      #
+      # Code signing: unsigned unless the platform-specific secrets below are
+      # set in the repository. macOS notarization additionally requires
+      # APPLE_ID/APPLE_PASSWORD/APPLE_TEAM_ID. ADR 0001 requires release
+      # artifacts to be signed and macOS artifacts notarized before the
+      # measured baseline in #65 can be taken against them — configuring
+      # those secrets is tracked separately from this workflow's job of
+      # producing installers at all.
+      - name: Build and attach installers
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: desktop
+          tagName: ${{ github.ref_name }}
+          releaseName: "LensWord Desktop ${{ github.ref_name }}"
+          releaseBody: |
+            Desktop installers for this tag. See CHANGELOG.md for details.
+
+            These builds are unsigned unless repository signing secrets were
+            configured for this run — see ADR 0001's release-gate section
+            before treating them as a signed baseline.
+          releaseDraft: true
+          prerelease: false
