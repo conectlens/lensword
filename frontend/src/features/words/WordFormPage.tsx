@@ -33,6 +33,7 @@ export function WordFormPage() {
 
   useEffect(() => {
     if (!isEditing) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setTerm(searchParams.get('term') ?? '')
       setContextSentence(searchParams.get('context') ?? '')
     }
@@ -51,7 +52,6 @@ export function WordFormPage() {
         if (!groupId) groupsApi.list().then((all) => setGroup(all.find((g) => g.id === w.group_id) ?? null))
       })
     } else if (group) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLanguage(group.target_language)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

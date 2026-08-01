@@ -430,7 +430,7 @@ function McpServersCard() {
   async function refresh() {
     try { setServers(await listMcpServers()) } catch (err) { setError(err instanceof Error ? err.message : 'Could not load MCP connections.') }
   }
-  useEffect(() => { if (desktop) void refresh() }, [desktop])
+  useEffect(() => { if (desktop) void refresh() }, [desktop]) // eslint-disable-line react-hooks/set-state-in-effect
   if (!desktop) return null
 
   async function save() {
@@ -476,7 +476,7 @@ export function AISettingsCard({ settings, onSave }: { settings: AISettings; onS
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
 
-  useEffect(() => setDraft(settings), [settings])
+  useEffect(() => setDraft(settings), [settings]) // eslint-disable-line react-hooks/set-state-in-effect
 
   async function saveAiSettings() {
     if (!draft.model.trim()) return setError('Model is required.')
