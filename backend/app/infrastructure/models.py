@@ -202,3 +202,78 @@ class RecallSettingsModel(Base):
     in_app_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     quiet_hours_start: Mapped[str | None] = mapped_column(String(8), nullable=True)
     quiet_hours_end: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    scheduler: Mapped[str] = mapped_column(String(16), default="sm2")
+
+
+class PracticeExerciseModel(Base):
+    __tablename__ = "practice_exercises"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    word_id: Mapped[int] = mapped_column(ForeignKey("words.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    prompt: Mapped[str] = mapped_column(Text)
+    answer: Mapped[str] = mapped_column(Text)
+    options: Mapped[list] = mapped_column(JSON, default=list)
+    answered: Mapped[bool] = mapped_column(Boolean, default=False)
+    correct: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class DailySessionPreferenceModel(Base):
+    __tablename__ = "daily_session_preferences"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    goal_minutes: Mapped[int] = mapped_column(Integer, default=10)
+    review_limit: Mapped[int] = mapped_column(Integer, default=20)
+
+
+class WeeklyLearningReportModel(Base):
+    __tablename__ = "weekly_learning_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    week_start: Mapped[datetime] = mapped_column(DateTime)
+    week_end: Mapped[datetime] = mapped_column(DateTime)
+    time_zone: Mapped[str] = mapped_column(String(64))
+    snapshot: Mapped[dict] = mapped_column(JSON)
+    narration: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class MCPGrantModel(Base):
+    __tablename__ = "mcp_grants"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    requester: Mapped[str] = mapped_column(String(255), index=True)
+    server: Mapped[str] = mapped_column(String(255))
+    tool: Mapped[str] = mapped_column(String(255))
+    access: Mapped[str] = mapped_column(String(32))
+    workspace: Mapped[str] = mapped_column(String(1024))
+    mode: Mapped[str] = mapped_column(String(16))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class MCPAuditEventModel(Base):
+    __tablename__ = "mcp_audit_events"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    requester: Mapped[str] = mapped_column(String(255), index=True)
+    tool: Mapped[str] = mapped_column(String(255))
+    decision: Mapped[str] = mapped_column(String(64))
+    event: Mapped[dict] = mapped_column(JSON)
+    previous_hash: Mapped[str] = mapped_column(String(64))
+    event_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class MCPIdempotencyKeyModel(Base):
+    __tablename__ = "mcp_idempotency_keys"
+    __table_args__ = (UniqueConstraint("requester", "request_id", name="uq_mcp_requester_request_id"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    requester: Mapped[str] = mapped_column(String(255), index=True)
+    request_id: Mapped[str] = mapped_column(String(128))
+    tool: Mapped[str] = mapped_column(String(255))
+    response: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime)

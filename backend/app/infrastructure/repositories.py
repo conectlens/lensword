@@ -16,6 +16,9 @@ from app.domain.entities import (
     Group,
     MnemonicNote,
     RecallSettings,
+    DailySessionPreference,
+    PracticeExercise,
+    WeeklyLearningReport,
     Reminder,
     ReviewAttempt,
     ReviewSession,
@@ -38,6 +41,9 @@ from app.infrastructure.models import (
     GroupModel,
     MnemonicNoteModel,
     RecallSettingsModel,
+    DailySessionPreferenceModel,
+    PracticeExerciseModel,
+    WeeklyLearningReportModel,
     ReminderModel,
     ReviewAttemptModel,
     ReviewSessionModel,
@@ -282,6 +288,27 @@ def _settings_to_domain(m: RecallSettingsModel) -> RecallSettings:
         in_app_enabled=m.in_app_enabled,
         quiet_hours_start=m.quiet_hours_start,
         quiet_hours_end=m.quiet_hours_end,
+        scheduler=m.scheduler,
+    )
+
+
+def _exercise_to_domain(m: PracticeExerciseModel) -> PracticeExercise:
+    return PracticeExercise(
+        id=m.id, user_id=m.user_id, word_id=m.word_id, kind=m.kind, prompt=m.prompt,
+        answer=m.answer, options=m.options or [], answered=m.answered, correct=m.correct, created_at=m.created_at,
+    )
+
+
+def _daily_preference_to_domain(m: DailySessionPreferenceModel) -> DailySessionPreference:
+    return DailySessionPreference(
+        user_id=m.user_id, enabled=m.enabled, goal_minutes=m.goal_minutes, review_limit=m.review_limit,
+    )
+
+
+def _weekly_report_to_domain(m: WeeklyLearningReportModel) -> WeeklyLearningReport:
+    return WeeklyLearningReport(
+        id=m.id, user_id=m.user_id, week_start=m.week_start, week_end=m.week_end, time_zone=m.time_zone,
+        snapshot=m.snapshot or {}, narration=m.narration, created_at=m.created_at,
     )
 
 
@@ -699,5 +726,81 @@ class SqlAlchemyRecallSettingsRepository:
         m.in_app_enabled = settings.in_app_enabled
         m.quiet_hours_start = settings.quiet_hours_start
         m.quiet_hours_end = settings.quiet_hours_end
+        m.scheduler = settings.scheduler
         self.db.flush()
         return _settings_to_domain(m)
+
+
+class SqlAlchemyPracticeExerciseRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_by_id(self, exercise_id: int) -> PracticeExercise | None:
+        model = self.db.get(PracticeExerciseModel, exercise_id)
+        return _exercise_to_domain(model) if model else None
+
+    def add(self, exercise: PracticeExercise) -> PracticeExercise:
+        model = PracticeExerciseModel(
+            user_id=exercise.user_id, word_id=exercise.word_id, kind=exercise.kind, prompt=exercise.prompt,
+            answer=exercise.answer, options=exercise.options, answered=exercise.answered, correct=exercise.correct,
+            created_at=exercise.created_at,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _exercise_to_domain(model)
+
+    def update(self, exercise: PracticeExercise) -> PracticeExercise:
+        model = self.db.get(PracticeExerciseModel, exercise.id)
+        if model is None:
+            raise ValueError(f"PracticeExercise {exercise.id} not found")
+        model.answered = exercise.answered
+        model.correct = exercise.correct
+        self.db.flush()
+        return _exercise_to_domain(model)
+
+
+class SqlAlchemyDailySessionPreferenceRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_by_user(self, user_id: int) -> DailySessionPreference | None:
+        model = self.db.get(DailySessionPreferenceModel, user_id)
+        return _daily_preference_to_domain(model) if model else None
+
+    def upsert(self, preference: DailySessionPreference) -> DailySessionPreference:
+        model = self.db.get(DailySessionPreferenceModel, preference.user_id)
+        if model is None:
+            model = DailySessionPreferenceModel(user_id=preference.user_id)
+            self.db.add(model)
+        model.enabled = preference.enabled
+        model.goal_minutes = preference.goal_minutes
+        model.review_limit = preference.review_limit
+        self.db.flush()
+        return _daily_preference_to_domain(model)
+
+
+class SqlAlchemyWeeklyLearningReportRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_by_id(self, report_id: int) -> WeeklyLearningReport | None:
+        model = self.db.get(WeeklyLearningReportModel, report_id)
+        return _weekly_report_to_domain(model) if model else None
+
+    def list_by_user(self, user_id: int) -> list[WeeklyLearningReport]:
+        stmt = select(WeeklyLearningReportModel).where(WeeklyLearningReportModel.user_id == user_id).order_by(WeeklyLearningReportModel.created_at.desc())
+        return [_weekly_report_to_domain(model) for model in self.db.scalars(stmt)]
+
+    def add(self, report: WeeklyLearningReport) -> WeeklyLearningReport:
+        model = WeeklyLearningReportModel(user_id=report.user_id, week_start=report.week_start, week_end=report.week_end, time_zone=report.time_zone, snapshot=report.snapshot, narration=report.narration, created_at=report.created_at)
+        self.db.add(model)
+        self.db.flush()
+        return _weekly_report_to_domain(model)
+
+    def update(self, report: WeeklyLearningReport) -> WeeklyLearningReport:
+        model = self.db.get(WeeklyLearningReportModel, report.id)
+        if model is None:
+            raise ValueError(f"WeeklyLearningReport {report.id} not found")
+        model.narration = report.narration
+        self.db.flush()
+        return _weekly_report_to_domain(model)
