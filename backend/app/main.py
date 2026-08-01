@@ -18,7 +18,7 @@ from app.infrastructure.scheduler import create_scheduler, register_jobs
 settings_ = get_settings()
 
 if settings_.environment == "development":
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=settings_.log_level)
 
 
 @asynccontextmanager
