@@ -283,6 +283,72 @@ rather than a server error:
 Setting names above match the `Settings` fields `ai_provider`, `ollama_model`
 and `ollama_base_url` in `backend/app/config.py`.
 
+#### Checking your setup
+
+An administrator can call `GET /api/v1/ai-settings/probe`. It reports the three
+failure modes separately, because they need different fixes and a single "AI
+unavailable" tells you nothing about which one you have:
+
+| What it says | What it means | What to do |
+|---|---|---|
+| `reachable: false`, mentions `OLLAMA_BASE_URL` | Nothing is listening there | Start Ollama, or point `OLLAMA_BASE_URL` at the machine running it |
+| `reachable: false`, "did not answer like Ollama" | Something is listening, but it is not Ollama | Check the port — you are probably hitting a proxy |
+| `reachable: true`, `ready: false` | Ollama is running, the configured model is not installed | `ollama pull <model>`, or pick one of the models the response lists |
+| `ready: true` | Configured model is installed and usable | Nothing |
+
+The route is admin-only: it names the deployment's base URL and every model
+installed on that host, which is infrastructure detail rather than something a
+learner needs.
+
+#### Running the backend in Docker with Ollama on the host
+
+`http://localhost:11434` means *inside the container*, where nothing is
+listening — so the default fails in Docker even when Ollama is running fine on
+your machine. This is the single most common way the setup appears broken.
+
+**macOS and Windows** (Docker Desktop) — use the host alias:
+
+```bash
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+```
+
+**Linux** — `host.docker.internal` is not provided by default. Either map it
+explicitly, which the Compose file can do:
+
+```yaml
+services:
+  backend:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+```
+
+or point at the Docker bridge address directly (`http://172.17.0.1:11434`),
+which is stable for the default bridge network but not for user-defined ones.
+
+Whichever you choose, Ollama must be listening on more than loopback. By
+default it binds `127.0.0.1`, which a container cannot reach even with the
+right hostname:
+
+```bash
+OLLAMA_HOST=0.0.0.0 ollama serve
+```
+
+Binding `0.0.0.0` exposes the daemon to your whole network. On a laptop on an
+untrusted network, bind it to the Docker bridge interface instead, or leave the
+backend outside Docker.
+
+#### Repeated questions are not re-generated
+
+A local model takes seconds per generation, so identical requests within a
+short window are answered from an in-process cache rather than asked again.
+Entries are keyed by account, provider and model — a response from one model is
+never served for another, and one account's response is never served to
+another. Failures are not cached, so a model that was starting up a minute ago
+is retried rather than remembered as broken. Changing the AI settings clears
+the cache.
+
 ## Verification actually run
 
 - **Backend: 96/96 tests passing** (`cd backend && .venv/bin/pytest`) — SM-2

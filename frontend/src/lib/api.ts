@@ -1,6 +1,6 @@
 import type {
   AdminStats, Group, MnemonicNote, ProfileOverview, RecallSettings, Room,
-  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile, CefrProgress, Prerequisites, RelatedWord, WordRevision, AiState,
+  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile, CefrProgress, Prerequisites, RelatedWord, WordRevision, AiState, OllamaProbe,
 } from './types'
 import { resolveApiBase } from './runtimeConfig'
 
@@ -287,6 +287,7 @@ export const notificationsApi = {
 }
 
 export const aiSettingsApi = {
+  probe: () => request<OllamaProbe>('/api/v1/ai-settings/probe'),
   get: () => request<AISettings>('/api/v1/ai-settings'),
   update: (settings: AISettings) =>
     request<AISettings>('/api/v1/ai-settings', { method: 'PUT', body: JSON.stringify(settings) }),

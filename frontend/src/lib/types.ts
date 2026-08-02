@@ -337,3 +337,19 @@ export interface CefrProgress {
   unlevelled: LevelProgress | null
   total_words: number
 }
+
+// Ollama detection during setup (issue #139). The three failure modes are kept
+// distinct because they need different fixes, and a single "AI unavailable"
+// says nothing about which one you have.
+export interface OllamaProbe {
+  reachable: boolean
+  // True only when the configured model is actually installed. Reachable is
+  // not the same as usable.
+  ready: boolean
+  models: string[]
+  configured_model: string | null
+  configured_model_installed: boolean
+  recommended_model: string
+  // Written server-side so the reason and the advice cannot drift apart.
+  detail: string
+}
