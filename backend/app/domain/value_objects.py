@@ -221,11 +221,18 @@ class Channel(str, Enum):
 def utcnow() -> datetime:
     """Single source of truth for 'now', as a naive UTC datetime.
 
-    Deliberately naive (not aware) because SQLite has no real datetime type —
-    it stores text and always returns naive datetimes on read. Comparing an
-    aware 'now' against a naive value read back from the database raises
-    TypeError, so every datetime in this domain is naive-but-UTC by
-    convention, consistently, end to end.
+    Deliberately naive (not aware). The convention began with SQLite, which has
+    no real datetime type — it stores text and always returns naive datetimes
+    on read, so comparing an aware 'now' against a stored value raises
+    TypeError. It is kept now that Postgres is also supported, because the ORM
+    columns are `DateTime` rather than `DateTime(timezone=True)`: Postgres maps
+    that to `timestamp without time zone` and hands back naive values too. One
+    convention, naive-but-UTC end to end, holds on both dialects.
+
+    Moving to timezone-aware storage would mean changing every column, every
+    comparison, and the per-user local-time arithmetic in reminder scheduling
+    at once — it is not a change a single caller can make safely, which is why
+    this stays the single source of truth for 'now'.
     """
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
