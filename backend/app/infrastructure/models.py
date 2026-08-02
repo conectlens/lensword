@@ -89,6 +89,10 @@ class WordModel(Base):
     last_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime)
+    # Bumped on every write. A client that edited revision 3 while offline is
+    # editing a word that is now revision 5, and that difference is what makes
+    # a stale edit detectable rather than silently last-write-wins.
+    revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     group: Mapped[GroupModel] = relationship(back_populates="words")
     mnemonic_notes: Mapped[list["MnemonicNoteModel"]] = relationship(cascade="all, delete-orphan")
@@ -344,3 +348,41 @@ class SchedulerJobClaimModel(Base):
     # wall-clock readings never would.
     occurrence_key: Mapped[str] = mapped_column(String(64))
     claimed_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
+class SyncOperationModel(Base):
+    """One offline mutation, submitted for reconciliation (issue #90).
+
+    Append-only. A row is never rewritten to a different operation — an
+    operation that conflicts is recorded as conflicting and kept, because the
+    whole point is that neither version is silently discarded.
+
+    The unique constraint on (user_id, operation_id) is what makes submission
+    idempotent: a client that retries after a lost response inserts the same
+    row and loses the race with itself rather than applying twice.
+    """
+
+    __tablename__ = "sync_operations"
+    __table_args__ = (
+        UniqueConstraint("user_id", "operation_id", name="uq_sync_user_operation"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    # Client-generated and stable across retries. Not a server id: the client
+    # has to be able to name an operation it made while it had no network and
+    # therefore no server id to refer to.
+    operation_id: Mapped[str] = mapped_column(String(64))
+    entity_type: Mapped[str] = mapped_column(String(32))
+    # Null for a create, whose server id does not exist until it is applied.
+    entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    operation: Mapped[str] = mapped_column(String(16))
+    payload: Mapped[dict] = mapped_column(JSON)
+    # The revision the client believed it was editing. A scalar edit against a
+    # stale revision is a conflict; an append (a review) never is.
+    base_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    conflict_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Monotonic per account. A client pulls everything above its cursor.
+    server_sequence: Mapped[int] = mapped_column(Integer, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
