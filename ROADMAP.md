@@ -48,8 +48,10 @@ depends on this.
 - [x] **2.1** Wire the existing Forced Recall Engine settings (channels,
       quiet hours, triggers) to actually gate delivery through the
       notification port. *(Shipped)*
-- [ ] **2.2** Desktop OS-notification adapter (depends on Phase 3's shell;
-      can use a log adapter until then). *(Planned)*
+- [x] **2.2** Desktop OS-notification adapter (depends on Phase 3's shell;
+      can use a log adapter until then). *(Shipped — the backend durably queues
+      desktop notifications and the shell collects and displays them (3.2). The
+      ±5s soak measurement the issue asks for is still outstanding.)*
 - [ ] **2.3** Remove README's "notifications configured but not dispatched"
       disclaimer once true. *(Planned)*
 
@@ -65,38 +67,62 @@ depends on this.
       validated runtime endpoint, and the frontend adapter exist; the measured
       startup/memory baseline on signed builds that ADR 0001 requires of this
       item does not.)*
-- [ ] **3.2** Wire OS-native notifications through the shell's per-platform
-      API. *(Planned)*
-- [ ] **3.3** CI build+package jobs producing installers for all three
-      OSes on tagged releases. *(Planned)*
+- [x] **3.2** Wire OS-native notifications through the shell's per-platform
+      API. *(Shipped — the shell polls the notification outbox, raises a native
+      toast per item and acknowledges only what it showed. Verified by unit
+      tests over the collect/show/acknowledge loop; the toast itself has not
+      been seen on any of the three operating systems, which needs a packaged
+      build and, on macOS, a signed one.)*
+- [x] **3.3** CI build+package jobs producing installers for all three
+      OSes on tagged releases. *(Shipped — a `v*` tag builds `.dmg`,
+      `.msi`/`.exe` and `.deb`/`.AppImage` and attaches them to a draft
+      release. The artifacts are **unsigned** unless the repository's signing
+      secrets are configured, so this does not by itself satisfy ADR 0001's
+      signed-build release gate, which 3.1 and #65 still depend on.)*
 - [x] **3.4** Decide bundled-local-backend vs. remote-only mode for
-      desktop. Decided: remote-only for the first desktop release, keeping the
-      architecture sidecar-ready. See
-      [ADR 0002](docs/adr/0002-desktop-backend-mode.md) (Accepted). *(Shipped —
-      product decision; implementation work tracked in #17.)*
+      desktop. Decided: the first desktop release is remote-only, and the
+      architecture is kept sidecar-ready so bundling stays an additive
+      capability rather than a rewrite. Recorded in
+      [ADR 0002](docs/adr/0002-desktop-backend-mode.md) (Accepted 2026-08-02),
+      including the triggers for revisiting it. *(Shipped — product decision)*
 
 ## Phase 4 — Cloud support (multi-tenant hosting)
 
-- [ ] **4.0** Migrate SQLite → Postgres; audit for SQLite-specific SQL.
-      *(Planned)*
-- [ ] **4.1** Per-tenant data isolation audit across all repository
-      queries. *(Planned)*
-- [ ] **4.2** Move the scheduler to a durable, horizontally-safe job store
+- [x] **4.0** Migrate SQLite → Postgres; audit for SQLite-specific SQL.
+      *(Shipped — Postgres is the deployment target and what `docker compose`
+      starts. CI runs the whole backend suite against both dialects and applies
+      every migration to an empty Postgres database. SQLite is retained as the
+      zero-setup local default, not as a second supported deployment.)*
+- [x] **4.1** Per-tenant data isolation audit across all repository
+      queries. *(Shipped — zero findings. The audit is executable rather than
+      written down: `backend/tests/test_tenant_isolation.py` denies a second
+      account on every endpoint that accepts a resource identifier, and fails
+      if a new such endpoint is added without being audited.)*
+- [x] **4.2** Move the scheduler to a durable, horizontally-safe job store
       (Postgres-backed locking or a real queue) — required before running
-      more than one backend instance. *(Planned)*
-- [ ] **4.3** Hosted-deployment guide (managed Postgres, secrets, TLS),
+      more than one backend instance. *(Shipped — jobs persist in a SQLAlchemy
+      job store, and each firing is claimed through a unique constraint so
+      concurrent instances deliver it once. Verified against two dispatchers
+      sharing one database; not yet measured against two real processes under
+      load.)*
+- [x] **4.3** Hosted-deployment guide (managed Postgres, secrets, TLS),
       distinct from the current self-hosted Docker Compose instructions.
-      *(Planned)*
+      *(Shipped — `docs/hosted-deployment.md`. Documents what the application
+      requires; it is not a recipe that has been followed against any specific
+      provider.)*
 
 ## Phase 5 — Documentation
 
 - [x] **5.0** This file. *(Shipped)*
 - [x] **5.1** Update README's AI/notification disclaimers once Phases 1–2
       ship. *(Shipped)*
-- [ ] **5.2** Add a "Desktop" section to README once Phase 3 ships.
-      *(Planned)*
-- [ ] **5.3** Add a hosted-deployment section to README once Phase 4 ships.
-      *(Planned)*
+- [x] **5.2** Add a "Desktop" section to README once Phase 3 ships.
+      *(Shipped — covers installing, building from source, endpoint
+      configuration, and what is implemented but unverified. States that no
+      release exists yet rather than linking a download that does not.)*
+- [x] **5.3** Add a hosted-deployment section to README once Phase 4 ships.
+      *(Shipped — points at the guide, and states the notification gap up
+      front so nobody hosts this without knowing about it.)*
 
 ## Sequencing notes
 

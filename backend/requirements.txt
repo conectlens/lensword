@@ -1,11 +1,30 @@
-fastapi==0.139.2
-uvicorn[standard]==0.51.0
+fastapi==0.141.1
+uvicorn[standard]==0.52.0
 sqlalchemy==2.0.51
+# Postgres driver (ROADMAP 4.0). The [binary] extra ships prebuilt wheels, so
+# neither CI nor a contributor needs libpq headers and a compiler to install it.
+psycopg[binary]==3.2.12
 apscheduler==3.11.3
+alembic==1.18.5
 pydantic==2.13.4
 pydantic-settings==2.14.2
 email-validator==2.3.0
 pyjwt==2.13.0
 bcrypt==5.0.0
+# Document import parsers (ROADMAP Phase 2, issue #85). All pure-Python, so
+# neither CI nor a contributor needs system libraries to install them.
+# 6.14.2 is the first release patching GHSA-g867-7843-wf8q and
+# GHSA-5xf7-4p34-54qr: malformed inline images could send the parser into an
+# infinite loop. This project feeds it untrusted uploads, so that is a denial
+# of service on the import endpoint rather than a theoretical concern.
+pypdf==6.14.2
+python-docx==1.2.0
+EbookLib==0.19
+beautifulsoup4==4.14.2
+
 pytest==9.1.1
+# Test-only: generates the PDF fixtures in test_document_parsers.py rather than
+# committing binaries nobody reviews.
+reportlab==4.4.4
 httpx==0.28.1
+python-multipart==0.0.32

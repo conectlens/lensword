@@ -128,6 +128,19 @@ class Word:
     example_sentence: str | None = None
     mnemonic: str | None = None
     category: str | None = None
+    definition: str | None = None
+    part_of_speech: str | None = None
+    cefr_level: str | None = None
+    pronunciation: str | None = None
+    collocations: list[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
+    ai_confidence: float | None = None
+    ai_provider: str | None = None
+    ai_model: str | None = None
+    # When a human last confirmed the model-written fields (#140). None
+    # means unverified, which for a card no model wrote simply does not
+    # apply — there is nothing to have checked.
+    ai_verified_at: datetime | None = None
     synonyms: list[str] = field(default_factory=list)
     antonyms: list[str] = field(default_factory=list)
     topics: list[str] = field(default_factory=list)
@@ -325,6 +338,10 @@ class Reminder:
     trigger_time: str
     recurrence: Recurrence
     enabled: bool = True
+    # Bumped on every edit. Compared rather than timestamps, because two
+    # devices' clocks disagree and an edit made on a slow clock must not lose
+    # to an older one made on a fast clock (issue #87).
+    revision: int = 1
     created_at: datetime = field(default_factory=utcnow)
 
     def enable(self) -> None:
@@ -385,8 +402,125 @@ class RecallSettings:
     in_app_enabled: bool = True
     quiet_hours_start: str | None = None
     quiet_hours_end: str | None = None
+    # Keeps specifics out of notification bodies. A desktop toast is drawn on
+    # a lock screen, over a shared screen, or on a second monitor in an open
+    # office — none of which the person who set the reminder chose. With this
+    # on, the body says a review is waiting and nothing about what is in it.
+    hide_notification_details: bool = False
+    # Suppresses delivery entirely without unsetting the schedule, so a user
+    # can pause reminders for a while and get the same ones back afterwards
+    # rather than rebuilding them.
+    notifications_paused: bool = False
+    # Kept with the user's review preferences so every answer in a session
+    # uses the same algorithm. New accounts get FSRS, which schedules from a
+    # target retrievability rather than SM-2's fixed first intervals.
+    #
+    # Existing accounts are *not* switched. Migration 20260730_14 writes an
+    # explicit "sm2" row for every account that had none, so changing this
+    # default cannot silently move someone who never opened the settings
+    # screen onto a different algorithm mid-deck.
+    scheduler: str = "fsrs"
 
     def set_intensity(self, level: int) -> None:
         if not (1 <= level <= 5):
             raise InvalidPlacementError("Intensity must be between 1 and 5")
         self.intensity = level
+
+
+@dataclass(slots=True)
+class PracticeExercise:
+    """A generated, answerable practice item tied to one vocabulary word."""
+
+    id: int | None
+    user_id: int
+    word_id: int
+    kind: str
+    prompt: str
+    answer: str
+    options: list[str] = field(default_factory=list)
+    answered: bool = False
+    correct: bool | None = None
+    created_at: datetime = field(default_factory=utcnow)
+
+
+@dataclass(slots=True)
+class DailySessionPreference:
+    """A user's lightweight daily practice target and queue size."""
+
+    user_id: int
+    enabled: bool = True
+    goal_minutes: int = 10
+    review_limit: int = 20
+
+
+@dataclass(slots=True)
+class WeeklyLearningReport:
+    """Immutable, reproducible weekly analytics snapshot for one learner."""
+
+    id: int | None
+    user_id: int
+    week_start: datetime
+    week_end: datetime
+    time_zone: str
+    snapshot: dict
+    narration: str | None = None
+    created_at: datetime = field(default_factory=utcnow)
+
+
+@dataclass(slots=True)
+class DesktopNotification:
+    """One desktop notification awaiting collection by a desktop shell.
+
+    ADR 0002 settled the desktop app as remote-only, which decides the shape
+    of this entity: the backend and the machine that owns the notification
+    tray are different processes, usually on different hosts, so the backend
+    cannot raise a toast itself. It can only record that one is owed and let
+    the shell collect it. That makes this an outbox record, not a delivery.
+
+    `delivered_at` is set when a shell acknowledges the row. It is deliberately
+    an acknowledgement of *collection*, not proof the operating system drew
+    anything on screen — the backend has no way to observe the latter, and
+    claiming otherwise in a field name would invite code that trusts it.
+
+    The entity carries the rendered `message` rather than a template and
+    arguments. Reminder text is decided at fire time by the delivery use case,
+    against settings read at that moment; storing the inputs instead would let
+    a shell that collects late render text the policy would no longer produce.
+    """
+
+    id: int | None
+    user_id: int
+    message: str
+    created_at: datetime = field(default_factory=utcnow)
+    delivered_at: datetime | None = None
+    reminder_id: int | None = None
+    expires_at: datetime | None = None
+    action: str | None = None
+    action_at: datetime | None = None
+
+    @property
+    def pending(self) -> bool:
+        return self.delivered_at is None
+
+    def is_expired(self, now: datetime | None = None) -> bool:
+        """Whether the actions on this notification are still answerable.
+
+        A notification with no expiry never expires — that is the shape a
+        non-reminder notification takes, and it should not silently stop
+        working because this field was added for reminders.
+        """
+        if self.expires_at is None:
+            return False
+        return (now or utcnow()) >= self.expires_at
+
+    @property
+    def acted_on(self) -> bool:
+        return self.action is not None
+
+    def mark_delivered(self, at: datetime | None = None) -> None:
+        """Record collection by a shell. Idempotent: a repeated acknowledgement
+        keeps the first timestamp, because the OS callbacks that will drive
+        this (issue #88) are explicitly allowed to arrive more than once, and
+        the first collection is the one that actually happened."""
+        if self.delivered_at is None:
+            self.delivered_at = at or utcnow()

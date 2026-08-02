@@ -10,14 +10,30 @@ import { RoomsPage } from './features/rooms/RoomsPage'
 import { RoomDetailPage } from './features/rooms/RoomDetailPage'
 import { ReviewSessionPage } from './features/review/ReviewSessionPage'
 import { MnemoLabPage } from './features/mnemolab/MnemoLabPage'
+import { LearningPathsPage } from './features/paths/LearningPathsPage'
+import { ConversationPage } from './features/tutor/ConversationPage'
+import { ScenarioPage } from './features/tutor/ScenarioPage'
+import { PracticeLabPage } from './features/tutor/PracticeLabPage'
 import { MindMapPage } from './features/mindmap/MindMapPage'
 import { ProfilePage } from './features/profile/ProfilePage'
 import { SettingsPage } from './features/settings/SettingsPage'
 import { AdminPage } from './features/admin/AdminPage'
 import { LandingPage } from './features/marketing/LandingPage'
 import { OnboardingPage } from './features/marketing/OnboardingPage'
+import { ExtractPage } from './features/extract/ExtractPage'
+import { ImportPage } from './features/import/ImportPage'
+import { PracticePage } from './features/practice/PracticePage'
+import { WeeklyReportPage } from './features/reports/WeeklyReportPage'
+import { useAuth } from './context/AuthContext'
+import { useDesktopNotifications } from './lib/useDesktopNotifications'
 
 export default function App() {
+  // Only while signed in: the outbox endpoint is authenticated, and polling it
+  // without a token would produce nothing but 401s. A no-op in the browser
+  // build (ROADMAP 3.2).
+  const { user } = useAuth()
+  useDesktopNotifications(user !== null)
+
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
@@ -26,17 +42,26 @@ export default function App() {
       <Route path="/onboarding" element={<OnboardingPage />} />
 
       <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+      <Route path="/reports/weekly" element={<ProtectedRoute><WeeklyReportPage /></ProtectedRoute>} />
+      <Route path="/reports/weekly/:reportId" element={<ProtectedRoute><WeeklyReportPage /></ProtectedRoute>} />
 
       <Route path="/groups" element={<ProtectedRoute><GroupsPage /></ProtectedRoute>} />
       <Route path="/groups/:groupId" element={<ProtectedRoute><GroupDetailPage /></ProtectedRoute>} />
       <Route path="/groups/:groupId/words/new" element={<ProtectedRoute><WordFormPage /></ProtectedRoute>} />
       <Route path="/groups/:groupId/words/:wordId" element={<ProtectedRoute><WordFormPage /></ProtectedRoute>} />
+      <Route path="/groups/:groupId/extract" element={<ProtectedRoute><ExtractPage /></ProtectedRoute>} />
+      <Route path="/groups/:groupId/import" element={<ProtectedRoute><ImportPage /></ProtectedRoute>} />
+      <Route path="/groups/:groupId/practice" element={<ProtectedRoute><PracticePage /></ProtectedRoute>} />
 
       <Route path="/rooms" element={<ProtectedRoute><RoomsPage /></ProtectedRoute>} />
       <Route path="/rooms/:roomId" element={<ProtectedRoute><RoomDetailPage /></ProtectedRoute>} />
 
       <Route path="/review" element={<ProtectedRoute><ReviewSessionPage /></ProtectedRoute>} />
 
+      <Route path="/paths" element={<ProtectedRoute><LearningPathsPage /></ProtectedRoute>} />
+      <Route path="/tutor" element={<ProtectedRoute><ConversationPage /></ProtectedRoute>} />
+      <Route path="/roleplay" element={<ProtectedRoute><ScenarioPage /></ProtectedRoute>} />
+      <Route path="/lab" element={<ProtectedRoute><PracticeLabPage /></ProtectedRoute>} />
       <Route path="/mnemolab" element={<ProtectedRoute><MnemoLabPage /></ProtectedRoute>} />
       <Route path="/mnemolab/:wordId" element={<ProtectedRoute><MnemoLabPage /></ProtectedRoute>} />
       <Route path="/mindmap/:wordId" element={<ProtectedRoute><MindMapPage /></ProtectedRoute>} />

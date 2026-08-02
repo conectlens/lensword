@@ -19,21 +19,86 @@ from app.domain.repositories import (
 )
 from app.domain.services.ai_provider import AIProvider
 from app.domain.services.spaced_repetition import Scheduler
+from app.domain.services.mistake_memory import (
+    RecordedMistake,
+    build_memories,
+    select_for_session,
+)
+from app.domain.services.weakness import categorise
 from app.domain.value_objects import ReviewOutcome, SessionMode
 
 
 class StartReviewSessionUseCase:
-    def __init__(self, session_repo: ReviewSessionRepository, word_repo: WordRepository):
+    def __init__(
+        self,
+        session_repo: ReviewSessionRepository,
+        word_repo: WordRepository,
+        mistake_repo=None,
+    ):
         self.session_repo = session_repo
         self.word_repo = word_repo
+        # Only the mistakes mode needs it, so it stays optional and every other
+        # caller is unaffected.
+        self.mistake_repo = mistake_repo
 
     def execute(self, user_id: int, mode: SessionMode, group_id: int | None, limit: int = 20) -> tuple[ReviewSession, list[Word]]:
-        due_words = self.word_repo.list_due_for_user(user_id, limit=limit, group_id=group_id)
-        if not due_words:
+        if mode == SessionMode.MISTAKES:
+            words = self._words_with_outstanding_mistakes(user_id, group_id, limit)
+        else:
+            words = self.word_repo.list_due_for_user(user_id, limit=limit, group_id=group_id)
+        if not words:
             raise NoWordsDueError()
         session = ReviewSession(id=None, user_id=user_id, mode=mode)
         session = self.session_repo.add(session)
-        return session, due_words
+        return session, words
+
+    def _words_with_outstanding_mistakes(
+        self, user_id: int, group_id: int | None, limit: int
+    ) -> list[Word]:
+        """Words got wrong and not yet relearned, worst first.
+
+        Deliberately ignores the due date. A mistake is worth revisiting
+        whether or not the scheduler has come round to it — waiting for a word
+        you already know you got wrong is the opposite of what this session is
+        for.
+        """
+        if self.mistake_repo is None:
+            return []
+
+        rows = self.mistake_repo.list_for_user(user_id)
+        if not rows:
+            return []
+
+        mistakes = [
+            RecordedMistake(
+                word_id=row.word_id,
+                occurred_at=row.occurred_at,
+                category=row.category,
+                occurrences=row.occurrence_count,
+            )
+            for row in rows
+        ]
+        corrections = self.session_repo.correct_answer_times(
+            user_id, sorted({m.word_id for m in mistakes})
+        )
+        # Over-selected, then filtered by group below: a learner studying one
+        # group should not get a shorter session because their worst mistakes
+        # happen to be in another.
+        candidates = select_for_session(build_memories(mistakes, corrections), limit=limit * 4)
+
+        words = []
+        for word_id in candidates:
+            word = self.word_repo.get_by_id(word_id)
+            # A deleted word leaves its mistakes behind only briefly, but a
+            # session must never fail because history outlived vocabulary.
+            if word is None:
+                continue
+            if group_id is not None and word.group_id != group_id:
+                continue
+            words.append(word)
+            if len(words) >= limit:
+                break
+        return words
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,13 +108,29 @@ class AnswerResult:
 
 
 class SubmitAnswerUseCase:
-    def __init__(self, session_repo: ReviewSessionRepository, word_repo: WordRepository, scheduler: Scheduler):
+    def __init__(
+        self,
+        session_repo: ReviewSessionRepository,
+        word_repo: WordRepository,
+        scheduler: Scheduler,
+        mistake_repo=None,
+    ):
         self.session_repo = session_repo
         self.word_repo = word_repo
         self.scheduler = scheduler
+        # Optional so every existing caller — and every test that only cares
+        # about scheduling — keeps working. Recording a mistake is bookkeeping
+        # beside the review, not part of it.
+        self.mistake_repo = mistake_repo
 
     def execute(
-        self, user_id: int, session_id: int, word_id: int, outcome: ReviewOutcome, response_time_ms: int | None
+        self,
+        user_id: int,
+        session_id: int,
+        word_id: int,
+        outcome: ReviewOutcome,
+        response_time_ms: int | None,
+        attempted_answer: str | None = None,
     ) -> AnswerResult:
         session = self.session_repo.get_by_id(session_id)
         if session is None:
@@ -68,8 +149,43 @@ class SubmitAnswerUseCase:
         word.apply_review(outcome, self.scheduler)
         self.word_repo.update(word)
 
+        self._record_mistake(user_id, word, outcome, attempted_answer)
+
         became_learned = was_new_word and outcome == ReviewOutcome.CORRECT
         return AnswerResult(word=word, was_new_word=became_learned)
+
+    def _record_mistake(
+        self, user_id: int, word: Word, outcome: ReviewOutcome, attempted_answer: str | None
+    ) -> None:
+        """File an incorrect or skipped answer for the weakness profile.
+
+        A confusion is only recorded when the attempt *is* another word this
+        learner studies — resolved by an exact lookup rather than by guessing
+        from similarity, so a misspelling that happens to resemble a word they
+        own does not manufacture a pair out of a typo.
+        """
+        if self.mistake_repo is None or outcome == ReviewOutcome.CORRECT:
+            return
+
+        known_terms = None
+        if attempted_answer and attempted_answer.strip():
+            matched = self.word_repo.find_id_by_term(user_id, attempted_answer)
+            # Answering a word with its own term is a grading disagreement, not
+            # a confusion between two words.
+            if matched is not None and matched != word.id:
+                known_terms = {attempted_answer.strip().casefold(): matched}
+
+        category, confused_with = categorise(
+            outcome.value, attempted_answer, word.term, known_terms
+        )
+        self.mistake_repo.record(
+            user_id=user_id,
+            word_id=word.id,
+            category=category.value,
+            attempted_answer=attempted_answer,
+            confused_with_word_id=confused_with,
+            context="review",
+        )
 
 
 class CompleteReviewSessionUseCase:

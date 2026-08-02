@@ -5,17 +5,27 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
-from app.config import get_settings
+from app.config import get_effective_ai_settings
 from app.domain.entities import User
 from app.domain.services.ai_provider import AIProvider
 from app.domain.value_objects import UserRole
 from app.infrastructure.ai import build_ai_provider
 from app.infrastructure.db import get_db
 from app.infrastructure.repositories import (
+    SqlAlchemyDesktopNotificationRepository,
     SqlAlchemyGroupRepository,
+    SqlAlchemyConversationRepository,
+    SqlAlchemyScenarioAttemptRepository,
+    SqlAlchemyLearningPathRepository,
+    SqlAlchemyMistakeEventRepository,
+    SqlAlchemyWordRevisionRepository,
     SqlAlchemyMnemonicRepository,
     SqlAlchemyRecallSettingsRepository,
+    SqlAlchemyDailySessionPreferenceRepository,
+    SqlAlchemyPracticeExerciseRepository,
+    SqlAlchemyWeeklyLearningReportRepository,
     SqlAlchemyReminderRepository,
+    SqlAlchemySyncOperationRepository,
     SqlAlchemyReviewSessionRepository,
     SqlAlchemyRoomRepository,
     SqlAlchemyUserRepository,
@@ -56,15 +66,55 @@ def get_recall_settings_repository(db: DbSession) -> SqlAlchemyRecallSettingsRep
     return SqlAlchemyRecallSettingsRepository(db)
 
 
+def get_daily_session_preference_repository(db: DbSession) -> SqlAlchemyDailySessionPreferenceRepository:
+    return SqlAlchemyDailySessionPreferenceRepository(db)
+
+
+def get_practice_exercise_repository(db: DbSession) -> SqlAlchemyPracticeExerciseRepository:
+    return SqlAlchemyPracticeExerciseRepository(db)
+
+
+def get_weekly_learning_report_repository(db: DbSession) -> SqlAlchemyWeeklyLearningReportRepository:
+    return SqlAlchemyWeeklyLearningReportRepository(db)
+
+
 def get_reminder_repository(db: DbSession) -> SqlAlchemyReminderRepository:
     return SqlAlchemyReminderRepository(db)
+
+
+def get_desktop_notification_repository(db: DbSession) -> SqlAlchemyDesktopNotificationRepository:
+    return SqlAlchemyDesktopNotificationRepository(db)
+
+
+def get_sync_operation_repository(db: DbSession) -> SqlAlchemySyncOperationRepository:
+    return SqlAlchemySyncOperationRepository(db)
+
+
+def get_mistake_event_repository(db: DbSession) -> SqlAlchemyMistakeEventRepository:
+    return SqlAlchemyMistakeEventRepository(db)
+
+
+def get_word_revision_repository(db: DbSession) -> SqlAlchemyWordRevisionRepository:
+    return SqlAlchemyWordRevisionRepository(db)
+
+
+def get_learning_path_repository(db: DbSession) -> SqlAlchemyLearningPathRepository:
+    return SqlAlchemyLearningPathRepository(db)
+
+
+def get_conversation_repository(db: DbSession) -> SqlAlchemyConversationRepository:
+    return SqlAlchemyConversationRepository(db)
+
+
+def get_scenario_attempt_repository(db: DbSession) -> SqlAlchemyScenarioAttemptRepository:
+    return SqlAlchemyScenarioAttemptRepository(db)
 
 
 @lru_cache
 def _ai_provider() -> AIProvider | None:
     """Built once per process, not per request — the Ollama adapter owns a
     pooled HTTP client that would otherwise be recreated on every call."""
-    return build_ai_provider(get_settings())
+    return build_ai_provider(get_effective_ai_settings())
 
 
 def get_ai_provider() -> AIProvider | None:
@@ -78,7 +128,17 @@ RoomRepo = Annotated[SqlAlchemyRoomRepository, Depends(get_room_repository)]
 ReviewSessionRepo = Annotated[SqlAlchemyReviewSessionRepository, Depends(get_review_session_repository)]
 MnemonicRepo = Annotated[SqlAlchemyMnemonicRepository, Depends(get_mnemonic_repository)]
 RecallSettingsRepo = Annotated[SqlAlchemyRecallSettingsRepository, Depends(get_recall_settings_repository)]
+DailySessionPreferenceRepo = Annotated[SqlAlchemyDailySessionPreferenceRepository, Depends(get_daily_session_preference_repository)]
+PracticeExerciseRepo = Annotated[SqlAlchemyPracticeExerciseRepository, Depends(get_practice_exercise_repository)]
+WeeklyLearningReportRepo = Annotated[SqlAlchemyWeeklyLearningReportRepository, Depends(get_weekly_learning_report_repository)]
 ReminderRepo = Annotated[SqlAlchemyReminderRepository, Depends(get_reminder_repository)]
+DesktopNotificationRepo = Annotated[SqlAlchemyDesktopNotificationRepository, Depends(get_desktop_notification_repository)]
+SyncOperationRepo = Annotated[SqlAlchemySyncOperationRepository, Depends(get_sync_operation_repository)]
+MistakeEventRepo = Annotated[SqlAlchemyMistakeEventRepository, Depends(get_mistake_event_repository)]
+WordRevisionRepo = Annotated[SqlAlchemyWordRevisionRepository, Depends(get_word_revision_repository)]
+LearningPathRepo = Annotated[SqlAlchemyLearningPathRepository, Depends(get_learning_path_repository)]
+ConversationRepo = Annotated[SqlAlchemyConversationRepository, Depends(get_conversation_repository)]
+ScenarioAttemptRepo = Annotated[SqlAlchemyScenarioAttemptRepository, Depends(get_scenario_attempt_repository)]
 OptionalAIProvider = Annotated[AIProvider | None, Depends(get_ai_provider)]
 
 

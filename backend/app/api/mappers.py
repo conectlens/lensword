@@ -12,6 +12,8 @@ from app.api.schemas.vocabulary import (
 )
 from app.application.use_cases.vocabulary import GroupSummary, RoomSummary
 from app.domain.entities import MnemonicNote, Room, Word
+from app.domain.services.ai_provenance import verification_state
+from app.domain.services.spaced_repetition import FSRSScheduler
 
 
 def word_to_response(word: Word) -> WordResponse:
@@ -24,6 +26,17 @@ def word_to_response(word: Word) -> WordResponse:
         example_sentence=word.example_sentence,
         mnemonic=word.mnemonic,
         category=word.category,
+        definition=word.definition,
+        part_of_speech=word.part_of_speech,
+        cefr_level=word.cefr_level,
+        pronunciation=word.pronunciation,
+        collocations=word.collocations,
+        tags=word.tags,
+        ai_confidence=word.ai_confidence,
+        ai_provider=word.ai_provider,
+        ai_model=word.ai_model,
+        ai_verified_at=word.ai_verified_at,
+        ai_state=verification_state(word.ai_provider, word.ai_verified_at),
         synonyms=word.synonyms,
         antonyms=word.antonyms,
         topics=word.topics,
@@ -35,6 +48,7 @@ def word_to_response(word: Word) -> WordResponse:
             due_at=word.review_state.due_at,
             last_reviewed_at=word.review_state.last_reviewed_at,
             status=word.review_state.status,
+            fsrs_retrievability=FSRSScheduler.retrievability(word.review_state),
         ),
         created_at=word.created_at,
     )

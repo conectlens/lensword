@@ -40,6 +40,10 @@ EXPECTED_REMINDER_COLUMNS = {
     "trigger_time",
     "recurrence",
     "enabled",
+    # Server-authoritative, and the authority a failover decision rests on
+    # (issue #87): two devices holding different revisions hold the same
+    # reminder, and the higher one is the real schedule.
+    "revision",
     "created_at",
 }
 

@@ -1,7 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Minimum capability set for the main window. ADR 0001 requires capabilities to be granted to exact windows and exact commands, so this grants neither a plugin's default permission set nor access to any window other than `main`. Notification permission belongs to Phase 3.2 (#31) and is deliberately absent; shell and process access are absent because the bundled-backend question (#17) is undecided and ADR 0001 keeps process execution unavailable to frontend code either way.",
+  "description": "Minimum capability set for the main window. ADR 0001 requires capabilities to be granted to exact windows and exact commands, so this grants neither a plugin's default permission set nor access to any window other than `main`. Notification is granted as three exact commands rather than `notification:default`, which additionally carries permission-state and channel management the shell does not use. Shell and process access stay absent: ADR 0002 chose a remote-only desktop app, and ADR 0001 keeps process execution unavailable to frontend code regardless.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "notification:allow-notify",
+    "notification:allow-is-permission-granted",
+    "notification:allow-request-permission"
+  ]
 }

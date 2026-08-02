@@ -8,6 +8,7 @@ implementation of the same protocol without touching Word or any use case.
 from __future__ import annotations
 
 from datetime import timedelta
+from math import exp, log
 from typing import Protocol
 
 from app.domain.value_objects import ReviewOutcome, ReviewState, utcnow
@@ -76,3 +77,42 @@ class SpacedRepetitionScheduler:
     @staticmethod
     def _clamp(value: int, lo: int, hi: int) -> int:
         return max(lo, min(hi, value))
+
+
+class FSRSScheduler:
+    """Small FSRS-style scheduler strategy.
+
+    It keeps the existing embedded review state compatible while scheduling
+    from a target retrievability rather than SM-2's fixed first intervals.
+    """
+    target_retrievability = 0.9
+
+    def schedule_next(self, state: ReviewState, outcome: ReviewOutcome) -> ReviewState:
+        stability = max(1.0, state.interval_days or 1.0)
+        if outcome == ReviewOutcome.CORRECT:
+            stability *= 1.8 + min(state.repetitions, 10) * 0.08
+            repetitions = state.repetitions + 1
+        elif outcome == ReviewOutcome.SKIPPED:
+            stability *= 0.7
+            repetitions = max(0, state.repetitions - 1)
+        else:
+            stability = max(1.0, stability * 0.45)
+            repetitions = 0
+        interval_days = round(min(_MAX_INTERVAL_DAYS, stability * -log(self.target_retrievability)), 2)
+        now = utcnow()
+        interval_days = max(1.0, interval_days)
+        return ReviewState(
+            strength=SpacedRepetitionScheduler._clamp(state.strength + _STRENGTH_DELTA[outcome], 0, 100),
+            ease_factor=state.ease_factor,
+            interval_days=interval_days,
+            repetitions=repetitions,
+            due_at=now + timedelta(days=interval_days),
+            last_reviewed_at=now,
+        )
+
+    @staticmethod
+    def retrievability(state: ReviewState) -> float:
+        if state.last_reviewed_at is None:
+            return 0.0
+        elapsed = max(0.0, (utcnow() - state.last_reviewed_at).total_seconds() / 86400)
+        return round(exp(-elapsed / max(1.0, state.interval_days)), 4)

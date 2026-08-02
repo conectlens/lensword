@@ -21,6 +21,16 @@ from app.infrastructure.reminders import ApSchedulerReminderScheduler, reminder_
 from app.infrastructure.scheduler import create_scheduler, register_jobs
 
 
+def _reminder_job_ids(scheduler) -> list[str]:
+    """Only the reminder jobs.
+
+    `register_jobs` also registers scheduler housekeeping (the claim purge,
+    issue #20), which these tests are not about. Asserting on the full job list
+    would make every unrelated future job break them.
+    """
+    return [job.id for job in scheduler.get_jobs() if job.id.startswith("reminder:")]
+
+
 def _reminder(**overrides) -> Reminder:
     defaults = dict(
         id=None, user_id=1, group_id=2, trigger_time="09:00", recurrence=Recurrence.DAILY
@@ -440,7 +450,7 @@ def test_register_jobs_restores_a_job_for_every_enabled_reminder(db_session):
         channel=_RecordingChannel(),
     )
 
-    assert [job.id for job in scheduler.get_jobs()] == [reminder_job_id(enabled.id)]
+    assert _reminder_job_ids(scheduler) == [reminder_job_id(enabled.id)]
 
 
 def test_register_jobs_without_a_session_factory_registers_only_the_heartbeat():
@@ -513,7 +523,7 @@ def test_register_jobs_skips_an_unusable_recurrence_and_restores_the_rest(db_ses
         scheduler, Settings(environment="production"), session_factory=_independent_sessions(db_session)
     )
 
-    assert [job.id for job in scheduler.get_jobs()] == [
+    assert _reminder_job_ids(scheduler) == [
         reminder_job_id(before.id),
         reminder_job_id(after.id),
     ]
@@ -532,7 +542,11 @@ def test_register_jobs_survives_a_reminder_restore_that_fails_outright():
         scheduler, Settings(environment="development"), session_factory=_exploding_session_factory
     )
 
-    assert {job.id for job in scheduler.get_jobs()} == {"dev_heartbeat"}
+    # Startup survived, and no reminder job was invented from an unreadable
+    # table. Housekeeping registered regardless — it does not read reminders,
+    # so there is no reason for it to be lost along with them.
+    assert _reminder_job_ids(scheduler) == []
+    assert "dev_heartbeat" in {job.id for job in scheduler.get_jobs()}
 
 
 def test_app_startup_survives_a_corrupt_reminders_table(db_session, monkeypatch):
@@ -597,4 +611,4 @@ def test_register_jobs_skips_a_reminder_whose_trigger_time_is_unusable(db_sessio
         scheduler, Settings(environment="production"), session_factory=_independent_sessions(db_session)
     )
 
-    assert [job.id for job in scheduler.get_jobs()] == [reminder_job_id(good.id)]
+    assert _reminder_job_ids(scheduler) == [reminder_job_id(good.id)]

@@ -15,6 +15,10 @@ const MODE_COPY: Record<SessionMode, { title: string; subtitle: string }> = {
   walking: { title: 'Walking mode', subtitle: 'Answer quickly and keep walking.' },
   night: { title: 'Night review', subtitle: 'A few gentle questions before sleep.' },
   break: { title: 'Study break recall', subtitle: "Let's lock in a couple of words before your break." },
+  // Not "words you failed". The session exists to retire mistakes, and
+  // naming it after the failure rather than the repair is what makes people
+  // avoid opening it.
+  mistakes: { title: 'Review my mistakes', subtitle: 'Words you got wrong and have not relearned yet.' },
 }
 
 function shuffle<T>(arr: T[]): T[] {
@@ -120,8 +124,19 @@ export function ReviewSessionPage() {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 text-center">
         <Icon name="task_alt" className="text-5xl text-primary" />
-        <h1 className="font-display text-2xl font-bold text-white">Nothing due right now</h1>
-        <p className="max-w-sm text-white/50">You&apos;re all caught up. Come back later, or add more words to review.</p>
+        {/* Mode-specific, because "nothing due" is not what an empty mistakes
+            session means. Nothing is due when the scheduler has not come round
+            yet; no mistakes are outstanding when there is nothing left to
+            relearn — and telling someone who just cleared their mistakes to
+            "come back later" would report the wrong thing entirely. */}
+        <h1 className="font-display text-2xl font-bold text-white">
+          {mode === 'mistakes' ? 'No mistakes to review' : 'Nothing due right now'}
+        </h1>
+        <p className="max-w-sm text-white/50">
+          {mode === 'mistakes'
+            ? "You've relearned everything you got wrong. Mistakes show up here as you make them."
+            : "You're all caught up. Come back later, or add more words to review."}
+        </p>
         <Button onClick={() => navigate('/dashboard')}>Back to dashboard</Button>
       </div>
     )

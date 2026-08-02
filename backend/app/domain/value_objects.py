@@ -174,6 +174,10 @@ class SessionMode(str, Enum):
     WALKING = "walking"
     NIGHT = "night"
     BREAK = "break"
+    # Words the learner has got wrong and not yet relearned (#142). The one
+    # mode whose word selection is not "what is due": a mistake is worth
+    # revisiting whether or not the scheduler has come round to it.
+    MISTAKES = "mistakes"
 
 
 class WordStatus(str, Enum):
@@ -204,6 +208,35 @@ class Recurrence(str, Enum):
     DAILY = "daily"
 
 
+class NotificationAction(str, Enum):
+    """What a user can do from a notification without opening the app first.
+
+    A closed set with stable string values, because these ids travel out to the
+    operating system, sit in a tray, and come back — possibly after a restart,
+    possibly more than once. Renaming a member would silently break every
+    notification already delivered but not yet acted on.
+    """
+
+    START_SESSION = "start_session"
+    REMIND_LATER = "remind_later"
+    SKIP_TODAY = "skip_today"
+
+
+# Bumped when the meaning of a delivered payload changes, not when a field is
+# added. A shell older than the backend has to be able to tell "I do not
+# understand this" from "this is the shape I know with something new in it".
+NOTIFICATION_PAYLOAD_VERSION = 1
+
+# How long a notification's actions stay answerable. A toast can sit in a tray
+# for days; answering "start a five-minute session" on Thursday for Tuesday's
+# prompt is not the thing that was asked.
+NOTIFICATION_ACTION_TTL = timedelta(hours=12)
+
+# How far "remind me later" moves a reminder. Long enough to finish what
+# interrupted you, short enough that it is still today's review.
+REMIND_LATER_DELAY = timedelta(minutes=30)
+
+
 class Channel(str, Enum):
     """A delivery route a notification can take.
 
@@ -221,11 +254,18 @@ class Channel(str, Enum):
 def utcnow() -> datetime:
     """Single source of truth for 'now', as a naive UTC datetime.
 
-    Deliberately naive (not aware) because SQLite has no real datetime type —
-    it stores text and always returns naive datetimes on read. Comparing an
-    aware 'now' against a naive value read back from the database raises
-    TypeError, so every datetime in this domain is naive-but-UTC by
-    convention, consistently, end to end.
+    Deliberately naive (not aware). The convention began with SQLite, which has
+    no real datetime type — it stores text and always returns naive datetimes
+    on read, so comparing an aware 'now' against a stored value raises
+    TypeError. It is kept now that Postgres is also supported, because the ORM
+    columns are `DateTime` rather than `DateTime(timezone=True)`: Postgres maps
+    that to `timestamp without time zone` and hands back naive values too. One
+    convention, naive-but-UTC end to end, holds on both dialects.
+
+    Moving to timezone-aware storage would mean changing every column, every
+    comparison, and the per-user local-time arithmetic in reminder scheduling
+    at once — it is not a change a single caller can make safely, which is why
+    this stays the single source of truth for 'now'.
     """
     return datetime.now(timezone.utc).replace(tzinfo=None)
 

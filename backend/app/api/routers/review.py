@@ -1,6 +1,13 @@
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.deps import CurrentUser, ReviewSessionRepo, UserRepo, WordRepo
+from app.api.deps import (
+    CurrentUser,
+    MistakeEventRepo,
+    RecallSettingsRepo,
+    ReviewSessionRepo,
+    UserRepo,
+    WordRepo,
+)
 from app.api.mappers import word_to_response
 from app.api.schemas.review import (
     CompleteSessionRequest,
@@ -18,11 +25,12 @@ from app.application.use_cases.review import (
     SubmitAnswerUseCase,
 )
 from app.domain.exceptions import EntityNotFoundError, NoWordsDueError, PermissionDeniedError
-from app.domain.services.spaced_repetition import SpacedRepetitionScheduler
+from app.domain.services.spaced_repetition import FSRSScheduler, SpacedRepetitionScheduler
 
 router = APIRouter(prefix="/api/v1/review", tags=["review"])
 
 _scheduler = SpacedRepetitionScheduler()
+_fsrs_scheduler = FSRSScheduler()
 
 
 def _raise_for(exc: Exception):
@@ -37,10 +45,14 @@ def _raise_for(exc: Exception):
 
 @router.post("/sessions", response_model=StartReviewSessionResponse, status_code=status.HTTP_201_CREATED)
 def start_session(
-    payload: StartReviewSessionRequest, current_user: CurrentUser, session_repo: ReviewSessionRepo, word_repo: WordRepo
+    payload: StartReviewSessionRequest,
+    current_user: CurrentUser,
+    session_repo: ReviewSessionRepo,
+    word_repo: WordRepo,
+    mistake_repo: MistakeEventRepo,
 ) -> StartReviewSessionResponse:
     try:
-        session, words = StartReviewSessionUseCase(session_repo, word_repo).execute(
+        session, words = StartReviewSessionUseCase(session_repo, word_repo, mistake_repo).execute(
             current_user.id, payload.mode, payload.group_id, payload.limit
         )
     except NoWordsDueError as exc:
@@ -55,10 +67,19 @@ def submit_answer(
     current_user: CurrentUser,
     session_repo: ReviewSessionRepo,
     word_repo: WordRepo,
+    settings_repo: RecallSettingsRepo,
+    mistake_repo: MistakeEventRepo,
 ) -> SubmitAnswerResponse:
     try:
-        result = SubmitAnswerUseCase(session_repo, word_repo, _scheduler).execute(
-            current_user.id, session_id, payload.word_id, payload.outcome, payload.response_time_ms
+        settings = settings_repo.get_by_user(current_user.id)
+        selected_scheduler = _fsrs_scheduler if settings and settings.scheduler == "fsrs" else _scheduler
+        result = SubmitAnswerUseCase(session_repo, word_repo, selected_scheduler, mistake_repo).execute(
+            current_user.id,
+            session_id,
+            payload.word_id,
+            payload.outcome,
+            payload.response_time_ms,
+            payload.attempted_answer,
         )
     except (EntityNotFoundError, PermissionDeniedError) as exc:
         _raise_for(exc)

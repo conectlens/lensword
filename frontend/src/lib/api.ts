@@ -1,6 +1,6 @@
 import type {
   AdminStats, Group, MnemonicNote, ProfileOverview, RecallSettings, Room,
-  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome,
+  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile, CefrProgress, Prerequisites, RelatedWord, WordRevision, AiState, OllamaProbe, LearningPath, GeneratePathResult, Conversation, ConversationMessage, SendMessageResult, Difficulty, Scenario, ScenarioAttempt, ScenarioVocabulary,
 } from './types'
 import { resolveApiBase } from './runtimeConfig'
 
@@ -66,6 +66,92 @@ export interface WordInput {
   example_sentence?: string | null
   mnemonic?: string | null
   category?: string | null
+  definition?: string | null
+  part_of_speech?: string | null
+  cefr_level?: string | null
+  pronunciation?: string | null
+  collocations?: string[]
+  tags?: string[]
+  ai_confidence?: number | null
+  ai_provider?: string | null
+  ai_model?: string | null
+}
+
+export const aiVocabularyApi = {
+  enrich: (term: string, source_language: string | null, target_language: string) =>
+    request<WordEnrichment>('/api/v1/ai/enrich', { method: 'POST', body: JSON.stringify({ term, source_language, target_language }) }),
+  translateInContext: (word: string, sentence: string, source_language: string | null, target_language: string) =>
+    request<WordEnrichment>('/api/v1/ai/translate-in-context', { method: 'POST', body: JSON.stringify({ word, sentence, source_language, target_language }) }),
+  regenerateField: (field: 'example' | 'mnemonic' | 'definition' | 'translation', term: string, target_language: string) =>
+    request<{ field: string; value: string }>('/api/v1/ai/regenerate-field', { method: 'POST', body: JSON.stringify({ field, term, target_language }) }),
+}
+
+export interface ExtractedCandidate { term: string; translations: string[]; examples: string[]; cefr_level: string | null }
+export type ExtractVocabularyResult =
+  | { status: 'ok'; source: 'ai' | 'fallback'; items: ExtractedCandidate[] }
+  | { status: 'disabled' }
+  | { status: 'unavailable'; detail: string }
+
+export const extractionApi = {
+  extract: (group_id: number, text: string, target_language: string, min_level: string | null, source_language: string | null = null) =>
+    request<ExtractVocabularyResult>('/api/v1/extract', { method: 'POST', body: JSON.stringify({ group_id, text, source_language, target_language, min_level }) }),
+}
+
+export interface ImportPreviewRecord { term: string; translations: string[]; definition: string | null; part_of_speech: string | null; cefr_level: string | null; pronunciation: string | null; source_language: string; status: 'ready' | 'ai_cleaned' | 'duplicate'; duplicate_of: string | null; provider: string | null; model: string | null }
+export const importsApi = {
+  parseFile: async (file: File) => {
+    const data = new FormData(); data.append('file', file)
+    const token = getToken(); const response = await fetch(`${await resolveApiBase()}/api/v1/imports/parse`, { method: 'POST', body: data, headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    if (!response.ok) throw new ApiRequestError(response.status, (await response.json()).detail ?? 'Could not parse file')
+    return response.json() as Promise<{ records: { term: string; translations: string[]; definition?: string | null; part_of_speech?: string | null; cefr_level?: string | null; pronunciation?: string | null }[] }>
+  },
+  parseUrl: (url: string) =>
+    request<{ records: { term: string; translations: string[] }[] }>('/api/v1/imports/parse-url', {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    }),
+  preview: (group_id: number, records: { term: string; translations?: string[]; definition?: string | null; part_of_speech?: string | null; cefr_level?: string | null; pronunciation?: string | null }[], enrich_with_ai: boolean) => request<{ records: ImportPreviewRecord[] }>('/api/v1/imports/preview', { method: 'POST', body: JSON.stringify({ group_id, records, enrich_with_ai }) }),
+  commit: (group_id: number, records: ImportPreviewRecord[]) => request<{ added: number }>('/api/v1/imports/commit', { method: 'POST', body: JSON.stringify({ group_id, records }) }),
+}
+
+export const learningPathsApi = {
+  list: () => request<LearningPath[]>('/api/v1/learning-paths'),
+  get: (id: number) => request<LearningPath>(`/api/v1/learning-paths/${id}`),
+  generate: (goal: string, target_language: string, group_id: number | null = null) =>
+    request<GeneratePathResult>('/api/v1/learning-paths/generate', {
+      method: 'POST',
+      body: JSON.stringify({ goal, target_language, group_id }),
+    }),
+  remove: (id: number) => request<void>(`/api/v1/learning-paths/${id}`, { method: 'DELETE' }),
+}
+
+export const conversationsApi = {
+  list: () => request<Conversation[]>('/api/v1/conversations'),
+  get: (id: number) => request<Conversation>(`/api/v1/conversations/${id}`),
+  start: (target_language: string, difficulty: Difficulty, scenario: string | null = null) =>
+    request<Conversation>('/api/v1/conversations', {
+      method: 'POST',
+      body: JSON.stringify({ target_language, difficulty, scenario }),
+    }),
+  send: (id: number, text: string) =>
+    request<SendMessageResult>(`/api/v1/conversations/${id}/message`, {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    }),
+  end: (id: number) => request<Conversation>(`/api/v1/conversations/${id}/end`, { method: 'POST' }),
+}
+
+export const scenariosApi = {
+  list: () => request<Scenario[]>('/api/v1/scenarios'),
+  attempts: () => request<ScenarioAttempt[]>('/api/v1/scenarios/attempts'),
+  vocabulary: (key: string) => request<ScenarioVocabulary>(`/api/v1/scenarios/${key}/vocabulary`),
+  start: (scenario_key: string, target_language: string, difficulty: Difficulty = 'steady') =>
+    request<ScenarioAttempt>('/api/v1/scenarios/attempts', {
+      method: 'POST',
+      body: JSON.stringify({ scenario_key, target_language, difficulty }),
+    }),
+  finish: (attemptId: number) =>
+    request<ScenarioAttempt>(`/api/v1/scenarios/attempts/${attemptId}/finish`, { method: 'POST' }),
 }
 
 export const groupsApi = {
@@ -81,6 +167,25 @@ export const groupsApi = {
 }
 
 export const wordsApi = {
+  history: (wordId: number) => request<WordRevision[]>(`/api/v1/words/${wordId}/history`),
+  verify: (wordId: number) =>
+    request<{ word_id: number; state: AiState; ai_verified_at: string | null }>(
+      `/api/v1/words/${wordId}/verify`,
+      { method: 'POST' },
+    ),
+  unverify: (wordId: number) =>
+    request<{ word_id: number; state: AiState; ai_verified_at: string | null }>(
+      `/api/v1/words/${wordId}/verify`,
+      { method: 'DELETE' },
+    ),
+  bulkEdit: (
+    word_ids: number[],
+    fields: { cefr_level?: string | null; part_of_speech?: string | null; category?: string | null; tags?: string[] | null },
+  ) =>
+    request<{ updated: number; skipped: number[] }>('/api/v1/words/bulk', {
+      method: 'PATCH',
+      body: JSON.stringify({ word_ids, ...fields }),
+    }),
   get: (wordId: number) => request<Word>(`/api/v1/words/${wordId}`),
   update: (wordId: number, input: WordInput) =>
     request<Word>(`/api/v1/words/${wordId}`, { method: 'PUT', body: JSON.stringify(input) }),
@@ -171,6 +276,61 @@ export const settingsApi = {
   updateRecallSettings: (settings: RecallSettings) =>
     request<RecallSettings>('/api/v1/recall-settings', { method: 'PUT', body: JSON.stringify(settings) }),
   profile: () => request<ProfileOverview>('/api/v1/profile'),
+  weaknesses: () => request<WeaknessProfile>('/api/v1/me/weaknesses'),
+  cefrProgress: () => request<CefrProgress>('/api/v1/me/cefr-progress'),
+}
+
+export const graphApi = {
+  prerequisites: (wordId: number) => request<Prerequisites>(`/api/v1/words/${wordId}/prerequisites`),
+  related: (wordId: number, limit = 10) =>
+    request<RelatedWord[]>(`/api/v1/words/${wordId}/related?limit=${limit}`),
+}
+
+export const practiceApi = {
+  dailySession: () => request<DailySession>('/api/v1/practice/daily-session'),
+  updateDailySession: (payload: Omit<DailySession, 'due_count'>) =>
+    request<DailySession>('/api/v1/practice/daily-session', { method: 'PUT', body: JSON.stringify(payload) }),
+  generateExercise: (word_id: number, kind: PracticeExercise['kind'] = 'translation') =>
+    request<PracticeExercise>('/api/v1/practice/exercises', { method: 'POST', body: JSON.stringify({ word_id, kind }) }),
+  answerExercise: (exerciseId: number, response: string) =>
+    request<PracticeExercise>(`/api/v1/practice/exercises/${exerciseId}/answer`, { method: 'POST', body: JSON.stringify({ response }) }),
+  pronunciationFeedback: (word_id: number, transcript: string) =>
+    request<{ accepted: boolean; feedback: string }>('/api/v1/practice/pronunciation-feedback', { method: 'POST', body: JSON.stringify({ word_id, transcript }) }),
+  writingCorrection: (word_id: number, text: string) =>
+    request<{ corrected_text: string; feedback: string }>('/api/v1/practice/writing-correction', { method: 'POST', body: JSON.stringify({ word_id, text }) }),
+}
+
+export const reportsApi = {
+  buildWeekly: () => request<WeeklyLearningReport>('/api/v1/reports/weekly', { method: 'POST' }),
+  listWeekly: () => request<WeeklyLearningReport[]>('/api/v1/reports/weekly'),
+  getWeekly: (reportId: number) => request<WeeklyLearningReport>(`/api/v1/reports/weekly/${reportId}`),
+  generateNarration: (reportId: number) => request<WeeklyLearningReport>(`/api/v1/reports/weekly/${reportId}/narration`, { method: 'POST' }),
+}
+
+export const notificationsApi = {
+  listPending: () =>
+    request<PendingDesktopNotifications>('/api/v1/desktop-notifications'),
+  // Idempotent server-side: acknowledging an id twice reports 0 rather than
+  // failing, which is what lets the shell acknowledge after showing.
+  acknowledge: (notificationIds: number[]) =>
+    request<{ acknowledged: number }>('/api/v1/desktop-notifications/ack', {
+      method: 'POST',
+      body: JSON.stringify({ notification_ids: notificationIds }),
+    }),
+  // Idempotent server-side. A 409 means the notification expired while it sat
+  // in the tray, which is a normal outcome rather than a failure.
+  act: (notificationId: number, action: NotificationActionId) =>
+    request<NotificationActionResult>(`/api/v1/desktop-notifications/${notificationId}/action`, {
+      method: 'POST',
+      body: JSON.stringify({ action }),
+    }),
+}
+
+export const aiSettingsApi = {
+  probe: () => request<OllamaProbe>('/api/v1/ai-settings/probe'),
+  get: () => request<AISettings>('/api/v1/ai-settings'),
+  update: (settings: AISettings) =>
+    request<AISettings>('/api/v1/ai-settings', { method: 'PUT', body: JSON.stringify(settings) }),
 }
 
 // --- Admin ----------------------------------------------------------------

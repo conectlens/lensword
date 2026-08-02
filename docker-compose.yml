@@ -1,16 +1,44 @@
 services:
+  # Postgres is the supported deployment target (ROADMAP 4.0). SQLite still
+  # works and remains the default for a bare `uvicorn` run with no server to
+  # install, but a Compose stack is a deployment, so it gets the real database.
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lensword}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lensword}
+      POSTGRES_DB: ${POSTGRES_DB:-lensword}
+    volumes:
+      - lensword_pgdata:/var/lib/postgresql/data
+    # Not published to the host. Nothing outside this stack needs to reach the
+    # database, and the default credentials above are only safe as long as it
+    # is unreachable — override them for anything real.
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lensword} -d ${POSTGRES_DB:-lensword}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   backend:
     build: ./backend
     ports:
       - "18420:8000"
     environment:
       ENVIRONMENT: production
-      DATABASE_URL: sqlite:///./data/lensword.db
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-lensword}:${POSTGRES_PASSWORD:-lensword}@db:5432/${POSTGRES_DB:-lensword}
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production-this-is-not-secure}
       ACCESS_TOKEN_EXPIRE_MINUTES: "10080"
       CORS_ORIGINS: '["http://localhost:18421","http://localhost:5173"]'
       FIRST_ADMIN_EMAIL: ${FIRST_ADMIN_EMAIL:-}
       FIRST_ADMIN_PASSWORD: ${FIRST_ADMIN_PASSWORD:-}
+    depends_on:
+      # `service_healthy`, not a bare depends_on: the container starts by
+      # running migrations, so a Postgres that is merely *started* is not
+      # enough — it has to be accepting connections.
+      db:
+        condition: service_healthy
     volumes:
       - lensword_data:/app/data
     healthcheck:
@@ -30,4 +58,7 @@ services:
       - backend
 
 volumes:
+  # Still mounted with Postgres in use: the AI settings file lives here, and a
+  # deployment that switches DATABASE_URL back to SQLite keeps its data.
   lensword_data:
+  lensword_pgdata:

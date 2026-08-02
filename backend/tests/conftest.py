@@ -11,13 +11,27 @@ import tempfile
 #
 # Every app.* import below must stay after this assignment for that reason,
 # which is why they all carry a noqa: E402.
+#
+# TEST_DATABASE_URL runs the whole suite against Postgres instead (ROADMAP 4.0).
+# CI sets it in a second job so both dialects are covered; unset, the suite
+# still needs no database server. It must name a database the run may drop and
+# recreate — see the `db_session` fixture.
+TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
+_USING_POSTGRES = bool(TEST_DATABASE_URL) and not TEST_DATABASE_URL.startswith("sqlite")
+
 _THROWAWAY_DB_DIR = tempfile.mkdtemp(prefix="lensword-tests-")
-os.environ["DATABASE_URL"] = f"sqlite:///{_THROWAWAY_DB_DIR}/lensword-test.db"
+os.environ["DATABASE_URL"] = TEST_DATABASE_URL or f"sqlite:///{_THROWAWAY_DB_DIR}/lensword-test.db"
+
+# The suite runs one process and asserts on delivery, not on concurrency, so
+# jobs stay in memory. A database job store would also have APScheduler create
+# and share its own table across tests, which is state the fixtures do not own
+# and cannot reset.
+os.environ["SCHEDULER_JOB_STORE"] = "memory"
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402
-from sqlalchemy.orm import sessionmaker  # noqa: E402
+from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
 from app.api.deps import _ai_provider  # noqa: E402
@@ -63,21 +77,64 @@ def isolate_ai_settings(monkeypatch):
     _ai_provider.cache_clear()
 
 
-@pytest.fixture()
-def db_session():
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+@pytest.fixture(scope="session")
+def _postgres_engine():
+    """One engine and one schema build for the whole Postgres run.
+
+    Creating and dropping twenty-odd tables per test is affordable against an
+    in-memory SQLite file and is not against a real server, so the schema is
+    built once here and each test is isolated by a transaction instead.
+    """
+    if not _USING_POSTGRES:
+        yield None
+        return
+
+    engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
+    # Dropped first so a previous interrupted run cannot leave a stale column
+    # behind and turn a schema mismatch into a confusing test failure.
+    Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
-    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    session = TestingSessionLocal()
+    try:
+        yield engine
+    finally:
+        engine.dispose()
+
+
+@pytest.fixture()
+def db_session(_postgres_engine):
+    if _postgres_engine is None:
+        engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(bind=engine)
+        TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        session = TestingSessionLocal()
+        try:
+            yield session
+        finally:
+            session.close()
+            engine.dispose()
+        return
+
+    # Postgres: every test runs inside a transaction that is rolled back, so
+    # tests do not see each other's rows despite sharing one database.
+    #
+    # `join_transaction_mode="create_savepoint"` is what makes this work with
+    # code that commits — the notification adapter and several use cases do.
+    # Without it a commit inside the test would end the outer transaction and
+    # the rollback below would have nothing left to undo, leaking rows into
+    # every subsequent test.
+    connection = _postgres_engine.connect()
+    transaction = connection.begin()
+    session = Session(bind=connection, join_transaction_mode="create_savepoint")
     try:
         yield session
     finally:
         session.close()
-        engine.dispose()
+        transaction.rollback()
+        connection.close()
 
 
 @pytest.fixture()

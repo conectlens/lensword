@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.db import Base
@@ -67,6 +67,21 @@ class WordModel(Base):
     example_sentence: Mapped[str | None] = mapped_column(Text, nullable=True)
     mnemonic: Mapped[str | None] = mapped_column(Text, nullable=True)
     category: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    definition: Mapped[str | None] = mapped_column(Text, nullable=True)
+    part_of_speech: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cefr_level: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    pronunciation: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    collocations: Mapped[list] = mapped_column(JSON, default=list)
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    ai_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ai_provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ai_model: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # When a human last confirmed the model-written fields on this card
+    # (#140). A timestamp rather than a boolean: "verified" without "when"
+    # cannot be reasoned about once the card changes again. Cleared when a
+    # model rewrites a field, because the badge would otherwise vouch for
+    # text nobody read.
+    ai_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     synonyms: Mapped[list] = mapped_column(JSON, default=list)
     antonyms: Mapped[list] = mapped_column(JSON, default=list)
     topics: Mapped[list] = mapped_column(JSON, default=list)
@@ -80,6 +95,10 @@ class WordModel(Base):
     last_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime)
+    # Bumped on every write. A client that edited revision 3 while offline is
+    # editing a word that is now revision 5, and that difference is what makes
+    # a stale edit detectable rather than silently last-write-wins.
+    revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     group: Mapped[GroupModel] = relationship(back_populates="words")
     mnemonic_notes: Mapped[list["MnemonicNoteModel"]] = relationship(cascade="all, delete-orphan")
@@ -169,6 +188,10 @@ class ReminderModel(Base):
     trigger_time: Mapped[str] = mapped_column(String(8))
     recurrence: Mapped[str] = mapped_column(String(16))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Authority for failover (issue #87). Two devices holding different
+    # revisions hold the same reminder; the higher one is the real schedule,
+    # and a firing computed from a lower one is discarded on reconnect.
+    revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime)
 
 
@@ -193,3 +216,392 @@ class RecallSettingsModel(Base):
     in_app_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     quiet_hours_start: Mapped[str | None] = mapped_column(String(8), nullable=True)
     quiet_hours_end: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    hide_notification_details: Mapped[bool] = mapped_column(Boolean, default=False)
+    notifications_paused: Mapped[bool] = mapped_column(Boolean, default=False)
+    scheduler: Mapped[str] = mapped_column(String(16), default="sm2")
+
+
+class PracticeExerciseModel(Base):
+    __tablename__ = "practice_exercises"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    word_id: Mapped[int] = mapped_column(ForeignKey("words.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    prompt: Mapped[str] = mapped_column(Text)
+    answer: Mapped[str] = mapped_column(Text)
+    options: Mapped[list] = mapped_column(JSON, default=list)
+    answered: Mapped[bool] = mapped_column(Boolean, default=False)
+    correct: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class DailySessionPreferenceModel(Base):
+    __tablename__ = "daily_session_preferences"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    goal_minutes: Mapped[int] = mapped_column(Integer, default=10)
+    review_limit: Mapped[int] = mapped_column(Integer, default=20)
+
+
+class WeeklyLearningReportModel(Base):
+    __tablename__ = "weekly_learning_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    week_start: Mapped[datetime] = mapped_column(DateTime)
+    week_end: Mapped[datetime] = mapped_column(DateTime)
+    time_zone: Mapped[str] = mapped_column(String(64))
+    snapshot: Mapped[dict] = mapped_column(JSON)
+    narration: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class MCPGrantModel(Base):
+    __tablename__ = "mcp_grants"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    requester: Mapped[str] = mapped_column(String(255), index=True)
+    server: Mapped[str] = mapped_column(String(255))
+    tool: Mapped[str] = mapped_column(String(255))
+    access: Mapped[str] = mapped_column(String(32))
+    workspace: Mapped[str] = mapped_column(String(1024))
+    mode: Mapped[str] = mapped_column(String(16))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class MCPAuditEventModel(Base):
+    __tablename__ = "mcp_audit_events"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    requester: Mapped[str] = mapped_column(String(255), index=True)
+    tool: Mapped[str] = mapped_column(String(255))
+    decision: Mapped[str] = mapped_column(String(64))
+    event: Mapped[dict] = mapped_column(JSON)
+    previous_hash: Mapped[str] = mapped_column(String(64))
+    event_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class MCPIdempotencyKeyModel(Base):
+    __tablename__ = "mcp_idempotency_keys"
+    __table_args__ = (UniqueConstraint("requester", "request_id", name="uq_mcp_requester_request_id"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    requester: Mapped[str] = mapped_column(String(255), index=True)
+    request_id: Mapped[str] = mapped_column(String(128))
+    tool: Mapped[str] = mapped_column(String(255))
+    response: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class DesktopNotificationModel(Base):
+    """Outbox row for one desktop notification (ROADMAP 2.2, issue #27).
+
+    ADR 0002 made the desktop app remote-only, so the process that decides a
+    notification is owed and the process that owns the notification tray are
+    not the same one. This table is the handoff between them.
+
+    Indexed on (user_id, delivered_at) rather than user_id alone, because the
+    only hot query is "pending rows for this user" — an index on user_id would
+    still walk every row this account has ever been sent.
+    """
+
+    __tablename__ = "desktop_notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    message: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Which reminder produced this, so an action can reach back to the schedule
+    # it belongs to. Nullable: a notification need not come from a reminder.
+    reminder_id: Mapped[int | None] = mapped_column(ForeignKey("reminders.id"), nullable=True)
+    # After this instant the actions are refused. An OS notification can sit in
+    # a tray for days, and "start a five-minute session" answered on Thursday
+    # for Tuesday's prompt is not the thing the user was asked.
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # The action taken, and when. First one wins — see PerformNotificationAction.
+    action: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    action_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("ix_desktop_notifications_user_undelivered", "user_id", "delivered_at"),
+    )
+
+
+class SchedulerJobClaimModel(Base):
+    """One row per (job, logical occurrence) that some instance has taken.
+
+    APScheduler 3's SQLAlchemy job store makes jobs survive a restart, but it
+    does not stop two schedulers polling the same store from both picking up
+    the same due job — nothing in it locks a job for the instance that fetched
+    it. Persistence and exclusivity are separate problems, and this table is
+    the second one.
+
+    The unique constraint is the whole mechanism: every instance tries to
+    insert the same row, exactly one succeeds, and the rest see an integrity
+    error and stand down. That works identically on Postgres and SQLite and
+    needs no advisory locks or leader election.
+    """
+
+    __tablename__ = "scheduler_job_claims"
+    __table_args__ = (
+        UniqueConstraint("job_key", "occurrence_key", name="uq_scheduler_job_occurrence"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_key: Mapped[str] = mapped_column(String(128), index=True)
+    # Identifies *which firing* this is — see occurrence_key() in
+    # app.infrastructure.job_claims. Not a timestamp: two instances firing the
+    # same reminder a few seconds apart must produce the same value, and two
+    # wall-clock readings never would.
+    occurrence_key: Mapped[str] = mapped_column(String(64))
+    claimed_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
+class SyncOperationModel(Base):
+    """One offline mutation, submitted for reconciliation (issue #90).
+
+    Append-only. A row is never rewritten to a different operation — an
+    operation that conflicts is recorded as conflicting and kept, because the
+    whole point is that neither version is silently discarded.
+
+    The unique constraint on (user_id, operation_id) is what makes submission
+    idempotent: a client that retries after a lost response inserts the same
+    row and loses the race with itself rather than applying twice.
+    """
+
+    __tablename__ = "sync_operations"
+    __table_args__ = (
+        UniqueConstraint("user_id", "operation_id", name="uq_sync_user_operation"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    # Client-generated and stable across retries. Not a server id: the client
+    # has to be able to name an operation it made while it had no network and
+    # therefore no server id to refer to.
+    operation_id: Mapped[str] = mapped_column(String(64))
+    entity_type: Mapped[str] = mapped_column(String(32))
+    # Null for a create, whose server id does not exist until it is applied.
+    entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    operation: Mapped[str] = mapped_column(String(16))
+    payload: Mapped[dict] = mapped_column(JSON)
+    # The revision the client believed it was editing. A scalar edit against a
+    # stale revision is a conflict; an append (a review) never is.
+    base_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    conflict_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Monotonic per account. A client pulls everything above its cursor.
+    server_sequence: Mapped[int] = mapped_column(Integer, index=True)
+    # Retry bookkeeping (issue #91). Kept on the operation rather than in a
+    # side table so a quarantined row carries its own history.
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    error_class: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
+class MistakeEventModel(Base):
+    """One recorded error (issue #134).
+
+    Append-only history rather than state. A mistake that happened cannot
+    un-happen, and rewriting a row when the learner later gets the word right
+    would destroy the very signal the weakness profile is built from.
+
+    `occurrence_count` exists because the same mistake repeated in one session
+    is one pattern, not several. Rows are not merged across sessions — the
+    aggregation in `WeaknessProfileService` does that, and it needs the
+    timestamps to do it.
+    """
+
+    __tablename__ = "mistake_events"
+    __table_args__ = (
+        # The profile query is always "this learner's mistakes, recent first".
+        Index("ix_mistake_events_user_occurred", "user_id", "occurred_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    word_id: Mapped[int] = mapped_column(ForeignKey("words.id"), index=True)
+    category: Mapped[str] = mapped_column(String(16), index=True)
+    # What the learner actually typed. Kept so a profile can show the mistake
+    # rather than only its category — "you wrote 'gata'" is evidence, "wrong
+    # word" is a verdict, and the learner deserves to check our work.
+    attempted_answer: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Nullable rather than absent when the confused word is deleted: the
+    # mistake still happened, and it degrades to a plain wrong-word error
+    # rather than vanishing or leaving a dangling reference.
+    confused_with_word_id: Mapped[int | None] = mapped_column(
+        ForeignKey("words.id"), nullable=True, index=True
+    )
+    # Free text describing where it happened ("review", "writing correction").
+    context: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    occurrence_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
+class WordFieldRevisionModel(Base):
+    """One AI-authored field changing value (issue #140).
+
+    Append-only. The point of a history is to answer "what did this say
+    before?", and a row that can be rewritten cannot answer it.
+
+    Values are stored as text even for list fields, joined on newline. A JSON
+    column would preserve structure the history does not need — nobody diffs a
+    synonym list programmatically, they read it — and it would make the table
+    harder to inspect by hand when someone is trying to work out what happened.
+    """
+
+    __tablename__ = "word_field_revisions"
+    __table_args__ = (
+        # Every read is "this word's history, newest first".
+        Index("ix_word_field_revisions_word_changed", "word_id", "changed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    word_id: Mapped[int] = mapped_column(ForeignKey("words.id"), index=True)
+    field: Mapped[str] = mapped_column(String(32), index=True)
+    # Null means the field had no value before, which is different from having
+    # been an empty string — the first is "the model added this", the second
+    # would be a change that changed nothing.
+    before_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    after_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # "ai", "human" or "bulk". Recorded at the time rather than inferred later,
+    # because after the fact there is no way to tell them apart.
+    source: Mapped[str] = mapped_column(String(8), index=True)
+    changed_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
+class LearningPathModel(Base):
+    """A stated goal, broken into milestones (issue #137).
+
+    The goal text is stored because it is what the learner asked for, and a
+    path that cannot show its own goal is a list of steps with no reason
+    attached.
+
+    No progress column. Progress is counted from the learner's vocabulary at
+    read time — a stored percentage is a number that was true once, and it
+    drifts the moment a word is added or deleted.
+    """
+
+    __tablename__ = "learning_paths"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    # Optional: a path can be about a language the learner studies in several
+    # groups, and forcing it into one would make the goal narrower than it is.
+    group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id"), nullable=True)
+    goal: Mapped[str] = mapped_column(String(500))
+    target_language: Mapped[str] = mapped_column(String(32))
+    # Which model produced the plan, kept for the same reason word cards keep
+    # it: a suggestion whose origin is unrecorded cannot be judged later.
+    ai_provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ai_model: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+    milestones: Mapped[list["PathMilestoneModel"]] = relationship(
+        back_populates="path", cascade="all, delete-orphan", order_by="PathMilestoneModel.position"
+    )
+
+
+class PathMilestoneModel(Base):
+    """One step of a path.
+
+    `position` is stored rather than inferred from id: a path's order is part
+    of its meaning, and reordering must not depend on insertion order.
+    """
+
+    __tablename__ = "path_milestones"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    path_id: Mapped[int] = mapped_column(ForeignKey("learning_paths.id"), index=True)
+    position: Mapped[int] = mapped_column(Integer)
+    title: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str] = mapped_column(Text, default="")
+    # Matched against the learner's own word topics to measure progress, which
+    # is why it is one tag rather than prose.
+    topic: Mapped[str] = mapped_column(String(64), index=True)
+    target_word_count: Mapped[int] = mapped_column(Integer)
+    cefr_level: Mapped[str | None] = mapped_column(String(8), nullable=True)
+
+    path: Mapped[LearningPathModel] = relationship(back_populates="milestones")
+class ConversationSessionModel(Base):
+    """One tutoring conversation (issue #135)."""
+
+    __tablename__ = "conversation_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id"), nullable=True)
+    target_language: Mapped[str] = mapped_column(String(32))
+    # "gentle", "steady" or "stretch". Named rather than numeric because it is
+    # a choice the learner makes, and a number would be one they guess at.
+    difficulty: Mapped[str] = mapped_column(String(16), default="steady")
+    # Free text describing the situation, when the conversation has one. Used
+    # by scenario role-play (#136), which builds on this transport.
+    scenario: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    messages: Mapped[list["ConversationMessageModel"]] = relationship(
+        back_populates="session",
+        cascade="all, delete-orphan",
+        order_by="ConversationMessageModel.id",
+    )
+
+
+class ConversationMessageModel(Base):
+    """One turn, with any corrections attached to it.
+
+    Corrections live on the message rather than in their own table: they are
+    only ever read with the turn they belong to, and a separate table would be
+    a join for no query anyone makes.
+    """
+
+    __tablename__ = "conversation_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("conversation_sessions.id"), index=True
+    )
+    # "learner" or "tutor".
+    speaker: Mapped[str] = mapped_column(String(8))
+    text: Mapped[str] = mapped_column(Text)
+    # [{original, corrected, explanation}] — validated before storage so a
+    # correction never quotes text the learner did not write.
+    corrections: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+
+    session: Mapped[ConversationSessionModel] = relationship(back_populates="messages")
+
+
+class ScenarioAttemptModel(Base):
+    """One run at a role-play scenario (issue #136).
+
+    The conversation itself lives in `conversation_sessions` — this is the
+    scenario wrapper around it. Keeping them separate means the transport,
+    corrections and history from #135 are reused rather than reimplemented, and
+    an attempt is deleted without taking the general conversation machinery
+    with it.
+
+    `evaluation` is null until the attempt is finished, and stays null when it
+    was too short to judge. That is different from a zero score, which would be
+    a claim the learner did badly.
+    """
+
+    __tablename__ = "scenario_attempts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("conversation_sessions.id"), index=True, unique=True
+    )
+    # The catalog key, not a foreign key: the catalog is a code constant, so
+    # there is no row to point at. Stored as text so an attempt survives a
+    # scenario being renamed or retired.
+    scenario_key: Mapped[str] = mapped_column(String(64), index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # {scored, scores, summary, goals_met, detail} — validated before storage.
+    evaluation: Mapped[dict | None] = mapped_column(JSON, nullable=True)

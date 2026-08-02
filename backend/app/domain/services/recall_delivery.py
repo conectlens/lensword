@@ -73,13 +73,13 @@ class RecallDeliveryPolicy:
 
         allowed = {channel for channel, flag in _CHANNEL_FLAGS if getattr(settings, flag)}
 
-        start, end = _quiet_hours_bounds(settings)
+        start, end = quiet_hours_bounds(settings)
         if is_within_quiet_hours(start, end, now.time()):
             allowed -= INTERRUPTIVE_CHANNELS
         return allowed
 
 
-def _quiet_hours_bounds(settings: RecallSettings) -> tuple[time | None, time | None]:
+def quiet_hours_bounds(settings: RecallSettings) -> tuple[time | None, time | None]:
     """Read the configured window, treating an unparseable endpoint as if the
     window were never configured.
 

@@ -5,31 +5,41 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routers import admin, auth, groups, mnemonics, review, rooms, settings, words
+from app.api.routers import admin, ai, ai_settings, auth, conversations, extract, graph, groups, imports, learning_paths, mcp, mcp_plans, mnemonics, notifications, practice, reminder_windows, reports, sync, review, rooms, scenarios, settings, weaknesses, words
 from app.application.use_cases.auth import RegisterUserUseCase
 from app.config import get_settings
 from app.domain.exceptions import DomainError
 from app.domain.value_objects import UserRole
 from app.infrastructure.db import SessionLocal, init_db
 from app.infrastructure.repositories import SqlAlchemyUserRepository
-from app.infrastructure.notifications import LogNotificationChannel
+from app.infrastructure.notifications import DesktopNotificationChannel, LogNotificationChannel
 from app.infrastructure.scheduler import create_scheduler, register_jobs
 
 settings_ = get_settings()
 
 if settings_.environment == "development":
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=settings_.log_level)
+    # basicConfig is intentionally a no-op once pytest/a host process has
+    # installed a handler. Set the level explicitly so development diagnostics
+    # do not disappear merely because the app is imported second.
+    logging.getLogger().setLevel(settings_.log_level)
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
     _seed_first_admin()
-    _app.state.scheduler = create_scheduler()
+    _app.state.scheduler = create_scheduler(settings_)
     # Held on app state so a request that has to re-register a user's jobs
     # (a time-zone change) delivers through the same channel startup used,
     # rather than quietly constructing a second one.
-    _app.state.notification_channel = LogNotificationChannel()
+    #
+    # Desktop wraps the log adapter rather than replacing it: only the desktop
+    # channel becomes an outbox row, and push/email/in-app keep logging exactly
+    # as before (ROADMAP 2.2, issue #27).
+    _app.state.notification_channel = DesktopNotificationChannel(
+        SessionLocal, fallback=LogNotificationChannel()
+    )
     register_jobs(
         _app.state.scheduler, settings_, SessionLocal, _app.state.notification_channel
     )
@@ -49,12 +59,28 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(mcp.router)
+app.include_router(mcp_plans.router)
 app.include_router(groups.router)
 app.include_router(words.router)
+app.include_router(extract.router)
+app.include_router(ai.router)
+app.include_router(imports.router)
+app.include_router(ai_settings.router)
 app.include_router(rooms.router)
 app.include_router(review.router)
+app.include_router(practice.router)
+app.include_router(reports.router)
+app.include_router(notifications.router)
+app.include_router(reminder_windows.router)
+app.include_router(sync.router)
 app.include_router(mnemonics.router)
 app.include_router(settings.router)
+app.include_router(weaknesses.router)
+app.include_router(graph.router)
+app.include_router(learning_paths.router)
+app.include_router(conversations.router)
+app.include_router(scenarios.router)
 app.include_router(admin.router)
 
 

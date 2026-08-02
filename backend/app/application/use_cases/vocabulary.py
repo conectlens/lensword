@@ -4,6 +4,12 @@ from datetime import datetime
 from app.domain.entities import Group, Room, Word
 from app.domain.exceptions import EntityNotFoundError, PermissionDeniedError
 from app.domain.repositories import GroupRepository, RoomRepository, WordRepository
+from app.domain.services.ai_provenance import (
+    AI_AUTHORED_FIELDS,
+    EditSource,
+    changed_fields,
+    verification_survives,
+)
 from app.domain.value_objects import SupportedLanguage
 
 
@@ -112,6 +118,15 @@ class WordInput:
     example_sentence: str | None = None
     mnemonic: str | None = None
     category: str | None = None
+    definition: str | None = None
+    part_of_speech: str | None = None
+    cefr_level: str | None = None
+    pronunciation: str | None = None
+    collocations: list[str] | None = None
+    tags: list[str] | None = None
+    ai_confidence: float | None = None
+    ai_provider: str | None = None
+    ai_model: str | None = None
 
 
 class AddWordUseCase:
@@ -128,6 +143,15 @@ class AddWordUseCase:
             target_language=data.target_language,
             example_sentence=data.example_sentence,
             category=data.category,
+            definition=data.definition,
+            part_of_speech=data.part_of_speech,
+            cefr_level=data.cefr_level,
+            pronunciation=data.pronunciation,
+            collocations=list(data.collocations or []),
+            tags=list(data.tags or []),
+            ai_confidence=data.ai_confidence,
+            ai_provider=data.ai_provider,
+            ai_model=data.ai_model,
         )
         for t in data.translations:
             word.add_translation(t)
@@ -136,12 +160,23 @@ class AddWordUseCase:
 
 
 class UpdateWordUseCase:
-    def __init__(self, word_repo: WordRepository, group_repo: GroupRepository):
+    def __init__(
+        self,
+        word_repo: WordRepository,
+        group_repo: GroupRepository,
+        revision_repo=None,
+    ):
         self.word_repo = word_repo
         self.group_repo = group_repo
+        # Optional so callers that do not care about provenance are unaffected.
+        # Recording history is bookkeeping beside the edit, not part of it.
+        self.revision_repo = revision_repo
 
-    def execute(self, owner_id: int, word_id: int, data: WordInput) -> Word:
+    def execute(
+        self, owner_id: int, word_id: int, data: WordInput, source: EditSource = EditSource.HUMAN
+    ) -> Word:
         word = _require_word_owner(self.word_repo, self.group_repo, word_id, owner_id)
+        before = _tracked_snapshot(word)
         word.term = data.term.strip()
         word.target_language = data.target_language
         word.translations = []
@@ -150,7 +185,58 @@ class UpdateWordUseCase:
         word.example_sentence = data.example_sentence
         word.set_mnemonic(data.mnemonic)
         word.category = data.category
-        return self.word_repo.update(word)
+        if data.definition is not None: word.definition = data.definition
+        if data.part_of_speech is not None: word.part_of_speech = data.part_of_speech
+        if data.cefr_level is not None: word.cefr_level = data.cefr_level
+        if data.pronunciation is not None: word.pronunciation = data.pronunciation
+        if data.collocations is not None: word.collocations = list(data.collocations)
+        if data.tags is not None: word.tags = list(data.tags)
+        if data.ai_confidence is not None: word.ai_confidence = data.ai_confidence
+        if data.ai_provider is not None: word.ai_provider = data.ai_provider
+        if data.ai_model is not None: word.ai_model = data.ai_model
+
+        changes = changed_fields(before, _tracked_snapshot(word))
+        # A model rewriting a verified field ends the verification: the badge
+        # says a person read this text, and after re-enrichment that is no
+        # longer true of what is on screen.
+        if word.ai_verified_at is not None and not verification_survives(changes, source):
+            word.ai_verified_at = None
+
+        updated = self.word_repo.update(word)
+        self._record(word_id, before, _tracked_snapshot(word), changes, source)
+        return updated
+
+    def _record(self, word_id: int, before: dict, after: dict, changes: list[str], source: EditSource) -> None:
+        if self.revision_repo is None:
+            return
+        for field_name in changes:
+            self.revision_repo.record(
+                word_id=word_id,
+                field=field_name,
+                before_value=_as_text(before.get(field_name)),
+                after_value=_as_text(after.get(field_name)),
+                source=source.value,
+            )
+
+
+def _tracked_snapshot(word: Word) -> dict:
+    """The AI-authored fields as they stand, for before/after comparison."""
+    return {name: getattr(word, name, None) for name in AI_AUTHORED_FIELDS}
+
+
+def _as_text(value) -> str | None:
+    """Flatten a field value for the history.
+
+    Lists are joined on newline rather than stored as JSON: nobody diffs a
+    synonym list programmatically, they read it, and text stays legible to
+    anyone inspecting the table by hand.
+    """
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return "\n".join(str(item) for item in value) or None
+    text = str(value).strip()
+    return text or None
 
 
 class DeleteWordUseCase:
@@ -192,6 +278,22 @@ class GetWordUseCase:
 
     def execute(self, owner_id: int, word_id: int) -> Word:
         return _require_word_owner(self.word_repo, self.group_repo, word_id, owner_id)
+
+
+class SearchWordsUseCase:
+    """Search only words inside groups owned by the requesting learner."""
+    def __init__(self, word_repo: WordRepository, group_repo: GroupRepository):
+        self.word_repo, self.group_repo = word_repo, group_repo
+
+    def execute(self, owner_id: int, query: str, limit: int) -> list[Word]:
+        needle, matches = query.strip().casefold(), []
+        for group in self.group_repo.list_by_owner(owner_id):
+            for word in self.word_repo.list_by_group(group.id or 0):
+                if not needle or needle in word.term.casefold() or any(needle in value.casefold() for value in word.translations):
+                    matches.append(word)
+                    if len(matches) >= limit:
+                        return matches
+        return matches
 
 
 # --- Rooms (memory palace) -------------------------------------------------

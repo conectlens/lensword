@@ -35,6 +35,70 @@ jobs:
       - name: Run tests
         run: python -m pytest -v
 
+  # The same suite against Postgres, which is the supported deployment target
+  # (ROADMAP 4.0). Kept as its own job rather than a second leg of the matrix
+  # above, because both legs would otherwise report under one check name and a
+  # dialect-specific failure would be ambiguous in the PR checks list.
+  #
+  # NOTE: this is not in the repository's required-status-check set, so a red
+  # run here will not block a merge until it is added to branch protection.
+  backend-postgres:
+    name: Backend on Postgres (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        # Pinned to a major version so a new Postgres release cannot change
+        # this job's meaning without a commit saying so.
+        image: postgres:17
+        env:
+          POSTGRES_USER: lensword
+          POSTGRES_PASSWORD: lensword
+          POSTGRES_DB: lensword_test
+        ports:
+          - 5432:5432
+        # Without the health check the first test can connect before the
+        # server finishes initialising, which fails as a connection refused
+        # that looks nothing like a startup race.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Proves the migrations run on a genuinely empty Postgres database, which
+      # the suite alone would not: the fixtures build the schema from the ORM
+      # metadata, so a migration that is valid only in SQLite would still let
+      # every test pass.
+      - name: Apply migrations to an empty database
+        env:
+          DATABASE_URL: postgresql+psycopg://lensword:lensword@localhost:5432/lensword_test
+        run: |
+          python -m alembic -c alembic.ini upgrade head
+          python -m alembic -c alembic.ini downgrade base
+
+      - name: Run tests
+        env:
+          TEST_DATABASE_URL: postgresql+psycopg://lensword:lensword@localhost:5432/lensword_test
+        run: python -m pytest -v
+
   frontend:
     name: Frontend (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
@@ -81,7 +145,7 @@ jobs:
         run: rustup component add rustfmt clippy
 
       - name: Cache cargo registry and build output
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
