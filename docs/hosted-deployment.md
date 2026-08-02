@@ -123,6 +123,28 @@ Two consequences worth planning for:
   notification rather than duplicating it. That trade is deliberate — a missed
   nudge beats a double one — but it is untested under real process failure.
 
+## Outbound network access
+
+The URL import on the Extract page makes the **server** fetch a page the user
+chose. That is a server-side request forgery surface by construction, and the
+application guards it: only `http`/`https` on ports 80 and 443, no embedded
+credentials, every resolved address checked against private, loopback,
+link-local and reserved space, and every redirect hop re-validated as if it had
+been typed. `169.254.169.254` — the cloud metadata endpoint that hands out
+instance credentials — is refused along with the rest of link-local space.
+
+One gap remains and cannot be closed in application code alone. Between
+resolving a hostname and connecting to it, DNS can return a different answer
+(**DNS rebinding**). Pinning the connection to the address that was validated
+would break TLS certificate validation for the hostname, so the guard checks
+what it resolves and connects by name.
+
+**Restrict egress from the application container.** Denying it outbound access
+to your own private ranges and to the metadata endpoint closes the rebinding
+gap and makes the application-level checks a second line rather than the only
+one. If your platform does not offer egress rules, treat the URL import as a
+feature to leave unused rather than one to rely on.
+
 ## Backups
 
 Nothing in this repository backs anything up. Use the provider's automated
