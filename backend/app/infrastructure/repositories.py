@@ -40,6 +40,7 @@ from app.domain.value_objects import (
 )
 from app.infrastructure.models import (
     DesktopNotificationModel,
+    SyncOperationModel,
     GroupModel,
     MnemonicNoteModel,
     RecallSettingsModel,
@@ -1016,3 +1017,81 @@ class SqlAlchemyDesktopNotificationRepository:
             removed += 1
         self.db.flush()
         return removed
+
+
+class SqlAlchemySyncOperationRepository:
+    """Append-only log of submitted offline mutations (issue #90)."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def find(self, user_id: int, operation_id: str) -> SyncOperationModel | None:
+        stmt = select(SyncOperationModel).where(
+            SyncOperationModel.user_id == user_id,
+            SyncOperationModel.operation_id == operation_id,
+        )
+        return self.db.scalars(stmt).first()
+
+    def next_sequence(self, user_id: int) -> int:
+        """Per-account monotonic cursor.
+
+        Scoped to the account rather than global so one busy user does not
+        advance everyone else's cursor and force pointless re-pulls.
+        """
+        stmt = select(func.max(SyncOperationModel.server_sequence)).where(
+            SyncOperationModel.user_id == user_id
+        )
+        return (self.db.scalar(stmt) or 0) + 1
+
+    def record(
+        self,
+        user_id: int,
+        operation_id: str,
+        entity_type: str,
+        entity_id: int | None,
+        operation: str,
+        payload: dict,
+        base_revision: int | None,
+        status: str,
+        conflict_reason: str | None,
+    ) -> SyncOperationModel:
+        model = SyncOperationModel(
+            user_id=user_id,
+            operation_id=operation_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            operation=operation,
+            payload=payload,
+            base_revision=base_revision,
+            status=status,
+            conflict_reason=conflict_reason,
+            server_sequence=self.next_sequence(user_id),
+            created_at=utcnow(),
+        )
+        self.db.add(model)
+        self.db.flush()
+        return model
+
+    def list_since(self, user_id: int, cursor: int, limit: int = 200) -> list[SyncOperationModel]:
+        """Everything this account has recorded above `cursor`, oldest first."""
+        stmt = (
+            select(SyncOperationModel)
+            .where(
+                SyncOperationModel.user_id == user_id,
+                SyncOperationModel.server_sequence > cursor,
+            )
+            .order_by(SyncOperationModel.server_sequence.asc())
+            .limit(limit)
+        )
+        return list(self.db.scalars(stmt))
+
+    def list_conflicts(self, user_id: int) -> list[SyncOperationModel]:
+        stmt = (
+            select(SyncOperationModel)
+            .where(
+                SyncOperationModel.user_id == user_id,
+                SyncOperationModel.status == "conflict",
+            )
+            .order_by(SyncOperationModel.server_sequence.asc())
+        )
+        return list(self.db.scalars(stmt))
