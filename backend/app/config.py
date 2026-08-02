@@ -7,6 +7,7 @@ from pydantic import BaseModel, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 SUPPORTED_AI_PROVIDERS = ("none", "ollama")
+SUPPORTED_JOB_STORES = ("database", "memory")
 
 
 class Settings(BaseSettings):
@@ -37,6 +38,13 @@ class Settings(BaseSettings):
     db_pool_size: int = 5
     db_max_overflow: int = 10
 
+    # Where scheduled jobs live (ROADMAP 4.2). "database" persists them in the
+    # configured database so they survive a restart; "memory" keeps the old
+    # in-process behaviour, which is what the test suite and any single-shot
+    # process want. Persistence alone does not make firing exclusive — see
+    # app.infrastructure.job_claims for that half.
+    scheduler_job_store: str = "database"
+
     secret_key: str = "change-me-in-production-this-is-not-secure"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
@@ -62,6 +70,16 @@ class Settings(BaseSettings):
     # it reports that state instead of presenting heuristic output as AI work.
     ai_extract_fallback_enabled: bool = False
     ai_settings_path: str = "data/ai-settings.json"
+
+    @field_validator("scheduler_job_store")
+    @classmethod
+    def _known_job_store(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in SUPPORTED_JOB_STORES:
+            raise ValueError(
+                f"must be one of {', '.join(SUPPORTED_JOB_STORES)} (got '{value}')"
+            )
+        return normalized
 
     @field_validator("db_pool_size", "db_max_overflow")
     @classmethod

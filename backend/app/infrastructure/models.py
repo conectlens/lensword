@@ -302,3 +302,33 @@ class DesktopNotificationModel(Base):
     __table_args__ = (
         Index("ix_desktop_notifications_user_undelivered", "user_id", "delivered_at"),
     )
+
+
+class SchedulerJobClaimModel(Base):
+    """One row per (job, logical occurrence) that some instance has taken.
+
+    APScheduler 3's SQLAlchemy job store makes jobs survive a restart, but it
+    does not stop two schedulers polling the same store from both picking up
+    the same due job — nothing in it locks a job for the instance that fetched
+    it. Persistence and exclusivity are separate problems, and this table is
+    the second one.
+
+    The unique constraint is the whole mechanism: every instance tries to
+    insert the same row, exactly one succeeds, and the rest see an integrity
+    error and stand down. That works identically on Postgres and SQLite and
+    needs no advisory locks or leader election.
+    """
+
+    __tablename__ = "scheduler_job_claims"
+    __table_args__ = (
+        UniqueConstraint("job_key", "occurrence_key", name="uq_scheduler_job_occurrence"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_key: Mapped[str] = mapped_column(String(128), index=True)
+    # Identifies *which firing* this is — see occurrence_key() in
+    # app.infrastructure.job_claims. Not a timestamp: two instances firing the
+    # same reminder a few seconds apart must produce the same value, and two
+    # wall-clock readings never would.
+    occurrence_key: Mapped[str] = mapped_column(String(64))
+    claimed_at: Mapped[datetime] = mapped_column(DateTime, index=True)

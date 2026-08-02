@@ -22,6 +22,12 @@ _USING_POSTGRES = bool(TEST_DATABASE_URL) and not TEST_DATABASE_URL.startswith("
 _THROWAWAY_DB_DIR = tempfile.mkdtemp(prefix="lensword-tests-")
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL or f"sqlite:///{_THROWAWAY_DB_DIR}/lensword-test.db"
 
+# The suite runs one process and asserts on delivery, not on concurrency, so
+# jobs stay in memory. A database job store would also have APScheduler create
+# and share its own table across tests, which is state the fixtures do not own
+# and cannot reset.
+os.environ["SCHEDULER_JOB_STORE"] = "memory"
+
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402

@@ -168,6 +168,11 @@ releases exist yet).
   macOS, Windows and Linux needs a packaged build and, on macOS, a signed one
   (ROADMAP 3.1, #65).
 
+- Desktop notifications are queued but not yet shown. The backend records them
+  and serves them over the API; no OS toast is drawn until the shell collects
+  and displays them (ROADMAP 3.2). README's "configured but not dispatched"
+  disclaimer therefore still stands.
+
 ## [0.1.0] - 2026-07-22
 
 ### Added
