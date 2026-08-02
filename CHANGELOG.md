@@ -44,6 +44,19 @@ releases exist yet).
   layer on every route, and no collection endpoint returns another account's
   rows. (ROADMAP Phase 4.1.)
 
+- Postgres support, and Postgres as the deployment target. `docker compose up`
+  now starts a `postgres:17` service and the backend waits for it to pass a
+  health check before booting, since it runs migrations on start. The database
+  port is not published to the host. Point `DATABASE_URL` at
+  `postgresql+psycopg://…` to use a database you already run; `DB_POOL_SIZE`
+  and `DB_MAX_OVERFLOW` bound the connection pool, and connections are
+  pre-pinged and recycled below the five-minute idle cutoff common to managed
+  providers, so a connection dropped underneath the pool is replaced rather
+  than handed to a request. SQLite remains the default for local development,
+  so a fresh checkout still runs with no database server installed. CI runs the
+  full backend suite against both dialects and applies every migration to an
+  empty Postgres database. (ROADMAP Phase 4.0.)
+
 - A desktop notification adapter behind the existing `NotificationChannel`
   port. Because ADR 0002 made the desktop app remote-only, the backend and the
   machine that owns the notification tray are different processes — so the
