@@ -49,12 +49,29 @@ fn get_api_config(app: tauri::AppHandle) -> Result<ApiConfig, String> {
     let from_env = std::env::var(API_BASE_ENV).ok();
     let from_file = config_file_contents(&app)?;
 
-    resolve(from_env.as_deref(), from_file.as_deref())
-        .map(ApiConfig::from)
-        .map_err(|err| err.to_string())
+    let result = resolve(from_env.as_deref(), from_file.as_deref()).map(ApiConfig::from);
+    match &result {
+        Ok(config) => log::info!(
+            "resolved API endpoint {} (source: {})",
+            config.base_url,
+            config.source
+        ),
+        Err(err) => log::error!("failed to resolve API endpoint: {err}"),
+    }
+    result.map_err(|err| err.to_string())
+}
+
+/// Set `RUST_LOG=lensword_desktop_lib=debug` (or `=trace`) to see per-command
+/// tracing; unset, only warnings and errors print. Reads the env var itself
+/// rather than deferring to env_logger's default (off), so a debug build with
+/// no configuration still shows info-level output on stdout.
+fn init_logging() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 }
 
 pub fn run() {
+    init_logging();
+
     tauri::Builder::default()
         .plugin(selection_capture::plugin())
         .manage(mcp::McpState::default())

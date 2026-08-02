@@ -15,7 +15,7 @@ if settings.database_url.startswith("sqlite:///./"):
     db_path = settings.database_url.replace("sqlite:///./", "")
     os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
 
-engine = create_engine(settings.database_url, connect_args=_connect_args)
+engine = create_engine(settings.database_url, connect_args=_connect_args, echo=settings.db_echo)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 

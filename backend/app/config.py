@@ -15,7 +15,15 @@ class Settings(BaseSettings):
     app_name: str = "LensWord API"
     environment: str = "development"
 
+    # Root logger level. INFO in development gives request/scheduler visibility
+    # without SQL noise; DEBUG additionally requires db_echo below to see queries.
+    log_level: str = "INFO"
+
     database_url: str = "sqlite:///./data/lensword.db"
+    # Echoes every SQL statement SQLAlchemy issues to the log. Off by default —
+    # even at DEBUG log level — since it's noisy; opt in per-session when
+    # tracking down a query.
+    db_echo: bool = False
 
     secret_key: str = "change-me-in-production-this-is-not-secure"
     algorithm: str = "HS256"
@@ -52,6 +60,16 @@ class Settings(BaseSettings):
         if value <= 0:
             raise ValueError(f"must be greater than 0 (got {value})")
         return value
+
+    @field_validator("log_level")
+    @classmethod
+    def _known_log_level(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if normalized not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
+            raise ValueError(
+                f"must be one of DEBUG, INFO, WARNING, ERROR, CRITICAL (got '{value}')"
+            )
+        return normalized
 
     @field_validator("ai_provider")
     @classmethod
