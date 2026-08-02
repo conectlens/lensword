@@ -15,6 +15,7 @@ from app.infrastructure.repositories import (
     SqlAlchemyDesktopNotificationRepository,
     SqlAlchemyGroupRepository,
     SqlAlchemyConversationRepository,
+    SqlAlchemyScenarioAttemptRepository,
     SqlAlchemyLearningPathRepository,
     SqlAlchemyMistakeEventRepository,
     SqlAlchemyWordRevisionRepository,
@@ -105,6 +106,10 @@ def get_conversation_repository(db: DbSession) -> SqlAlchemyConversationReposito
     return SqlAlchemyConversationRepository(db)
 
 
+def get_scenario_attempt_repository(db: DbSession) -> SqlAlchemyScenarioAttemptRepository:
+    return SqlAlchemyScenarioAttemptRepository(db)
+
+
 @lru_cache
 def _ai_provider() -> AIProvider | None:
     """Built once per process, not per request — the Ollama adapter owns a
@@ -133,6 +138,7 @@ MistakeEventRepo = Annotated[SqlAlchemyMistakeEventRepository, Depends(get_mista
 WordRevisionRepo = Annotated[SqlAlchemyWordRevisionRepository, Depends(get_word_revision_repository)]
 LearningPathRepo = Annotated[SqlAlchemyLearningPathRepository, Depends(get_learning_path_repository)]
 ConversationRepo = Annotated[SqlAlchemyConversationRepository, Depends(get_conversation_repository)]
+ScenarioAttemptRepo = Annotated[SqlAlchemyScenarioAttemptRepository, Depends(get_scenario_attempt_repository)]
 OptionalAIProvider = Annotated[AIProvider | None, Depends(get_ai_provider)]
 
 

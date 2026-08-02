@@ -141,6 +141,13 @@ def owned(client, two_accounts, db_session):
     conversation = SqlAlchemyConversationRepository(_db).start(
         user_id=owner_id, target_language="Spanish", difficulty="steady"
     )
+    # Seeded directly: starting an attempt needs no AI provider, and this audit
+    # deliberately does not stand one up.
+    from app.infrastructure.repositories import SqlAlchemyScenarioAttemptRepository
+
+    scenario_attempt = SqlAlchemyScenarioAttemptRepository(_db).add(
+        user_id=owner_id, session_id=conversation.id, scenario_key="restaurant"
+    )
     _db.commit()
 
     return {
@@ -157,6 +164,7 @@ def owned(client, two_accounts, db_session):
         "reminder": reminder.id,
         "path": learning_path.id,
         "conversation": conversation.id,
+        "attempt": scenario_attempt.id,
     }
 
 
@@ -198,6 +206,10 @@ CROSS_TENANT_CASES = [
     _case("POST", "/api/v1/conversations/{conversation}/message", {"text": "hola"}),
     _case("POST", "/api/v1/conversations/{conversation}/end"),
     _case("DELETE", "/api/v1/conversations/{conversation}"),
+    # Role-play attempts (#136). An attempt carries a transcript and a
+    # score, both of which describe the learner.
+    _case("GET", "/api/v1/scenarios/attempts/{attempt}"),
+    _case("POST", "/api/v1/scenarios/attempts/{attempt}/finish"),
     # Rooms
     _case("GET", "/api/v1/rooms/{room}"),
     _case("GET", "/api/v1/rooms/{room}/words"),

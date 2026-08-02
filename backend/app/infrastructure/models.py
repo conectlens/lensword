@@ -574,3 +574,34 @@ class ConversationMessageModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime)
 
     session: Mapped[ConversationSessionModel] = relationship(back_populates="messages")
+
+
+class ScenarioAttemptModel(Base):
+    """One run at a role-play scenario (issue #136).
+
+    The conversation itself lives in `conversation_sessions` — this is the
+    scenario wrapper around it. Keeping them separate means the transport,
+    corrections and history from #135 are reused rather than reimplemented, and
+    an attempt is deleted without taking the general conversation machinery
+    with it.
+
+    `evaluation` is null until the attempt is finished, and stays null when it
+    was too short to judge. That is different from a zero score, which would be
+    a claim the learner did badly.
+    """
+
+    __tablename__ = "scenario_attempts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("conversation_sessions.id"), index=True, unique=True
+    )
+    # The catalog key, not a foreign key: the catalog is a code constant, so
+    # there is no row to point at. Stored as text so an attempt survives a
+    # scenario being renamed or retired.
+    scenario_key: Mapped[str] = mapped_column(String(64), index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # {scored, scores, summary, goals_met, detail} — validated before storage.
+    evaluation: Mapped[dict | None] = mapped_column(JSON, nullable=True)
