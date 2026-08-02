@@ -1,13 +1,15 @@
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
-from app.config import get_effective_ai_settings
+from app.config import get_effective_ai_settings, get_settings
 from app.domain.entities import User
 from app.domain.services.ai_provider import AIProvider
+from app.domain.services.rate_limiter import InProcessRateLimiter, RateLimitRule
 from app.domain.value_objects import UserRole
 from app.infrastructure.ai import build_ai_provider
 from app.infrastructure.db import get_db
@@ -121,6 +123,43 @@ def get_ai_provider() -> AIProvider | None:
     return _ai_provider()
 
 
+# One limiter for the whole process, same shape as _ai_provider above: built
+# once, shared by every request, reset between tests by the
+# isolate_rate_limits fixture in conftest.py.
+_rate_limiter = InProcessRateLimiter()
+
+
+def get_rate_limiter() -> InProcessRateLimiter:
+    return _rate_limiter
+
+
+RateLimiter = Annotated[InProcessRateLimiter, Depends(get_rate_limiter)]
+
+
+def _client_host(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def _enforce_rate_limit(limiter: InProcessRateLimiter, rule_name: str, key: str, rule: RateLimitRule) -> None:
+    result = limiter.check(rule_name, key, rule, now=datetime.now(timezone.utc))
+    if not result.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many requests",
+            headers={"Retry-After": str(result.retry_after_seconds)},
+        )
+
+
+def rate_limit_login(request: Request, limiter: RateLimiter) -> None:
+    """Keyed by IP: there is no account yet at login time."""
+    settings_ = get_settings()
+    rule = RateLimitRule(
+        limit=settings_.rate_limit_auth_attempts,
+        window=timedelta(seconds=settings_.rate_limit_auth_window_seconds),
+    )
+    _enforce_rate_limit(limiter, "auth_login", f"ip:{_client_host(request)}", rule)
+
+
 UserRepo = Annotated[SqlAlchemyUserRepository, Depends(get_user_repository)]
 GroupRepo = Annotated[SqlAlchemyGroupRepository, Depends(get_group_repository)]
 WordRepo = Annotated[SqlAlchemyWordRepository, Depends(get_word_repository)]
@@ -160,6 +199,36 @@ def get_current_user(token: Annotated[str | None, Depends(oauth2_scheme)], user_
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+def rate_limit_ai(current_user: CurrentUser, limiter: RateLimiter) -> None:
+    """Shared by enrich, converse, evaluate-scenario and generate-path — all
+    occupy a local model for seconds per call, so they share one budget
+    rather than each getting a separate one a caller could add together."""
+    settings_ = get_settings()
+    rule = RateLimitRule(
+        limit=settings_.rate_limit_ai_requests,
+        window=timedelta(seconds=settings_.rate_limit_ai_window_seconds),
+    )
+    _enforce_rate_limit(limiter, "ai_generation", f"user:{current_user.id}", rule)
+
+
+def rate_limit_import_url(current_user: CurrentUser, limiter: RateLimiter) -> None:
+    settings_ = get_settings()
+    rule = RateLimitRule(
+        limit=settings_.rate_limit_fetch_requests,
+        window=timedelta(seconds=settings_.rate_limit_fetch_window_seconds),
+    )
+    _enforce_rate_limit(limiter, "import_url", f"user:{current_user.id}", rule)
+
+
+def rate_limit_import_upload(current_user: CurrentUser, limiter: RateLimiter) -> None:
+    settings_ = get_settings()
+    rule = RateLimitRule(
+        limit=settings_.rate_limit_upload_requests,
+        window=timedelta(seconds=settings_.rate_limit_upload_window_seconds),
+    )
+    _enforce_rate_limit(limiter, "import_upload", f"user:{current_user.id}", rule)
 
 
 def get_current_admin(user: CurrentUser) -> User:

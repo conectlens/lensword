@@ -123,6 +123,30 @@ Two consequences worth planning for:
   notification rather than duplicating it. That trade is deliberate — a missed
   nudge beats a double one — but it is untested under real process failure.
 
+## Rate limiting
+
+Four budgets, each per account except login (per IP, since there is no
+account yet): auth attempts, AI generations, outbound URL fetches, uploads.
+Defaults and `.env` variable names are in `.env.example`; a 429 carries
+`Retry-After`.
+
+**Enforced in-process, per instance.** The limiter is a dict living in one
+backend process — correct and sufficient for the single-instance Compose
+deployment this project ships by default, but **not enforced across
+instances**. Behind a load balancer with N instances, a caller distributed
+across all of them can reach up to N times the configured budget before any
+single instance's counter trips, for the same reason the scheduler needed a
+database-backed claim (see "Running more than one instance" above) rather
+than in-memory state — the difference is that half of that fix has not been
+built here. There is no shared-state store (Redis or otherwise) anywhere in
+this project yet; adding rate limiting that holds under N instances means
+adding one.
+
+Size the per-instance defaults down if you run more than one instance and
+want the aggregate ceiling to stay close to what the numbers in
+`.env.example` suggest, and do not treat this as a defense against a
+distributed attacker until it is instance-count-aware.
+
 ## Outbound network access
 
 The URL import on the Extract page makes the **server** fetch a page the user
@@ -158,7 +182,9 @@ regenerable from the admin screen, so the database is the thing that matters.
 
 - **Horizontal scaling of the frontend** — it is static files; serve them from
   anything.
-- **Rate limiting, WAF, DDoS** — none is implemented in the application.
+- **WAF, DDoS protection** — not implemented in the application. Rate limiting
+  is (see above), but only per instance — it is not a substitute for either of
+  these behind a load balancer with more than one instance.
 - **Log aggregation and alerting** — the application logs to stdout at
   `LOG_LEVEL`; collecting that is your platform's job.
 - **Multi-tenancy beyond per-account isolation** — every query is scoped by

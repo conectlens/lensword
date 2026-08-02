@@ -10,6 +10,16 @@ releases exist yet).
 
 ### Security
 
+- Rate limiting on the four endpoint classes that previously had none: auth
+  login (per IP, since there is no account yet), AI generation (enrich,
+  converse, evaluate-scenario, generate-path — one shared budget, since all
+  four occupy the same local model), outbound URL fetch, and document upload
+  (each per account). A caller over budget gets `429` with `Retry-After`
+  rather than an opaque failure or an unbounded queue. The limiter is
+  in-process and per-instance — correct for the single-instance Compose
+  deployment, not enforced across more than one instance behind a balancer;
+  `docs/hosted-deployment.md` documents the gap (issue #163).
+
 - URL import fetches a page the server chooses on the user's behalf, so it is
   guarded as the server-side request forgery surface it is: only http and https
   on ports 80 and 443, no embedded credentials, and every address a hostname

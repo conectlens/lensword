@@ -71,6 +71,41 @@ class Settings(BaseSettings):
     ai_extract_fallback_enabled: bool = False
     ai_settings_path: str = "data/ai-settings.json"
 
+    # Rate limiting (issue #163). Four independent budgets rather than one
+    # global number, because a login attempt, an AI generation and an
+    # outbound fetch cost the server wildly different amounts and share
+    # nothing but a caller. Auth is keyed by IP (there is no account yet);
+    # the other three are keyed by account. See
+    # app.domain.services.rate_limiter for the enforcement and its
+    # single-process caveat.
+    rate_limit_auth_attempts: int = 10
+    rate_limit_auth_window_seconds: int = 300
+    rate_limit_ai_requests: int = 15
+    rate_limit_ai_window_seconds: int = 60
+    rate_limit_fetch_requests: int = 20
+    rate_limit_fetch_window_seconds: int = 60
+    rate_limit_upload_requests: int = 20
+    rate_limit_upload_window_seconds: int = 60
+
+    @field_validator(
+        "rate_limit_auth_attempts",
+        "rate_limit_auth_window_seconds",
+        "rate_limit_ai_requests",
+        "rate_limit_ai_window_seconds",
+        "rate_limit_fetch_requests",
+        "rate_limit_fetch_window_seconds",
+        "rate_limit_upload_requests",
+        "rate_limit_upload_window_seconds",
+    )
+    @classmethod
+    def _positive_rate_limit(cls, value: int) -> int:
+        """A non-positive limit or window either blocks every request or
+        never resets, neither of which is a rate limit anyone chose on
+        purpose. Fail at startup rather than at the first login."""
+        if value <= 0:
+            raise ValueError(f"must be greater than 0 (got {value})")
+        return value
+
     @field_validator("scheduler_job_store")
     @classmethod
     def _known_job_store(cls, value: str) -> str:

@@ -7,9 +7,9 @@ fault was ours.
 """
 import logging
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api.deps import CurrentUser, LearningPathRepo, OptionalAIProvider
+from app.api.deps import CurrentUser, LearningPathRepo, OptionalAIProvider, rate_limit_ai
 from app.api.schemas.learning_paths import (
     GeneratePathRequest,
     GeneratePathResponse,
@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/learning-paths", tags=["learning paths"])
 
 
-@router.post("/generate", response_model=GeneratePathResponse)
+@router.post("/generate", response_model=GeneratePathResponse, dependencies=[Depends(rate_limit_ai)])
 async def generate_path(
     payload: GeneratePathRequest,
     current_user: CurrentUser,
