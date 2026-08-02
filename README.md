@@ -143,6 +143,20 @@ which this project does not depend on. `DB_POOL_SIZE` and `DB_MAX_OVERFLOW`
 bound the connection pool; against a managed plan's connection cap, the number
 that matters is their sum multiplied by how many backend instances you run.
 
+### Hosted deployment
+
+The Compose stack above runs everything on one host, including its database.
+That is right for one person and wrong for a service. Running LensWord *for
+other people* — managed Postgres, secrets in a platform store, TLS, more than
+one instance — is covered in
+**[docs/hosted-deployment.md](docs/hosted-deployment.md)**.
+
+Two things to know before you do: **push and email notifications have no
+provider and only write to the log**, and no desktop notification has yet been
+observed on a real machine (ROADMAP 3.1). Anyone you host this for will set
+reminders and, outside the desktop shell, receive nothing — so say so where
+they sign up.
+
 ### Local development
 
 ```bash

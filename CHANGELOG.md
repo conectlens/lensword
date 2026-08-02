@@ -34,6 +34,14 @@ releases exist yet).
 
 ### Added
 
+- A hosted-deployment guide (`docs/hosted-deployment.md`) and a README section
+  pointing at it, for running LensWord as a service rather than for one person:
+  managed Postgres with TLS, secrets in a platform store, how the connection
+  pool multiplies across instances, what running several instances now costs
+  and guarantees, and what the project does *not* do for you. It leads with the
+  fact that push and email delivery are unimplemented, because someone hosting
+  this for other people needs to know that before their users do.
+
 - Reminder-time recommendations from real engagement. LensWord can now notice
   that you start a review after most reminders at 20:00 and almost none at
   09:00, and offer to move the reminder — but it will not move it. Reading a

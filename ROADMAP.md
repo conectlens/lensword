@@ -105,9 +105,11 @@ depends on this.
       concurrent instances deliver it once. Verified against two dispatchers
       sharing one database; not yet measured against two real processes under
       load.)*
-- [ ] **4.3** Hosted-deployment guide (managed Postgres, secrets, TLS),
+- [x] **4.3** Hosted-deployment guide (managed Postgres, secrets, TLS),
       distinct from the current self-hosted Docker Compose instructions.
-      *(Planned)*
+      *(Shipped — `docs/hosted-deployment.md`. Documents what the application
+      requires; it is not a recipe that has been followed against any specific
+      provider.)*
 
 ## Phase 5 — Documentation
 
@@ -116,8 +118,9 @@ depends on this.
       ship. *(Shipped)*
 - [ ] **5.2** Add a "Desktop" section to README once Phase 3 ships.
       *(Planned)*
-- [ ] **5.3** Add a hosted-deployment section to README once Phase 4 ships.
-      *(Planned)*
+- [x] **5.3** Add a hosted-deployment section to README once Phase 4 ships.
+      *(Shipped — points at the guide, and states the notification gap up
+      front so nobody hosts this without knowing about it.)*
 
 ## Sequencing notes
 
