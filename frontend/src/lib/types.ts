@@ -9,7 +9,7 @@ export const LANGUAGES: SupportedLanguage[] = [
 
 export type WordStatus = 'new' | 'learning' | 'review' | 'mastered' | 'needs_review'
 export type ReviewOutcome = 'correct' | 'incorrect' | 'skipped'
-export type SessionMode = 'standard' | 'focus' | 'walking' | 'night' | 'break'
+export type SessionMode = 'standard' | 'focus' | 'walking' | 'night' | 'break' | 'mistakes'
 export type UserRole = 'user' | 'admin'
 export type AIProvider = 'none' | 'ollama'
 

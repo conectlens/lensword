@@ -174,6 +174,10 @@ class SessionMode(str, Enum):
     WALKING = "walking"
     NIGHT = "night"
     BREAK = "break"
+    # Words the learner has got wrong and not yet relearned (#142). The one
+    # mode whose word selection is not "what is due": a mistake is worth
+    # revisiting whether or not the scheduler has come round to it.
+    MISTAKES = "mistakes"
 
 
 class WordStatus(str, Enum):

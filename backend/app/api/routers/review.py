@@ -45,10 +45,14 @@ def _raise_for(exc: Exception):
 
 @router.post("/sessions", response_model=StartReviewSessionResponse, status_code=status.HTTP_201_CREATED)
 def start_session(
-    payload: StartReviewSessionRequest, current_user: CurrentUser, session_repo: ReviewSessionRepo, word_repo: WordRepo
+    payload: StartReviewSessionRequest,
+    current_user: CurrentUser,
+    session_repo: ReviewSessionRepo,
+    word_repo: WordRepo,
+    mistake_repo: MistakeEventRepo,
 ) -> StartReviewSessionResponse:
     try:
-        session, words = StartReviewSessionUseCase(session_repo, word_repo).execute(
+        session, words = StartReviewSessionUseCase(session_repo, word_repo, mistake_repo).execute(
             current_user.id, payload.mode, payload.group_id, payload.limit
         )
     except NoWordsDueError as exc:
