@@ -277,3 +277,101 @@ def test_deleting_the_conversation_takes_the_attempt_with_it(client, headers, db
         f"/api/v1/conversations/{attempt['session_id']}", headers=headers
     ).status_code == 204
     assert SqlAlchemyScenarioAttemptRepository(db_session).get(attempt["id"]) is None
+
+
+# --- Scenario vocabulary (issue #144) ---------------------------------------
+
+
+def _group(client, headers) -> int:
+    return client.post(
+        "/api/v1/groups", json={"name": "Spanish", "target_language": "Spanish"}, headers=headers
+    ).json()["id"]
+
+
+def _word(client, headers, group_id: int, term: str, topics=(), synonyms=()):
+    word_id = client.post(
+        f"/api/v1/groups/{group_id}/words",
+        json={"term": term, "target_language": "Spanish", "translations": ["x"]},
+        headers=headers,
+    ).json()["id"]
+    add = [{"kind": "topic", "value": t} for t in topics]
+    add += [{"kind": "synonym", "value": s} for s in synonyms]
+    if add:
+        client.patch(
+            f"/api/v1/words/{word_id}/associations",
+            json={"add": add, "remove": []},
+            headers=headers,
+        )
+    return word_id
+
+
+def test_words_on_the_scenarios_topics_are_suggested(client, headers):
+    group_id = _group(client, headers)
+    _word(client, headers, group_id, "camarero", topics=["restaurant"])
+
+    body = client.get("/api/v1/scenarios/restaurant/vocabulary", headers=headers).json()
+
+    assert [w["term"] for w in body["on_topic"]] == ["camarero"]
+
+
+def test_only_words_the_learner_already_has_are_suggested(client, headers):
+    """Suggesting vocabulary they do not have would be a shopping list dressed
+    as preparation."""
+    body = client.get("/api/v1/scenarios/restaurant/vocabulary", headers=headers).json()
+
+    assert body["on_topic"] == []
+    assert body["related"] == []
+
+
+def test_a_thin_deck_is_said_plainly_rather_than_shown_as_a_short_list(client, headers):
+    """A two-word list looks like the feature is broken rather than like the
+    deck is thin."""
+    group_id = _group(client, headers)
+    _word(client, headers, group_id, "camarero", topics=["restaurant"])
+
+    body = client.get("/api/v1/scenarios/restaurant/vocabulary", headers=headers).json()
+
+    assert body["sparse"] is True
+    assert "Add a few" in body["detail"]
+
+
+def test_a_related_word_from_another_topic_still_surfaces(client, headers):
+    """Reached through the knowledge graph rather than topic tags, so a word
+    filed elsewhere but linked to an on-topic one is not missed."""
+    group_id = _group(client, headers)
+    _word(client, headers, group_id, "camarero", topics=["restaurant"], synonyms=["mesero"])
+    _word(client, headers, group_id, "mesero", topics=["work"])
+
+    body = client.get("/api/v1/scenarios/restaurant/vocabulary", headers=headers).json()
+
+    assert [w["term"] for w in body["related"]] == ["mesero"]
+
+
+def test_a_word_is_never_both_on_topic_and_related(client, headers):
+    group_id = _group(client, headers)
+    _word(client, headers, group_id, "camarero", topics=["restaurant"], synonyms=["mesero"])
+    _word(client, headers, group_id, "mesero", topics=["restaurant"])
+
+    body = client.get("/api/v1/scenarios/restaurant/vocabulary", headers=headers).json()
+
+    on_topic = {w["id"] for w in body["on_topic"]}
+    related = {w["id"] for w in body["related"]}
+    assert on_topic & related == set()
+
+
+def test_another_accounts_words_are_never_suggested(client, auth_headers):
+    alex = auth_headers()
+    group_id = _group(client, alex)
+    _word(client, alex, group_id, "camarero", topics=["restaurant"])
+
+    sam = auth_headers(username="sam", email="sam@example.com")
+
+    assert client.get("/api/v1/scenarios/restaurant/vocabulary", headers=sam).json()["on_topic"] == []
+
+
+def test_vocabulary_for_an_unknown_scenario_is_a_404(client, headers):
+    assert client.get("/api/v1/scenarios/nonsense/vocabulary", headers=headers).status_code == 404
+
+
+def test_scenario_vocabulary_requires_authentication(client):
+    assert client.get("/api/v1/scenarios/restaurant/vocabulary").status_code == 401
