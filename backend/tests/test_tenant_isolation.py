@@ -91,6 +91,35 @@ def owned(client, two_accounts, db_session):
     notification = SqlAlchemyDesktopNotificationRepository(_db).add(
         DesktopNotification(id=None, user_id=owner_id, message="5 words are due")
     )
+    # Reminders have no creation endpoint yet (#56), so this is seeded too.
+    from app.domain.entities import Reminder
+    from app.domain.value_objects import Recurrence
+    from app.infrastructure.repositories import SqlAlchemyReminderRepository
+
+    reminder = SqlAlchemyReminderRepository(_db).add(
+        Reminder(
+            id=None, user_id=owner_id, group_id=group["id"],
+            trigger_time="09:00", recurrence=Recurrence.DAILY,
+        )
+    )
+    # Enough engagement history for a window recommendation to exist. Without
+    # it the accept endpoint correctly answers 404 for its own owner, and the
+    # owner-reachability check could not tell that apart from a broken route.
+    from datetime import timedelta
+
+    from app.domain.value_objects import NotificationAction, utcnow
+
+    notifications_repo = SqlAlchemyDesktopNotificationRepository(_db)
+    midnight = utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=30)
+    for day in range(10):
+        for hour, action in ((9, None), (20, NotificationAction.START_SESSION.value)):
+            at = midnight + timedelta(days=day, hours=hour)
+            notifications_repo.add(
+                DesktopNotification(
+                    id=None, user_id=owner_id, message="due",
+                    created_at=at, delivered_at=at, action=action,
+                )
+            )
     _db.commit()
 
     return {
@@ -104,6 +133,7 @@ def owned(client, two_accounts, db_session):
         "exercise": exercise["id"],
         "report": report["id"],
         "notification": notification.id,
+        "reminder": reminder.id,
     }
 
 
@@ -153,6 +183,10 @@ CROSS_TENANT_CASES = [
     # "skip today" on someone else's reminder would suppress their prompts.
     _case("POST", "/api/v1/desktop-notifications/{notification}/action",
           {"action": "start_session"}),
+    # Reminder windows. Accepting one on someone else's reminder would move
+    # when they are interrupted.
+    _case("GET", "/api/v1/reminders/{reminder}/window-recommendation"),
+    _case("POST", "/api/v1/reminders/{reminder}/window-recommendation/accept", {"hour": 20}),
     # Reports
     _case("GET", "/api/v1/reports/weekly/{report}"),
     _case("POST", "/api/v1/reports/weekly/{report}/narration"),
