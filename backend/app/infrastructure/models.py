@@ -394,3 +394,42 @@ class SyncOperationModel(Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     error_class: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
+class MistakeEventModel(Base):
+    """One recorded error (issue #134).
+
+    Append-only history rather than state. A mistake that happened cannot
+    un-happen, and rewriting a row when the learner later gets the word right
+    would destroy the very signal the weakness profile is built from.
+
+    `occurrence_count` exists because the same mistake repeated in one session
+    is one pattern, not several. Rows are not merged across sessions — the
+    aggregation in `WeaknessProfileService` does that, and it needs the
+    timestamps to do it.
+    """
+
+    __tablename__ = "mistake_events"
+    __table_args__ = (
+        # The profile query is always "this learner's mistakes, recent first".
+        Index("ix_mistake_events_user_occurred", "user_id", "occurred_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    word_id: Mapped[int] = mapped_column(ForeignKey("words.id"), index=True)
+    category: Mapped[str] = mapped_column(String(16), index=True)
+    # What the learner actually typed. Kept so a profile can show the mistake
+    # rather than only its category — "you wrote 'gata'" is evidence, "wrong
+    # word" is a verdict, and the learner deserves to check our work.
+    attempted_answer: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Nullable rather than absent when the confused word is deleted: the
+    # mistake still happened, and it degrades to a plain wrong-word error
+    # rather than vanishing or leaving a dangling reference.
+    confused_with_word_id: Mapped[int | None] = mapped_column(
+        ForeignKey("words.id"), nullable=True, index=True
+    )
+    # Free text describing where it happened ("review", "writing correction").
+    context: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    occurrence_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, index=True)
