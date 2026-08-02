@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { aiSettingsApi, groupsApi, practiceApi, settingsApi } from '../../lib/api'
+import { OllamaSetupCheck } from './OllamaSetupCheck'
 import type { AISettings, DailySession, Group, RecallSettings } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
@@ -525,6 +526,12 @@ export function AISettingsCard({ settings, onSave }: { settings: AISettings; onS
       </div>
       {error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
       <div className="mt-5 flex items-center gap-3"><Button onClick={saveAiSettings}>Save AI settings</Button>{saved && <span className="text-sm text-success">Saved</span>}</div>
+      {/* Below the save button on purpose: the check reports what the *saved*
+          configuration finds, so running it against an unsaved draft would
+          report on settings that are not in effect. */}
+      <div className="mt-5 border-t border-white/10 pt-5">
+        <OllamaSetupCheck />
+      </div>
     </Card>
   )
 }

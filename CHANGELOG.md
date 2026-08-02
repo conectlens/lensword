@@ -49,6 +49,19 @@ releases exist yet).
 
 ### Added
 
+- Local AI through Ollama as a first-class setup. An admin-only check reports
+  whether the daemon is reachable and whether the configured model is actually
+  installed, keeping the three failure modes distinct — nothing listening,
+  something that is not Ollama, and running-but-no-model — because a single "AI
+  unavailable" leaves someone with Ollama running and no model pulled with no
+  idea what to do next. Identical requests within a short window are answered
+  from an in-process cache rather than re-generated, keyed by account, provider
+  and model so a response from one model is never served for another and one
+  account's response is never served to another; failures are not cached, so a
+  model that was starting up is retried rather than remembered as broken. The
+  README now documents Docker host networking for Ollama, which is the single
+  most common way the setup appears broken.
+
 - Editable AI-generated word cards. Cards written by a model now carry a
   verification state and a field history, and several can be edited at once.
   Verification is a claim about specific text rather than about a word: if a
