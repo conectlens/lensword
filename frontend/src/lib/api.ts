@@ -1,6 +1,6 @@
 import type {
   AdminStats, Group, MnemonicNote, ProfileOverview, RecallSettings, Room,
-  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport,
+  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications,
 } from './types'
 import { resolveApiBase } from './runtimeConfig'
 
@@ -233,6 +233,18 @@ export const reportsApi = {
   listWeekly: () => request<WeeklyLearningReport[]>('/api/v1/reports/weekly'),
   getWeekly: (reportId: number) => request<WeeklyLearningReport>(`/api/v1/reports/weekly/${reportId}`),
   generateNarration: (reportId: number) => request<WeeklyLearningReport>(`/api/v1/reports/weekly/${reportId}/narration`, { method: 'POST' }),
+}
+
+export const notificationsApi = {
+  listPending: () =>
+    request<PendingDesktopNotifications>('/api/v1/desktop-notifications'),
+  // Idempotent server-side: acknowledging an id twice reports 0 rather than
+  // failing, which is what lets the shell acknowledge after showing.
+  acknowledge: (notificationIds: number[]) =>
+    request<{ acknowledged: number }>('/api/v1/desktop-notifications/ack', {
+      method: 'POST',
+      body: JSON.stringify({ notification_ids: notificationIds }),
+    }),
 }
 
 export const aiSettingsApi = {

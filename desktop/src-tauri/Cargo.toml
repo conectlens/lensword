@@ -17,6 +17,9 @@ lensword-api-config = { path = "../api-config" }
 serde = { version = "1", features = ["derive"] }
 tauri = { version = "2", features = [] }
 tauri-plugin-global-shortcut = "2"
+# OS-native notifications (ROADMAP 3.2). The plugin wraps each platform's own
+# notification service, so no per-OS code is needed here.
+tauri-plugin-notification = "2"
 # Debug-tooling: RUST_LOG-controlled tracing to stdout. `env_logger` reads
 # RUST_LOG at init and is a no-op overhead-wise once configured, so it's safe
 # to leave compiled into release builds rather than feature-gating it out.

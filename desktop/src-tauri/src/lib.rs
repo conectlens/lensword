@@ -73,6 +73,9 @@ pub fn run() {
     init_logging();
 
     tauri::Builder::default()
+        // ROADMAP 3.2. The plugin's JS API is reached through a typed frontend
+        // adapter (desktopNotifications.ts), not called from UI code directly.
+        .plugin(tauri_plugin_notification::init())
         .plugin(selection_capture::plugin())
         .manage(mcp::McpState::default())
         .manage(clipboard::ClipboardState::default())

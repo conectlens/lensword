@@ -163,10 +163,10 @@ releases exist yet).
 
 - The scheduler's job store is in-process, so running more than one backend
   instance delivers each reminder once per instance.
-- Desktop notifications are queued but not yet shown. The backend records them
-  and serves them over the API; no OS toast is drawn until the shell collects
-  and displays them (ROADMAP 3.2). README's "configured but not dispatched"
-  disclaimer therefore still stands.
+- Desktop notifications have not been seen on a real desktop. The collect,
+  show and acknowledge loop is unit-tested, but observing an actual toast on
+  macOS, Windows and Linux needs a packaged build and, on macOS, a signed one
+  (ROADMAP 3.1, #65).
 
 ## [0.1.0] - 2026-07-22
 

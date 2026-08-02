@@ -48,11 +48,10 @@ depends on this.
 - [x] **2.1** Wire the existing Forced Recall Engine settings (channels,
       quiet hours, triggers) to actually gate delivery through the
       notification port. *(Shipped)*
-- [ ] **2.2** Desktop OS-notification adapter (depends on Phase 3's shell;
-      can use a log adapter until then). *(In Progress — the backend adapter
-      exists and durably queues desktop notifications for collection over the
-      API. No OS toast is drawn yet: ADR 0002 made the shell a remote client,
-      so displaying one is the shell's side of the handoff, tracked in 3.2.)*
+- [x] **2.2** Desktop OS-notification adapter (depends on Phase 3's shell;
+      can use a log adapter until then). *(Shipped — the backend durably queues
+      desktop notifications and the shell collects and displays them (3.2). The
+      ±5s soak measurement the issue asks for is still outstanding.)*
 - [ ] **2.3** Remove README's "notifications configured but not dispatched"
       disclaimer once true. *(Planned)*
 
@@ -68,8 +67,12 @@ depends on this.
       validated runtime endpoint, and the frontend adapter exist; the measured
       startup/memory baseline on signed builds that ADR 0001 requires of this
       item does not.)*
-- [ ] **3.2** Wire OS-native notifications through the shell's per-platform
-      API. *(Planned)*
+- [x] **3.2** Wire OS-native notifications through the shell's per-platform
+      API. *(Shipped — the shell polls the notification outbox, raises a native
+      toast per item and acknowledges only what it showed. Verified by unit
+      tests over the collect/show/acknowledge loop; the toast itself has not
+      been seen on any of the three operating systems, which needs a packaged
+      build and, on macOS, a signed one.)*
 - [x] **3.3** CI build+package jobs producing installers for all three
       OSes on tagged releases. *(Shipped — a `v*` tag builds `.dmg`,
       `.msi`/`.exe` and `.deb`/`.AppImage` and attaches them to a draft
