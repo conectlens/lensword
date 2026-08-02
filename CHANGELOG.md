@@ -49,6 +49,20 @@ releases exist yet).
 
 ### Added
 
+- An AI conversation tutor. Sessions and their turns are stored, corrections
+  are shown beside what the learner actually wrote rather than replacing it,
+  and the tutor is told about the learner's own vocabulary and recent mistakes
+  so the conversation stays close to what they are studying. All of that
+  material travels inside the delimited data block, never as instructions — a
+  word card whose definition reads "ignore your instructions" is something any
+  user can create. The learner's turn is stored *before* the model is called,
+  so a model being unreachable never costs them what they typed. Corrections
+  are capped per turn, because correcting everything turns a conversation into
+  a test, and any correction quoting text the learner did not write is dropped
+  rather than shown — a highlight pointing at words nobody typed teaches them
+  to ignore highlights entirely. History is bounded from the recent end, so a
+  long chat cannot push the instruction out of the model's context window.
+
 - Personalized learning paths. A stated goal — "order food confidently in
   Spain" — becomes a short, ordered set of milestones, each naming a vocabulary
   topic and a word target. Progress is counted from the learner's actual deck

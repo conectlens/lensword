@@ -526,3 +526,51 @@ class PathMilestoneModel(Base):
     cefr_level: Mapped[str | None] = mapped_column(String(8), nullable=True)
 
     path: Mapped[LearningPathModel] = relationship(back_populates="milestones")
+class ConversationSessionModel(Base):
+    """One tutoring conversation (issue #135)."""
+
+    __tablename__ = "conversation_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id"), nullable=True)
+    target_language: Mapped[str] = mapped_column(String(32))
+    # "gentle", "steady" or "stretch". Named rather than numeric because it is
+    # a choice the learner makes, and a number would be one they guess at.
+    difficulty: Mapped[str] = mapped_column(String(16), default="steady")
+    # Free text describing the situation, when the conversation has one. Used
+    # by scenario role-play (#136), which builds on this transport.
+    scenario: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    messages: Mapped[list["ConversationMessageModel"]] = relationship(
+        back_populates="session",
+        cascade="all, delete-orphan",
+        order_by="ConversationMessageModel.id",
+    )
+
+
+class ConversationMessageModel(Base):
+    """One turn, with any corrections attached to it.
+
+    Corrections live on the message rather than in their own table: they are
+    only ever read with the turn they belong to, and a separate table would be
+    a join for no query anyone makes.
+    """
+
+    __tablename__ = "conversation_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("conversation_sessions.id"), index=True
+    )
+    # "learner" or "tutor".
+    speaker: Mapped[str] = mapped_column(String(8))
+    text: Mapped[str] = mapped_column(Text)
+    # [{original, corrected, explanation}] — validated before storage so a
+    # correction never quotes text the learner did not write.
+    corrections: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+
+    session: Mapped[ConversationSessionModel] = relationship(back_populates="messages")

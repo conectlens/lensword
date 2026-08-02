@@ -134,6 +134,13 @@ def owned(client, two_accounts, db_session):
             MilestonePlan(title="Ordering", description="", topic="restaurant", target_word_count=5),
         ],
     )
+    # Seeded directly: a conversation needs no AI provider to exist, and this
+    # audit deliberately does not stand one up.
+    from app.infrastructure.repositories import SqlAlchemyConversationRepository
+
+    conversation = SqlAlchemyConversationRepository(_db).start(
+        user_id=owner_id, target_language="Spanish", difficulty="steady"
+    )
     _db.commit()
 
     return {
@@ -149,6 +156,7 @@ def owned(client, two_accounts, db_session):
         "notification": notification.id,
         "reminder": reminder.id,
         "path": learning_path.id,
+        "conversation": conversation.id,
     }
 
 
@@ -184,6 +192,12 @@ CROSS_TENANT_CASES = [
     # existence of.
     _case("GET", "/api/v1/learning-paths/{path}"),
     _case("DELETE", "/api/v1/learning-paths/{path}"),
+    # Conversation tutor (#135). A conversation is the most personal thing
+    # this product stores.
+    _case("GET", "/api/v1/conversations/{conversation}"),
+    _case("POST", "/api/v1/conversations/{conversation}/message", {"text": "hola"}),
+    _case("POST", "/api/v1/conversations/{conversation}/end"),
+    _case("DELETE", "/api/v1/conversations/{conversation}"),
     # Rooms
     _case("GET", "/api/v1/rooms/{room}"),
     _case("GET", "/api/v1/rooms/{room}/words"),

@@ -392,3 +392,43 @@ export interface GeneratePathResult {
   path: LearningPath | null
   detail: string | null
 }
+
+// Conversation tutor (issue #135).
+export type Difficulty = 'gentle' | 'steady' | 'stretch'
+
+export interface Correction {
+  // Always a substring of what the learner actually wrote — validated
+  // server-side, because a highlight pointing at words nobody typed teaches
+  // the learner to ignore highlights entirely.
+  original: string
+  corrected: string
+  explanation: string
+}
+
+export interface ConversationMessage {
+  id: number
+  speaker: 'learner' | 'tutor'
+  text: string
+  corrections: Correction[]
+  created_at: string
+}
+
+export interface Conversation {
+  id: number
+  target_language: string
+  difficulty: string
+  scenario: string | null
+  group_id: number | null
+  created_at: string
+  ended_at: string | null
+  messages: ConversationMessage[]
+}
+
+export interface SendMessageResult {
+  status: string
+  // Present even when the tutor could not answer: losing what someone typed
+  // because a model was down is what makes a chat feel broken.
+  learner_message: ConversationMessage | null
+  tutor_message: ConversationMessage | null
+  detail: string | null
+}
