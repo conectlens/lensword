@@ -49,6 +49,28 @@ releases exist yet).
 
 ### Added
 
+- `scripts/desktop-baseline.py`, a harness for the ADR 0001 Phase 3.1 desktop
+  gates. It measures cold and warm startup, idle memory across the whole
+  process tree rather than the parent alone, leftover processes after repeated
+  launch/quit cycles, and installer sizes per artefact, reporting each against
+  the documented bar. It cannot sign a build and refuses to pretend otherwise:
+  without `--signed` every figure is labelled `NOT-THE-GATE` and the run exits
+  non-zero, because signing and notarisation change startup time and an
+  unsigned measurement flatters the result. The checks that need a person —
+  nested-route relaunch, keyboard navigation, the review flow, room
+  drag-and-drop, the mind map, seeing a real toast — are printed as a checklist
+  rather than skipped silently, so a report cannot look complete without them.
+
+### Changed
+
+- The README no longer says scheduled notification delivery is unimplemented.
+  It is: a durable job dispatches due reminders, claims each occurrence so two
+  instances cannot deliver it twice, and writes a desktop notification the
+  shell polls for. What is still missing is transport — push and email have no
+  provider and only write to the log, and no desktop toast has been observed on
+  a real machine — so the README now says that instead, which is the true
+  statement rather than the outdated one.
+
 - A Practice Lab gathering conversation, role-play, writing correction and
   pronunciation feedback behind one page. The four already existed and were
   scattered across separate routes and buried inside a word's practice flow;

@@ -228,7 +228,15 @@ native toasts with Start / Remind later / Skip today actions.
 **No toast has been observed on any operating system.** The path is
 unit-tested end to end, but confirming it needs a signed packaged build
 (ROADMAP 3.1). Treat native notifications as implemented and unverified.
-Startup, memory and installer-size figures have not been measured either.
+
+Startup, memory and installer-size figures have not been measured either, but
+the harness that will measure them exists: `scripts/desktop-baseline.py`. Point
+it at a packaged build and it reports every ADR 0001 Phase 3.1 gate with a
+pass/fail against the documented bar. Run without `--signed` it labels every
+figure `NOT-THE-GATE` and exits non-zero, because signing and notarisation
+change startup time and an unsigned number flatters the result. It also prints
+the packaged-app checks that need a person, so a report cannot look complete
+without them.
 
 ### Optional: local AI mnemonic suggestions (Ollama)
 
@@ -384,10 +392,17 @@ the cache.
 - Blog/About marketing pages from the templates aren't built — the landing page
   is real; a full blog would need a content backend, which felt out of scope for
   the app itself.
-- MnemoLab image generation and scheduled notification delivery are
-  intentionally not implemented (see above) — real credentials/infrastructure
-  decisions for you to make, not something to fake. AI *mnemonic* suggestions
-  are implemented and opt-in via Ollama.
+- MnemoLab image generation is intentionally not implemented — that needs
+  real credentials and an infrastructure decision for you to make, not
+  something to fake. AI *mnemonic* suggestions are implemented and opt-in via
+  Ollama.
+- Scheduled notification delivery **is** implemented: a durable job dispatches
+  due reminders, claims each occurrence so two instances cannot deliver it
+  twice, and writes a desktop notification the shell polls for. What is still
+  missing is *transport* — push and email have no provider and only write to
+  the log, and no desktop toast has been observed on a real machine. So a
+  reminder fires and is recorded; whether anyone sees it depends on where they
+  are running the app.
 - Ollama suggestions have been verified with the backend run directly on the
   host. Reaching a host-installed Ollama daemon from inside the Docker
   containers has not been tested, and `http://localhost:11434` will not resolve
