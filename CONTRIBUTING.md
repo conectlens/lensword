@@ -5,7 +5,7 @@ the project, the conventions used, and how to submit changes.
 
 ## Project layout
 
-- `backend/` — FastAPI + SQLite API, hexagonal/clean architecture
+- `backend/` — FastAPI API on Postgres or SQLite, hexagonal/clean architecture
   (`domain/` → `application/` → `infrastructure/`/`api/`). See the
   "Architecture" section of the [README](README.md) for the dependency rules.
 - `frontend/` — Vite + React + TypeScript + Tailwind SPA, feature-sliced under
@@ -26,6 +26,21 @@ cp .env.example .env
 The interpreter is pinned to the version CI runs (see the matrix in
 `.github/workflows/ci.yml`). A newer `python3` will usually work for day-to-day
 development, but tests that pass on it are not evidence that CI will pass.
+
+The default `DATABASE_URL` is SQLite, so this needs no database server.
+Postgres is the deployment target, and CI runs the whole suite against both. To
+reproduce the Postgres job locally, point `TEST_DATABASE_URL` at a database the
+run may **drop and recreate**:
+
+```bash
+TEST_DATABASE_URL=postgresql+psycopg://lensword:lensword@localhost:5432/lensword_test \
+  .venv/bin/pytest
+```
+
+A change touching models, queries or migrations should be run both ways. A
+Postgres-only failure is usually a migration that is valid only in SQLite —
+the fixtures build the schema from ORM metadata, so the suite alone would not
+catch one.
 
 API docs are served at `http://localhost:8000/docs` while running.
 

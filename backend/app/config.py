@@ -19,11 +19,23 @@ class Settings(BaseSettings):
     # without SQL noise; DEBUG additionally requires db_echo below to see queries.
     log_level: str = "INFO"
 
+    # SQLite remains the default so a fresh checkout runs with no database
+    # server to install. Postgres is the supported deployment target (ROADMAP
+    # 4.0) and is what docker-compose starts; point this at
+    # `postgresql+psycopg://user:pass@host:5432/db` to use it.
     database_url: str = "sqlite:///./data/lensword.db"
     # Echoes every SQL statement SQLAlchemy issues to the log. Off by default —
     # even at DEBUG log level — since it's noisy; opt in per-session when
     # tracking down a query.
     db_echo: bool = False
+
+    # Connection-pool bounds. Ignored on SQLite, which has no server-side
+    # connection to budget. The defaults are deliberately modest: a managed
+    # Postgres plan's connection cap is shared across every running instance,
+    # so the ceiling that matters is pool_size + max_overflow multiplied by
+    # the instance count.
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
 
     secret_key: str = "change-me-in-production-this-is-not-secure"
     algorithm: str = "HS256"
@@ -50,6 +62,16 @@ class Settings(BaseSettings):
     # it reports that state instead of presenting heuristic output as AI work.
     ai_extract_fallback_enabled: bool = False
     ai_settings_path: str = "data/ai-settings.json"
+
+    @field_validator("db_pool_size", "db_max_overflow")
+    @classmethod
+    def _non_negative_pool_bound(cls, value: int) -> int:
+        """A negative bound is accepted by SQLAlchemy as 'unbounded', which for
+        a shared Postgres connection cap is the opposite of what setting it is
+        for. Fail at startup rather than under load."""
+        if value < 0:
+            raise ValueError(f"must be 0 or greater (got {value})")
+        return value
 
     @field_validator("ai_max_output_tokens", "ai_context_max_chars")
     @classmethod

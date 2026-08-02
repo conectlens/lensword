@@ -81,8 +81,11 @@ depends on this.
 
 ## Phase 4 — Cloud support (multi-tenant hosting)
 
-- [ ] **4.0** Migrate SQLite → Postgres; audit for SQLite-specific SQL.
-      *(Planned)*
+- [x] **4.0** Migrate SQLite → Postgres; audit for SQLite-specific SQL.
+      *(Shipped — Postgres is the deployment target and what `docker compose`
+      starts. CI runs the whole backend suite against both dialects and applies
+      every migration to an empty Postgres database. SQLite is retained as the
+      zero-setup local default, not as a second supported deployment.)*
 - [ ] **4.1** Per-tenant data isolation audit across all repository
       queries. *(Planned)*
 - [ ] **4.2** Move the scheduler to a durable, horizontally-safe job store

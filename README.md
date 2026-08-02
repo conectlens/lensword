@@ -4,8 +4,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A vocabulary-learning app built around **spaced repetition** and the **memory-palace
-(method of loci)** mnemonic technique. FastAPI + SQLite backend, Vite + React +
-Tailwind frontend, email/password auth, Docker deployment.
+(method of loci)** mnemonic technique. FastAPI backend on Postgres or SQLite,
+Vite + React + Tailwind frontend, email/password auth, Docker deployment.
 
 ## What LensWord does
 
@@ -31,7 +31,9 @@ Tailwind frontend, email/password auth, Docker deployment.
 domain/          entities, value objects, SM-2 scheduler, badge service — pure
                  Python, zero framework dependencies, fully unit-testable
 application/     use cases — one per operation, depend only on domain interfaces
-infrastructure/  SQLAlchemy models + repository implementations, JWT/bcrypt
+infrastructure/  SQLAlchemy models + repository implementations, JWT/bcrypt.
+                 Dialect-agnostic: the same models and queries run on Postgres
+                 and SQLite, and CI runs the whole suite against both
 api/             FastAPI routers, Pydantic schemas, dependency wiring
 ```
 
@@ -106,10 +108,30 @@ update (`UPDATE users SET role='admin' WHERE email='you@example.com'`).
 **Note:** `docker compose up --build` has been verified end-to-end (both
 containers build, boot healthy, and serve traffic on the ports above).
 
+#### Database
+
+The Compose stack runs **Postgres**, and the backend waits for it to pass a
+health check before starting, because it runs migrations on boot. The database
+port is not published to the host — nothing outside the stack needs it, and the
+default `lensword`/`lensword` credentials are only safe while it is
+unreachable. Override `POSTGRES_USER`, `POSTGRES_PASSWORD` and `POSTGRES_DB`
+for anything that is not a throwaway local environment.
+
+To point the backend at a database you already run, set `DATABASE_URL`:
+
+```
+DATABASE_URL=postgresql+psycopg://user:password@host:5432/lensword
+```
+
+The `+psycopg` suffix is required — without it SQLAlchemy looks for `psycopg2`,
+which this project does not depend on. `DB_POOL_SIZE` and `DB_MAX_OVERFLOW`
+bound the connection pool; against a managed plan's connection cap, the number
+that matters is their sum multiplied by how many backend instances you run.
+
 ### Local development
 
 ```bash
-# Backend
+# Backend — defaults to SQLite, so no database server is needed
 cd backend
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env
