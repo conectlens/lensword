@@ -1,6 +1,6 @@
 import type {
   AdminStats, Group, MnemonicNote, ProfileOverview, RecallSettings, Room,
-  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications,
+  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult,
 } from './types'
 import { resolveApiBase } from './runtimeConfig'
 
@@ -244,6 +244,13 @@ export const notificationsApi = {
     request<{ acknowledged: number }>('/api/v1/desktop-notifications/ack', {
       method: 'POST',
       body: JSON.stringify({ notification_ids: notificationIds }),
+    }),
+  // Idempotent server-side. A 409 means the notification expired while it sat
+  // in the tray, which is a normal outcome rather than a failure.
+  act: (notificationId: number, action: NotificationActionId) =>
+    request<NotificationActionResult>(`/api/v1/desktop-notifications/${notificationId}/action`, {
+      method: 'POST',
+      body: JSON.stringify({ action }),
     }),
 }
 

@@ -204,6 +204,35 @@ class Recurrence(str, Enum):
     DAILY = "daily"
 
 
+class NotificationAction(str, Enum):
+    """What a user can do from a notification without opening the app first.
+
+    A closed set with stable string values, because these ids travel out to the
+    operating system, sit in a tray, and come back — possibly after a restart,
+    possibly more than once. Renaming a member would silently break every
+    notification already delivered but not yet acted on.
+    """
+
+    START_SESSION = "start_session"
+    REMIND_LATER = "remind_later"
+    SKIP_TODAY = "skip_today"
+
+
+# Bumped when the meaning of a delivered payload changes, not when a field is
+# added. A shell older than the backend has to be able to tell "I do not
+# understand this" from "this is the shape I know with something new in it".
+NOTIFICATION_PAYLOAD_VERSION = 1
+
+# How long a notification's actions stay answerable. A toast can sit in a tray
+# for days; answering "start a five-minute session" on Thursday for Tuesday's
+# prompt is not the thing that was asked.
+NOTIFICATION_ACTION_TTL = timedelta(hours=12)
+
+# How far "remind me later" moves a reminder. Long enough to finish what
+# interrupted you, short enough that it is still today's review.
+REMIND_LATER_DELAY = timedelta(minutes=30)
+
+
 class Channel(str, Enum):
     """A delivery route a notification can take.
 

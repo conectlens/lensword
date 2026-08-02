@@ -47,9 +47,10 @@ def two_accounts(client, auth_headers):
 
 
 @pytest.fixture()
-def owned(client, two_accounts):
+def owned(client, two_accounts, db_session):
     """A full resource graph belonging to the first account."""
     owner, _ = two_accounts
+    _db = db_session
 
     group = client.post(
         "/api/v1/groups", json={"name": "Alex Group", "target_language": "Spanish"}, headers=owner
@@ -81,6 +82,16 @@ def owned(client, two_accounts):
         headers=owner,
     ).json()
     report = client.post("/api/v1/reports/weekly", headers=owner).json()
+    # Seeded directly: notifications are produced by the scheduler firing a
+    # reminder, which no endpoint triggers on demand.
+    from app.domain.entities import DesktopNotification
+    from app.infrastructure.repositories import SqlAlchemyDesktopNotificationRepository
+
+    owner_id = client.get("/api/v1/auth/me", headers=owner).json()["id"]
+    notification = SqlAlchemyDesktopNotificationRepository(_db).add(
+        DesktopNotification(id=None, user_id=owner_id, message="5 words are due")
+    )
+    _db.commit()
 
     return {
         "group": group["id"],
@@ -92,6 +103,7 @@ def owned(client, two_accounts):
         "session": session["session_id"],
         "exercise": exercise["id"],
         "report": report["id"],
+        "notification": notification.id,
     }
 
 
@@ -137,6 +149,10 @@ CROSS_TENANT_CASES = [
     _case("POST", "/api/v1/practice/exercises", {"word_id": 1, "kind": "translation"}),
     _case("POST", "/api/v1/practice/pronunciation-feedback", {"word_id": 1, "transcript": "correr"}),
     _case("POST", "/api/v1/practice/writing-correction", {"word_id": 1, "text": "yo correr"}),
+    # Desktop notifications. Acting on one is as sensitive as reading it —
+    # "skip today" on someone else's reminder would suppress their prompts.
+    _case("POST", "/api/v1/desktop-notifications/{notification}/action",
+          {"action": "start_session"}),
     # Reports
     _case("GET", "/api/v1/reports/weekly/{report}"),
     _case("POST", "/api/v1/reports/weekly/{report}/narration"),

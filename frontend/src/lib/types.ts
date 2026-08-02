@@ -228,14 +228,32 @@ export interface AISettings {
   context_max_chars: number
 }
 
+/** Mirrors app.domain.value_objects.NotificationAction. */
+export type NotificationActionId = 'start_session' | 'remind_later' | 'skip_today'
+
 export interface DesktopNotification {
   id: number
   message: string
   created_at: string
+  title: string
+  body: string
+  /** Empty once the notification has expired, so no dead buttons are drawn. */
+  actions: NotificationActionId[]
+  expires_at: string | null
 }
 
 export interface PendingDesktopNotifications {
   notifications: DesktopNotification[]
   /** True when the page was cut short by the limit, so more are waiting. */
   has_more: boolean
+  /** Bumped when the meaning of the payload changes, not when a field is added. */
+  payload_version: number
+}
+
+export interface NotificationActionResult {
+  /** The action that stands — for a duplicate callback, the original one. */
+  action: NotificationActionId
+  /** False when this notification had already been answered. */
+  applied: boolean
+  open_review: boolean
 }

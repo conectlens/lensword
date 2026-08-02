@@ -202,6 +202,8 @@ class RecallSettingsModel(Base):
     in_app_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     quiet_hours_start: Mapped[str | None] = mapped_column(String(8), nullable=True)
     quiet_hours_end: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    hide_notification_details: Mapped[bool] = mapped_column(Boolean, default=False)
+    notifications_paused: Mapped[bool] = mapped_column(Boolean, default=False)
     scheduler: Mapped[str] = mapped_column(String(16), default="sm2")
 
 
@@ -298,6 +300,16 @@ class DesktopNotificationModel(Base):
     message: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Which reminder produced this, so an action can reach back to the schedule
+    # it belongs to. Nullable: a notification need not come from a reminder.
+    reminder_id: Mapped[int | None] = mapped_column(ForeignKey("reminders.id"), nullable=True)
+    # After this instant the actions are refused. An OS notification can sit in
+    # a tray for days, and "start a five-minute session" answered on Thursday
+    # for Tuesday's prompt is not the thing the user was asked.
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # The action taken, and when. First one wins — see PerformNotificationAction.
+    action: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    action_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     __table_args__ = (
         Index("ix_desktop_notifications_user_undelivered", "user_id", "delivered_at"),

@@ -53,11 +53,15 @@ class ReminderDispatcher:
         try:
             if self.exclusive and not self._claim(db, reminder_id):
                 return
+            # Bound to this reminder so a desktop row can point back at the
+            # schedule that produced it (issue #88). Channels that do not
+            # support binding are used as they are.
+            channel = getattr(self.channel, "for_reminder", None)
             DeliverReminderUseCase(
                 SqlAlchemyReminderRepository(db),
                 SqlAlchemyUserRepository(db),
                 SqlAlchemyRecallSettingsRepository(db),
-                self.channel,
+                channel(reminder_id) if channel else self.channel,
             ).execute(reminder_id)
         except Exception:  # noqa: BLE001 - a failed delivery must not kill the scheduler
             logger.exception("reminder %s could not be delivered", reminder_id)
