@@ -137,6 +137,10 @@ class Word:
     ai_confidence: float | None = None
     ai_provider: str | None = None
     ai_model: str | None = None
+    # When a human last confirmed the model-written fields (#140). None
+    # means unverified, which for a card no model wrote simply does not
+    # apply — there is nothing to have checked.
+    ai_verified_at: datetime | None = None
     synonyms: list[str] = field(default_factory=list)
     antonyms: list[str] = field(default_factory=list)
     topics: list[str] = field(default_factory=list)

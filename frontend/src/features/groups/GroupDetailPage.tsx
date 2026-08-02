@@ -7,6 +7,7 @@ import { Card } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Icon } from '../../components/ui/Icon'
 import { Spinner } from '../../components/ui/Spinner'
+import { BulkEditBar } from '../words/BulkEditBar'
 import { StatusChip } from '../../components/ui/StatusChip'
 import { Modal } from '../../components/ui/Modal'
 
@@ -16,6 +17,7 @@ export function GroupDetailPage() {
   const [group, setGroup] = useState<Group | null>(null)
   const [words, setWords] = useState<Word[] | null>(null)
   const [sortBy, setSortBy] = useState<'strength' | 'term' | 'next_review'>('strength')
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [aiTerm, setAiTerm] = useState('')
   const [enrichment, setEnrichment] = useState<WordEnrichment | null>(null)
   const [aiError, setAiError] = useState<string | null>(null)
@@ -154,10 +156,20 @@ export function GroupDetailPage() {
               <option value="next_review">Sort: Next review</option>
             </select>
           </div>
+          {selectedIds.size > 0 && (
+            <div className="px-4 pb-3">
+              <BulkEditBar
+                selectedIds={[...selectedIds]}
+                onApplied={() => { setSelectedIds(new Set()); load() }}
+                onClear={() => setSelectedIds(new Set())}
+              />
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead className="border-b border-white/10 text-sm text-white/40">
                 <tr>
+                  <th className="w-10 p-4"><span className="sr-only">Select</span></th>
                   <th className="p-4 font-medium">Word</th>
                   <th className="p-4 font-medium">Translation</th>
                   <th className="p-4 font-medium">Status</th>
@@ -168,6 +180,21 @@ export function GroupDetailPage() {
               <tbody>
                 {sorted.map((w) => (
                   <tr key={w.id} className="group border-b border-white/5 last:border-0 hover:bg-white/5">
+                    <td className="p-4">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${w.term}`}
+                        checked={selectedIds.has(w.id)}
+                        onChange={() =>
+                          setSelectedIds((current) => {
+                            const next = new Set(current)
+                            if (next.has(w.id)) next.delete(w.id)
+                            else next.add(w.id)
+                            return next
+                          })
+                        }
+                      />
+                    </td>
                     <td className="p-4 text-white">{w.term}</td>
                     <td className="p-4 text-white/60">{w.translations.join(', ')}</td>
                     <td className="p-4">

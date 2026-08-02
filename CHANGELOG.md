@@ -34,6 +34,20 @@ releases exist yet).
 
 ### Added
 
+- Editable AI-generated word cards. Cards written by a model now carry a
+  verification state and a field history, and several can be edited at once.
+  Verification is a claim about specific text rather than about a word: if a
+  model later rewrites a verified field the badge is withdrawn, because
+  otherwise it would vouch for words nobody read. A card no model wrote shows
+  no badge at all — "unverified" on something a person typed would invite them
+  to verify their own writing. The history records what each field said before,
+  who changed it, and distinguishes a bulk edit from a single one, since
+  setting a level on forty cards is a different degree of attention from
+  changing one. Bulk editing deliberately cannot touch terms or translations:
+  a control that could overwrite forty terms with one value is a mistake
+  waiting to be made irreversibly, and a field left blank means "leave alone"
+  rather than "clear".
+
 - Knowledge-graph search and CEFR progress. `GET /api/v1/words/{id}/prerequisites`
   answers "what should I learn before this word?" from related words the
   learner already has at a strictly easier level; `GET /api/v1/words/{id}/related`

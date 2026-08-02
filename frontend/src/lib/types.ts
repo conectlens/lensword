@@ -38,6 +38,19 @@ export interface ReviewState {
   fsrs_retrievability?: number | null
 }
 
+// AI provenance on a card (issue #140).
+export type AiState = 'human' | 'unverified' | 'verified'
+
+export interface WordRevision {
+  field: string
+  // Null means the field had no value before — "the model added this" rather
+  // than "the model replaced this".
+  before_value: string | null
+  after_value: string | null
+  source: 'ai' | 'human' | 'bulk'
+  changed_at: string
+}
+
 export interface Word {
   id: number
   group_id: number
@@ -56,6 +69,10 @@ export interface Word {
   ai_confidence: number | null
   ai_provider: string | null
   ai_model: string | null
+  ai_verified_at: string | null
+  // Derived server-side so the badge cannot disagree with the provenance
+  // columns it describes.
+  ai_state: AiState
   synonyms: string[]
   antonyms: string[]
   topics: string[]
