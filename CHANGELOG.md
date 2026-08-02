@@ -161,8 +161,6 @@ releases exist yet).
 
 ### Known limitations
 
-- The scheduler's job store is in-process, so running more than one backend
-  instance delivers each reminder once per instance.
 - Desktop notifications are queued but not yet shown. The backend records them
   and serves them over the API; no OS toast is drawn until the shell collects
   and displays them (ROADMAP 3.2). README's "configured but not dispatched"

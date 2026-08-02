@@ -3,18 +3,24 @@
 A fresh AsyncIOScheduler is created on every app startup rather than reused
 across restarts: APScheduler schedulers are not safely restartable once shut
 down, so the FastAPI lifespan owns exactly one instance per run (see
-app.main.lifespan). Durable, cross-restart job persistence is a Phase 4
-concern (multi-instance-safe scheduler), not this one.
+app.main.lifespan).
+
+The *jobs* do persist across restarts (ROADMAP 4.2): the scheduler is given a
+SQLAlchemy job store by default. Persistence and exclusivity are separate
+problems, though — a shared job store hands the same due job to every
+instance polling it. The second half lives in app.infrastructure.job_claims.
 """
 from __future__ import annotations
 
 import logging
 from typing import Callable
 
+from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.orm import Session
 
-from app.config import Settings
+from app.config import Settings, get_settings
+from app.infrastructure.db import engine
 from app.domain.services.notification_channel import NotificationChannel
 from app.infrastructure.jobs import dev_heartbeat
 from app.infrastructure.notifications import LogNotificationChannel
@@ -23,8 +29,29 @@ from app.infrastructure.reminders import restore_reminder_jobs
 logger = logging.getLogger(__name__)
 
 
-def create_scheduler() -> AsyncIOScheduler:
-    return AsyncIOScheduler()
+def create_scheduler(settings: Settings | None = None) -> AsyncIOScheduler:
+    """Build the scheduler, with a persistent job store unless told otherwise.
+
+    A database job store makes registered jobs survive a restart, which the
+    in-memory default cannot. It does *not* make firing exclusive: every
+    instance polling the same store sees the same due jobs and will run them.
+    That half is handled per dispatch in app.infrastructure.job_claims, and
+    neither piece is sufficient alone.
+
+    APScheduler creates and manages its own `apscheduler_jobs` table, so it is
+    deliberately absent from the Alembic migrations — the library owns that
+    schema and changes it between versions.
+    """
+    settings = settings or get_settings()
+    if settings.scheduler_job_store == "memory":
+        return AsyncIOScheduler()
+    return AsyncIOScheduler(
+        jobstores={"default": SQLAlchemyJobStore(engine=engine)},
+        # A job whose previous run is still going is not started again. With
+        # several instances sharing one store this matters more than it did
+        # in-process, where only one worker pool could ever be involved.
+        job_defaults={"coalesce": True, "max_instances": 1},
+    )
 
 
 def register_jobs(
