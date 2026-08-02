@@ -14,6 +14,8 @@ from app.infrastructure.db import get_db
 from app.infrastructure.repositories import (
     SqlAlchemyDesktopNotificationRepository,
     SqlAlchemyGroupRepository,
+    SqlAlchemyConversationRepository,
+    SqlAlchemyLearningPathRepository,
     SqlAlchemyMistakeEventRepository,
     SqlAlchemyWordRevisionRepository,
     SqlAlchemyMnemonicRepository,
@@ -95,6 +97,14 @@ def get_word_revision_repository(db: DbSession) -> SqlAlchemyWordRevisionReposit
     return SqlAlchemyWordRevisionRepository(db)
 
 
+def get_learning_path_repository(db: DbSession) -> SqlAlchemyLearningPathRepository:
+    return SqlAlchemyLearningPathRepository(db)
+
+
+def get_conversation_repository(db: DbSession) -> SqlAlchemyConversationRepository:
+    return SqlAlchemyConversationRepository(db)
+
+
 @lru_cache
 def _ai_provider() -> AIProvider | None:
     """Built once per process, not per request — the Ollama adapter owns a
@@ -121,6 +131,8 @@ DesktopNotificationRepo = Annotated[SqlAlchemyDesktopNotificationRepository, Dep
 SyncOperationRepo = Annotated[SqlAlchemySyncOperationRepository, Depends(get_sync_operation_repository)]
 MistakeEventRepo = Annotated[SqlAlchemyMistakeEventRepository, Depends(get_mistake_event_repository)]
 WordRevisionRepo = Annotated[SqlAlchemyWordRevisionRepository, Depends(get_word_revision_repository)]
+LearningPathRepo = Annotated[SqlAlchemyLearningPathRepository, Depends(get_learning_path_repository)]
+ConversationRepo = Annotated[SqlAlchemyConversationRepository, Depends(get_conversation_repository)]
 OptionalAIProvider = Annotated[AIProvider | None, Depends(get_ai_provider)]
 
 

@@ -120,6 +120,20 @@ def owned(client, two_accounts, db_session):
                     created_at=at, delivered_at=at, action=action,
                 )
             )
+    # Seeded directly: generating a path needs an AI provider, which this
+    # audit deliberately does not stand up.
+    from app.domain.services.learning_path import MilestonePlan
+    from app.infrastructure.repositories import SqlAlchemyLearningPathRepository
+
+    learning_path = SqlAlchemyLearningPathRepository(_db).add(
+        user_id=owner_id,
+        goal="Order food in Spain",
+        target_language="Spanish",
+        milestones=[
+            MilestonePlan(title="Greetings", description="", topic="greetings", target_word_count=5),
+            MilestonePlan(title="Ordering", description="", topic="restaurant", target_word_count=5),
+        ],
+    )
     _db.commit()
 
     return {
@@ -134,6 +148,7 @@ def owned(client, two_accounts, db_session):
         "report": report["id"],
         "notification": notification.id,
         "reminder": reminder.id,
+        "path": learning_path.id,
     }
 
 
@@ -165,6 +180,10 @@ CROSS_TENANT_CASES = [
     _case("GET", "/api/v1/words/{word}/history"),
     _case("POST", "/api/v1/words/{word}/verify"),
     _case("DELETE", "/api/v1/words/{word}/verify"),
+    # Learning paths (#137). A goal is a personal thing to leak the
+    # existence of.
+    _case("GET", "/api/v1/learning-paths/{path}"),
+    _case("DELETE", "/api/v1/learning-paths/{path}"),
     # Rooms
     _case("GET", "/api/v1/rooms/{room}"),
     _case("GET", "/api/v1/rooms/{room}/words"),

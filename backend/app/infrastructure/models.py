@@ -473,6 +473,59 @@ class WordFieldRevisionModel(Base):
     changed_at: Mapped[datetime] = mapped_column(DateTime, index=True)
 
 
+class LearningPathModel(Base):
+    """A stated goal, broken into milestones (issue #137).
+
+    The goal text is stored because it is what the learner asked for, and a
+    path that cannot show its own goal is a list of steps with no reason
+    attached.
+
+    No progress column. Progress is counted from the learner's vocabulary at
+    read time — a stored percentage is a number that was true once, and it
+    drifts the moment a word is added or deleted.
+    """
+
+    __tablename__ = "learning_paths"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    # Optional: a path can be about a language the learner studies in several
+    # groups, and forcing it into one would make the goal narrower than it is.
+    group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id"), nullable=True)
+    goal: Mapped[str] = mapped_column(String(500))
+    target_language: Mapped[str] = mapped_column(String(32))
+    # Which model produced the plan, kept for the same reason word cards keep
+    # it: a suggestion whose origin is unrecorded cannot be judged later.
+    ai_provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ai_model: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+    milestones: Mapped[list["PathMilestoneModel"]] = relationship(
+        back_populates="path", cascade="all, delete-orphan", order_by="PathMilestoneModel.position"
+    )
+
+
+class PathMilestoneModel(Base):
+    """One step of a path.
+
+    `position` is stored rather than inferred from id: a path's order is part
+    of its meaning, and reordering must not depend on insertion order.
+    """
+
+    __tablename__ = "path_milestones"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    path_id: Mapped[int] = mapped_column(ForeignKey("learning_paths.id"), index=True)
+    position: Mapped[int] = mapped_column(Integer)
+    title: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str] = mapped_column(Text, default="")
+    # Matched against the learner's own word topics to measure progress, which
+    # is why it is one tag rather than prose.
+    topic: Mapped[str] = mapped_column(String(64), index=True)
+    target_word_count: Mapped[int] = mapped_column(Integer)
+    cefr_level: Mapped[str | None] = mapped_column(String(8), nullable=True)
+
+    path: Mapped[LearningPathModel] = relationship(back_populates="milestones")
 class ConversationSessionModel(Base):
     """One tutoring conversation (issue #135)."""
 

@@ -28,6 +28,7 @@ from app.domain.entities import (
     User,
     Word,
 )
+from app.domain.services.cefr_progress import MASTERY_STRENGTH
 from app.domain.value_objects import (
     DEFAULT_TIME_ZONE,
     Recurrence,
@@ -42,7 +43,9 @@ from app.infrastructure.models import (
     DesktopNotificationModel,
     SyncOperationModel,
     GroupModel,
+    LearningPathModel,
     MistakeEventModel,
+    PathMilestoneModel,
     WordFieldRevisionModel,
     MnemonicNoteModel,
     RecallSettingsModel,
@@ -1328,12 +1331,99 @@ class SqlAlchemyWordRevisionRepository:
         return list(self.db.scalars(stmt))
 
 
+class SqlAlchemyLearningPathRepository:
+    """Learning paths and their milestones (issue #137).
+
+    Stores no progress. Progress is counted from the learner's vocabulary at
+    read time — a stored percentage is a number that was true once.
+    """
 class SqlAlchemyConversationRepository:
     """Tutoring conversations and their turns (issue #135)."""
 
     def __init__(self, db: Session):
         self.db = db
 
+    def add(
+        self,
+        user_id: int,
+        goal: str,
+        target_language: str,
+        milestones: list,
+        group_id: int | None = None,
+        ai_provider: str | None = None,
+        ai_model: str | None = None,
+    ) -> LearningPathModel:
+        path = LearningPathModel(
+            user_id=user_id,
+            group_id=group_id,
+            goal=goal,
+            target_language=target_language,
+            ai_provider=ai_provider,
+            ai_model=ai_model,
+            created_at=utcnow(),
+        )
+        for index, plan in enumerate(milestones):
+            path.milestones.append(
+                PathMilestoneModel(
+                    position=index,
+                    title=plan.title,
+                    description=plan.description,
+                    topic=plan.topic,
+                    target_word_count=plan.target_word_count,
+                    cefr_level=plan.cefr_level,
+                )
+            )
+        self.db.add(path)
+        self.db.flush()
+        return path
+
+    def get(self, path_id: int) -> LearningPathModel | None:
+        stmt = (
+            select(LearningPathModel)
+            .where(LearningPathModel.id == path_id)
+            .options(selectinload(LearningPathModel.milestones))
+        )
+        return self.db.scalar(stmt)
+
+    def list_for_user(self, user_id: int) -> list[LearningPathModel]:
+        stmt = (
+            select(LearningPathModel)
+            .where(LearningPathModel.user_id == user_id)
+            .options(selectinload(LearningPathModel.milestones))
+            .order_by(LearningPathModel.created_at.desc())
+        )
+        return list(self.db.scalars(stmt))
+
+    def delete(self, path_id: int) -> None:
+        path = self.db.get(LearningPathModel, path_id)
+        if path is not None:
+            # Milestones go with it through the cascade — a milestone without
+            # its path is a step toward nothing.
+            self.db.delete(path)
+            self.db.flush()
+
+    def words_by_topic(self, user_id: int) -> dict[str, tuple[int, int]]:
+        """Count this learner's words per topic, and how many are mastered.
+
+        Counted here rather than in the domain service so the service stays
+        pure, and computed from the same strength threshold the CEFR view uses
+        so two screens cannot disagree about what "mastered" means.
+        """
+        stmt = (
+            select(WordModel.topics, WordModel.strength, WordModel.repetitions)
+            .join(GroupModel, WordModel.group_id == GroupModel.id)
+            .where(GroupModel.owner_id == user_id)
+        )
+        counts: dict[str, tuple[int, int]] = {}
+        for topics, strength, repetitions in self.db.execute(stmt):
+            mastered = bool(repetitions) and (strength or 0) >= MASTERY_STRENGTH
+            for topic in topics or []:
+                key = str(topic).strip().casefold()
+                if not key:
+                    continue
+                held_count, mastered_count = counts.get(key, (0, 0))
+                counts[key] = (held_count + 1, mastered_count + (1 if mastered else 0))
+        return counts
     def start(
         self,
         user_id: int,

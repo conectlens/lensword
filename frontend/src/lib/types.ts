@@ -353,3 +353,42 @@ export interface OllamaProbe {
   // Written server-side so the reason and the advice cannot drift apart.
   detail: string
 }
+
+// Learning paths (issue #137). No stored progress: every count below is
+// measured from the learner's deck at read time, so the bar can never disagree
+// with the vocabulary list beside it.
+export interface PathMilestone {
+  position: number
+  title: string
+  description: string
+  topic: string
+  target_word_count: number
+  cefr_level: string | null
+  words_held: number
+  words_mastered: number
+  complete: boolean
+  share: number
+}
+
+export interface LearningPath {
+  id: number
+  goal: string
+  target_language: string
+  group_id: number | null
+  ai_provider: string | null
+  ai_model: string | null
+  created_at: string
+  milestones: PathMilestone[]
+  completed_count: number
+  share: number
+  // The first unfinished step. Null when the path is finished.
+  next_milestone: PathMilestone | null
+}
+
+export interface GeneratePathResult {
+  // "ok", "disabled" or "unavailable" — a provider switched off or temporarily
+  // down is a normal state of a healthy install, not an error.
+  status: string
+  path: LearningPath | null
+  detail: string | null
+}
