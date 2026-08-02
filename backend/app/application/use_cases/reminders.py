@@ -49,7 +49,7 @@ class ScheduleReminderUseCase:
         reminder_repo: ReminderRepository,
         group_repo: GroupRepository,
         reminder_scheduler: ReminderScheduler,
-        user_repo: UserRepository | None = None,
+        user_repo: UserRepository,
     ):
         self.reminder_repo = reminder_repo
         self.group_repo = group_repo
@@ -57,13 +57,7 @@ class ScheduleReminderUseCase:
         self.user_repo = user_repo
 
     def _time_zone_of(self, user_id: int) -> str:
-        """The owner's zone, or the default when it cannot be established.
-
-        The repository is optional so a caller that has no need for zones
-        still gets the previous UTC convention rather than an error.
-        """
-        if self.user_repo is None:
-            return DEFAULT_TIME_ZONE
+        """The owner's zone, or the default when it cannot be established."""
         user = self.user_repo.get_by_id(user_id)
         return user.time_zone if user else DEFAULT_TIME_ZONE
 

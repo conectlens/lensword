@@ -242,10 +242,11 @@ def test_scheduling_passes_the_owners_zone_to_the_scheduler(zone):
     assert jobs.calls == [(1, zone)]
 
 
-def test_scheduling_without_a_user_repository_falls_back_to_utc():
-    """Callers that predate the zone feature keep the previous behavior."""
+def test_scheduling_for_an_unknown_user_falls_back_to_utc():
+    """A user repository that cannot find the owner keeps the previous
+    UTC convention rather than raising."""
     jobs = _RecordingScheduler()
 
-    ScheduleReminderUseCase(_AddRepo(), _Groups(), jobs).execute(_reminder())
+    ScheduleReminderUseCase(_AddRepo(), _Groups(), jobs, _Repo(None)).execute(_reminder())
 
     assert jobs.calls == [(1, "UTC")]
