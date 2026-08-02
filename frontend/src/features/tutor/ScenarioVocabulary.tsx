@@ -33,14 +33,31 @@ function WordList({ words }: { words: ScenarioWord[] }) {
 }
 
 export function ScenarioVocabulary({ scenarioKey }: { scenarioKey: string }) {
-  const [vocabulary, setVocabulary] = useState<Vocabulary | null>(null)
-  const [failed, setFailed] = useState(false)
+  // The loaded key travels with the data rather than being reset separately.
+  // Clearing state synchronously at the top of an effect triggers cascading
+  // renders, and it does not solve the real problem anyway: a response for the
+  // previous scenario can still land after the key changed. Comparing the key
+  // the data arrived for makes a stale answer simply not match.
+  const [loaded, setLoaded] = useState<{ key: string; data: Vocabulary | null } | null>(null)
 
   useEffect(() => {
-    setVocabulary(null)
-    setFailed(false)
-    scenariosApi.vocabulary(scenarioKey).then(setVocabulary).catch(() => setFailed(true))
+    let current = true
+    scenariosApi
+      .vocabulary(scenarioKey)
+      .then((data) => {
+        if (current) setLoaded({ key: scenarioKey, data })
+      })
+      .catch(() => {
+        if (current) setLoaded({ key: scenarioKey, data: null })
+      })
+    return () => {
+      current = false
+    }
   }, [scenarioKey])
+
+  const fresh = loaded?.key === scenarioKey ? loaded : null
+  const vocabulary = fresh?.data ?? null
+  const failed = fresh !== null && fresh.data === null
 
   if (failed) {
     return (
