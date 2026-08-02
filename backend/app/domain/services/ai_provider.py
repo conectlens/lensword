@@ -72,6 +72,18 @@ class AIProvider(Protocol):
         self, word: str, sentence: str, source_language: str | None, target_language: str
     ) -> WordEnrichment: ...
 
+    async def generate_learning_path(
+        self, goal: str, target_language: str, max_milestones: int
+    ) -> list[dict]:
+        """Propose milestones for a stated goal (#137).
+
+        Returns raw dictionaries rather than a typed plan: the caller bounds
+        and cleans them, because a model's output is a proposal and validating
+        it inside the adapter would put that judgement in the one place a
+        different provider would have to reimplement.
+        """
+        ...
+
     async def generate_field(
         self, field: str, term: str, source_language: str | None, target_language: str, context: str | None = None
     ) -> str: ...

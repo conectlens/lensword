@@ -135,25 +135,40 @@ class _CountingProvider:
         return _enrichment(term)
 
 
-def _use_provider(provider):
-    from app.api import deps
-    from app.main import app
+class _use_provider:
+    """Override just the AI provider, for the duration of a block.
 
-    app.dependency_overrides[deps.get_ai_provider] = lambda: provider
-    return app
+    Only this key is removed afterwards. `dependency_overrides.clear()` would
+    also drop the test database override the client fixture installs, and every
+    request after it would fail authentication for reasons that look nothing
+    like the cause.
+    """
+
+    def __init__(self, provider):
+        self.provider = provider
+
+    def __enter__(self):
+        from app.api import deps
+        from app.main import app
+
+        self.app = app
+        self.key = deps.get_ai_provider
+        app.dependency_overrides[self.key] = lambda: self.provider
+        return self
+
+    def __exit__(self, *exc):
+        self.app.dependency_overrides.pop(self.key, None)
+        return False
 
 
 def test_asking_the_same_thing_twice_calls_the_model_once(client, headers):
     """A local model takes seconds per generation. Asking it the same question
     twice in a minute is the difference between instant and unusable."""
     provider = _CountingProvider()
-    app = _use_provider(provider)
-    try:
+    with _use_provider(provider):
         body = {"term": "gato", "source_language": "Spanish", "target_language": "English"}
         first = client.post("/api/v1/ai/enrich", json=body, headers=headers)
         second = client.post("/api/v1/ai/enrich", json=body, headers=headers)
-    finally:
-        app.dependency_overrides.clear()
 
     assert first.status_code == 200 and second.status_code == 200
     assert first.json() == second.json()
@@ -162,16 +177,13 @@ def test_asking_the_same_thing_twice_calls_the_model_once(client, headers):
 
 def test_a_different_term_is_generated_afresh(client, headers):
     provider = _CountingProvider()
-    app = _use_provider(provider)
-    try:
+    with _use_provider(provider):
         for term in ("gato", "perro"):
             client.post(
                 "/api/v1/ai/enrich",
                 json={"term": term, "source_language": "Spanish", "target_language": "English"},
                 headers=headers,
             )
-    finally:
-        app.dependency_overrides.clear()
 
     assert provider.calls == 2
 
@@ -182,13 +194,10 @@ def test_one_accounts_cached_response_is_never_served_to_another(client, auth_he
     sam = auth_headers(username="sam", email="sam@example.com")
 
     provider = _CountingProvider()
-    app = _use_provider(provider)
-    try:
+    with _use_provider(provider):
         body = {"term": "gato", "source_language": "Spanish", "target_language": "English"}
         client.post("/api/v1/ai/enrich", json=body, headers=alex)
         client.post("/api/v1/ai/enrich", json=body, headers=sam)
-    finally:
-        app.dependency_overrides.clear()
 
     assert provider.calls == 2
 
@@ -209,13 +218,10 @@ def test_a_failure_is_not_cached(client, headers):
             return _enrichment(term)
 
     provider = _Flaky()
-    app = _use_provider(provider)
-    try:
+    with _use_provider(provider):
         body = {"term": "gato", "source_language": "Spanish", "target_language": "English"}
         first = client.post("/api/v1/ai/enrich", json=body, headers=headers)
         second = client.post("/api/v1/ai/enrich", json=body, headers=headers)
-    finally:
-        app.dependency_overrides.clear()
 
     assert first.status_code == 503
     assert second.status_code == 200
