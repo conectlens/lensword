@@ -20,6 +20,7 @@ from app.infrastructure.repositories import (
     SqlAlchemyPracticeExerciseRepository,
     SqlAlchemyWeeklyLearningReportRepository,
     SqlAlchemyReminderRepository,
+    SqlAlchemySyncOperationRepository,
     SqlAlchemyReviewSessionRepository,
     SqlAlchemyRoomRepository,
     SqlAlchemyUserRepository,
@@ -80,6 +81,10 @@ def get_desktop_notification_repository(db: DbSession) -> SqlAlchemyDesktopNotif
     return SqlAlchemyDesktopNotificationRepository(db)
 
 
+def get_sync_operation_repository(db: DbSession) -> SqlAlchemySyncOperationRepository:
+    return SqlAlchemySyncOperationRepository(db)
+
+
 @lru_cache
 def _ai_provider() -> AIProvider | None:
     """Built once per process, not per request — the Ollama adapter owns a
@@ -103,6 +108,7 @@ PracticeExerciseRepo = Annotated[SqlAlchemyPracticeExerciseRepository, Depends(g
 WeeklyLearningReportRepo = Annotated[SqlAlchemyWeeklyLearningReportRepository, Depends(get_weekly_learning_report_repository)]
 ReminderRepo = Annotated[SqlAlchemyReminderRepository, Depends(get_reminder_repository)]
 DesktopNotificationRepo = Annotated[SqlAlchemyDesktopNotificationRepository, Depends(get_desktop_notification_repository)]
+SyncOperationRepo = Annotated[SqlAlchemySyncOperationRepository, Depends(get_sync_operation_repository)]
 OptionalAIProvider = Annotated[AIProvider | None, Depends(get_ai_provider)]
 
 

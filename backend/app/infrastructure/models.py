@@ -385,4 +385,8 @@ class SyncOperationModel(Base):
     conflict_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Monotonic per account. A client pulls everything above its cursor.
     server_sequence: Mapped[int] = mapped_column(Integer, index=True)
+    # Retry bookkeeping (issue #91). Kept on the operation rather than in a
+    # side table so a quarantined row carries its own history.
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    error_class: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, index=True)

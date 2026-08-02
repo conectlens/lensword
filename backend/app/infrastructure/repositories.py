@@ -1085,6 +1085,37 @@ class SqlAlchemySyncOperationRepository:
         )
         return list(self.db.scalars(stmt))
 
+    def counts_by_status(self, user_id: int) -> dict[str, int]:
+        stmt = (
+            select(SyncOperationModel.status, func.count())
+            .where(SyncOperationModel.user_id == user_id)
+            .group_by(SyncOperationModel.status)
+        )
+        return {status: count for status, count in self.db.execute(stmt)}
+
+    def last_applied_at(self, user_id: int) -> datetime | None:
+        """When sync last actually succeeded — not when it was last attempted.
+
+        A client that has been failing for a day should show yesterday, not a
+        timestamp that keeps refreshing while nothing gets through.
+        """
+        stmt = select(func.max(SyncOperationModel.created_at)).where(
+            SyncOperationModel.user_id == user_id,
+            SyncOperationModel.status == "applied",
+        )
+        return self.db.scalar(stmt)
+
+    def list_by_status(self, user_id: int, status: str) -> list[SyncOperationModel]:
+        stmt = (
+            select(SyncOperationModel)
+            .where(
+                SyncOperationModel.user_id == user_id,
+                SyncOperationModel.status == status,
+            )
+            .order_by(SyncOperationModel.server_sequence.asc())
+        )
+        return list(self.db.scalars(stmt))
+
     def list_conflicts(self, user_id: int) -> list[SyncOperationModel]:
         stmt = (
             select(SyncOperationModel)
