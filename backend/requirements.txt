@@ -11,6 +11,16 @@ pydantic-settings==2.14.2
 email-validator==2.3.0
 pyjwt==2.13.0
 bcrypt==5.0.0
+# Document import parsers (ROADMAP Phase 2, issue #85). All pure-Python, so
+# neither CI nor a contributor needs system libraries to install them.
+pypdf==6.1.3
+python-docx==1.2.0
+EbookLib==0.19
+beautifulsoup4==4.14.2
+
 pytest==9.1.1
+# Test-only: generates the PDF fixtures in test_document_parsers.py rather than
+# committing binaries nobody reviews.
+reportlab==4.4.4
 httpx==0.28.1
 python-multipart==0.0.32
