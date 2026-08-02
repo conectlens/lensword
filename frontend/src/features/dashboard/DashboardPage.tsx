@@ -42,9 +42,16 @@ export function DashboardPage() {
         <h1 className="font-display text-3xl font-bold text-white lg:text-4xl">
           Hi, {user?.username}. Ready to lock in today&apos;s words?
         </h1>
-        <div className="mt-4">
+        <div className="mt-4 flex flex-wrap gap-3">
           <Button size="lg" icon="bolt" onClick={startQuickReview} disabled={dueCount === 0}>
             Start review session
+          </Button>
+          {/* Always enabled: whether anything is outstanding depends on the
+              mistake log, not on the due count this page happens to know. The
+              session itself says when there is nothing left to review, which
+              beats a button greyed out on the wrong evidence. */}
+          <Button size="lg" variant="secondary" icon="refresh" onClick={() => navigate('/review?mode=mistakes')}>
+            Review my mistakes
           </Button>
         </div>
       </div>

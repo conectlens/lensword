@@ -667,6 +667,29 @@ class SqlAlchemyReviewSessionRepository:
         m = self.db.scalar(stmt)
         return _session_to_domain(m) if m else None
 
+    def correct_answer_times(self, user_id: int, word_ids: list[int]) -> dict[int, list[datetime]]:
+        """When each of these words was answered correctly by this learner.
+
+        Feeds mistake decay (#142), which counts successes rather than elapsed
+        time. Scoped through the session's owner so one account's review
+        history can never retire another's mistakes.
+        """
+        if not word_ids:
+            return {}
+        stmt = (
+            select(ReviewAttemptModel.word_id, ReviewAttemptModel.answered_at)
+            .join(ReviewSessionModel, ReviewAttemptModel.session_id == ReviewSessionModel.id)
+            .where(
+                ReviewSessionModel.user_id == user_id,
+                ReviewAttemptModel.word_id.in_(word_ids),
+                ReviewAttemptModel.outcome == ReviewOutcome.CORRECT.value,
+            )
+        )
+        times: dict[int, list[datetime]] = {}
+        for word_id, answered_at in self.db.execute(stmt):
+            times.setdefault(word_id, []).append(answered_at)
+        return times
+
     def add(self, session: ReviewSession) -> ReviewSession:
         m = ReviewSessionModel(
             user_id=session.user_id,

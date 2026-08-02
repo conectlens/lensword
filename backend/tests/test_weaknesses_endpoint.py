@@ -41,9 +41,9 @@ def _answer(client, headers, session_id: int, word_id: int, outcome: str, attemp
     return resp
 
 
-def _session(client, headers, group_id: int) -> int:
+def _session(client, headers, group_id: int, mode: str = "standard") -> int:
     resp = client.post(
-        "/api/v1/review/sessions", json={"mode": "standard", "group_id": group_id}, headers=headers
+        "/api/v1/review/sessions", json={"mode": mode, "group_id": group_id}, headers=headers
     )
     assert resp.status_code == 201, resp.text
     return resp.json()["session_id"]
@@ -179,3 +179,89 @@ def test_one_learners_profile_never_contains_anothers_mistakes(client, auth_head
 
     assert client.get("/api/v1/me/weaknesses", headers=sam).json()["total_mistakes"] == 0
     assert client.get("/api/v1/me/weaknesses", headers=alex).json()["total_mistakes"] == 1
+
+
+# --- The "review my mistakes" session (issue #142) --------------------------
+
+
+def test_a_mistakes_session_offers_a_word_that_is_not_due(client, headers):
+    """The point of the mode. A word you know you got wrong is worth
+    revisiting whether or not the scheduler has come round to it — and
+    answering it just now pushed its due date into the future."""
+    group_id = _group(client, headers)
+    word_id = _word(client, headers, group_id, "gato")
+    session_id = _session(client, headers, group_id)
+    _answer(client, headers, session_id, word_id, "incorrect", "perro")
+
+    # A standard session has nothing: the word was just reviewed.
+    assert client.post(
+        "/api/v1/review/sessions",
+        json={"mode": "standard", "group_id": group_id},
+        headers=headers,
+    ).status_code == 409
+
+    resp = client.post(
+        "/api/v1/review/sessions", json={"mode": "mistakes", "group_id": group_id}, headers=headers
+    )
+    assert resp.status_code == 201, resp.text
+    assert [w["id"] for w in resp.json()["words"]] == [word_id]
+
+
+def test_a_learner_with_no_mistakes_gets_no_mistakes_session(client, headers):
+    group_id = _group(client, headers)
+    _word(client, headers, group_id, "gato")
+
+    resp = client.post(
+        "/api/v1/review/sessions", json={"mode": "mistakes", "group_id": group_id}, headers=headers
+    )
+
+    assert resp.status_code == 409
+
+
+def test_a_relearned_word_drops_out_of_the_mistakes_session(client, headers):
+    """Three correct answers retire the mistake. A session that kept offering
+    words the learner has demonstrably fixed would stop being worth opening."""
+    group_id = _group(client, headers)
+    word_id = _word(client, headers, group_id, "gato")
+    first = _session(client, headers, group_id)
+    _answer(client, headers, first, word_id, "incorrect", "perro")
+
+    relearn = _session(client, headers, group_id, mode="mistakes")
+    for _ in range(3):
+        _answer(client, headers, relearn, word_id, "correct")
+
+    resp = client.post(
+        "/api/v1/review/sessions", json={"mode": "mistakes", "group_id": group_id}, headers=headers
+    )
+    assert resp.status_code == 409
+
+
+def test_one_correct_answer_does_not_retire_a_mistake(client, headers):
+    """Answering right immediately after being shown the answer is often
+    repetition rather than recall."""
+    group_id = _group(client, headers)
+    word_id = _word(client, headers, group_id, "gato")
+    first = _session(client, headers, group_id)
+    _answer(client, headers, first, word_id, "incorrect", "perro")
+
+    relearn = _session(client, headers, group_id, mode="mistakes")
+    _answer(client, headers, relearn, word_id, "correct")
+
+    resp = client.post(
+        "/api/v1/review/sessions", json={"mode": "mistakes", "group_id": group_id}, headers=headers
+    )
+    assert resp.status_code == 201
+
+
+def test_a_mistakes_session_never_offers_another_learners_words(client, auth_headers):
+    alex = auth_headers()
+    group_id = _group(client, alex)
+    word_id = _word(client, alex, group_id, "gato")
+    session_id = _session(client, alex, group_id)
+    _answer(client, alex, session_id, word_id, "incorrect", "perro")
+
+    sam = auth_headers(username="sam", email="sam@example.com")
+
+    assert client.post(
+        "/api/v1/review/sessions", json={"mode": "mistakes"}, headers=sam
+    ).status_code == 409

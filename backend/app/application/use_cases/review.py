@@ -19,22 +19,86 @@ from app.domain.repositories import (
 )
 from app.domain.services.ai_provider import AIProvider
 from app.domain.services.spaced_repetition import Scheduler
+from app.domain.services.mistake_memory import (
+    RecordedMistake,
+    build_memories,
+    select_for_session,
+)
 from app.domain.services.weakness import categorise
 from app.domain.value_objects import ReviewOutcome, SessionMode
 
 
 class StartReviewSessionUseCase:
-    def __init__(self, session_repo: ReviewSessionRepository, word_repo: WordRepository):
+    def __init__(
+        self,
+        session_repo: ReviewSessionRepository,
+        word_repo: WordRepository,
+        mistake_repo=None,
+    ):
         self.session_repo = session_repo
         self.word_repo = word_repo
+        # Only the mistakes mode needs it, so it stays optional and every other
+        # caller is unaffected.
+        self.mistake_repo = mistake_repo
 
     def execute(self, user_id: int, mode: SessionMode, group_id: int | None, limit: int = 20) -> tuple[ReviewSession, list[Word]]:
-        due_words = self.word_repo.list_due_for_user(user_id, limit=limit, group_id=group_id)
-        if not due_words:
+        if mode == SessionMode.MISTAKES:
+            words = self._words_with_outstanding_mistakes(user_id, group_id, limit)
+        else:
+            words = self.word_repo.list_due_for_user(user_id, limit=limit, group_id=group_id)
+        if not words:
             raise NoWordsDueError()
         session = ReviewSession(id=None, user_id=user_id, mode=mode)
         session = self.session_repo.add(session)
-        return session, due_words
+        return session, words
+
+    def _words_with_outstanding_mistakes(
+        self, user_id: int, group_id: int | None, limit: int
+    ) -> list[Word]:
+        """Words got wrong and not yet relearned, worst first.
+
+        Deliberately ignores the due date. A mistake is worth revisiting
+        whether or not the scheduler has come round to it — waiting for a word
+        you already know you got wrong is the opposite of what this session is
+        for.
+        """
+        if self.mistake_repo is None:
+            return []
+
+        rows = self.mistake_repo.list_for_user(user_id)
+        if not rows:
+            return []
+
+        mistakes = [
+            RecordedMistake(
+                word_id=row.word_id,
+                occurred_at=row.occurred_at,
+                category=row.category,
+                occurrences=row.occurrence_count,
+            )
+            for row in rows
+        ]
+        corrections = self.session_repo.correct_answer_times(
+            user_id, sorted({m.word_id for m in mistakes})
+        )
+        # Over-selected, then filtered by group below: a learner studying one
+        # group should not get a shorter session because their worst mistakes
+        # happen to be in another.
+        candidates = select_for_session(build_memories(mistakes, corrections), limit=limit * 4)
+
+        words = []
+        for word_id in candidates:
+            word = self.word_repo.get_by_id(word_id)
+            # A deleted word leaves its mistakes behind only briefly, but a
+            # session must never fail because history outlived vocabulary.
+            if word is None:
+                continue
+            if group_id is not None and word.group_id != group_id:
+                continue
+            words.append(word)
+            if len(words) >= limit:
+                break
+        return words
 
 
 @dataclass(frozen=True, slots=True)
