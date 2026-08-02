@@ -87,10 +87,61 @@ jobs:
           npm ci
           npm run build
 
+      # Windows code signing. macOS signing is built into tauri-action; this is
+      # not, so the certificate is written to a file and a `signCommand` is
+      # injected into the bundle config.
+      #
+      # Injected here rather than committed, which is the load-bearing part: a
+      # `signCommand` in `tauri.conf.json` runs on *every* Windows build, so a
+      # fork or an unconfigured repository would invoke signtool with an empty
+      # certificate path and fail the release instead of producing an unsigned
+      # installer.
+      #
+      # The "is it configured" test lives inside the script, not in an `if:`.
+      # The `secrets` context is not available to a step-level condition, and
+      # neither is a step's own `env` — so a condition referencing either would
+      # silently evaluate empty and skip signing on a repository that *is*
+      # configured.
+      - name: Sign the Windows build
+        if: matrix.platform == 'windows-latest'
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        shell: pwsh
+        run: |
+          if (-not $env:WINDOWS_CERTIFICATE) {
+            Write-Host "No WINDOWS_CERTIFICATE secret; this build will be unsigned."
+            exit 0
+          }
+
+          $pfx = Join-Path $env:RUNNER_TEMP "windows-signing.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+
+          $configPath = "desktop/src-tauri/tauri.conf.json"
+          $config = Get-Content $configPath -Raw | ConvertFrom-Json
+          # A timestamp server is not optional: without one the signature stops
+          # validating the day the certificate expires, including on installers
+          # that were downloaded long before.
+          $sign = @{
+            cmd  = "signtool"
+            args = @(
+              "sign", "/fd", "SHA256",
+              "/f", $pfx,
+              "/p", $env:WINDOWS_CERTIFICATE_PASSWORD,
+              "/tr", "http://timestamp.digicert.com", "/td", "SHA256",
+              "%1"
+            )
+          }
+          $config.bundle | Add-Member -Name windows -Value @{ signCommand = $sign } `
+            -MemberType NoteProperty -Force
+          $config | ConvertTo-Json -Depth 20 | Set-Content $configPath
+          Write-Host "Windows signing configured."
+
       - name: Build and attach installers
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
           # Signing is optional and absent by default. tauri-action skips
           # signing when these are unset, so a fork or an unconfigured
           # repository still produces (unsigned) installers rather than failing

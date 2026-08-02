@@ -23,6 +23,11 @@ desktop/target
 desktop/target/
 desktop/src-tauri/gen/
 
+# Deployment
+# Compose reads a root .env automatically, and it holds the database password
+# and the token-signing secret. The example beside it is the tracked one.
+.env
+
 # General
 .DS_Store
 *.log

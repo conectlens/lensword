@@ -113,8 +113,9 @@ docker compose up --build
 - Frontend: http://localhost:18421
 - Backend API: http://localhost:18420 (docs at `/docs`)
 
-Set `SECRET_KEY` in your environment (or a `.env` file next to `docker-compose.yml`)
-before running in anything but a throwaway local environment. Optionally set
+Copy `.env.example` to `.env` next to `docker-compose.yml` and set at least
+`SECRET_KEY` and `POSTGRES_PASSWORD` before running in anything but a throwaway
+local environment. Optionally set
 `FIRST_ADMIN_EMAIL` / `FIRST_ADMIN_PASSWORD` to auto-create an admin account on
 first boot — otherwise, register normally and promote yourself via a one-off SQL
 update (`UPDATE users SET role='admin' WHERE email='you@example.com'`).

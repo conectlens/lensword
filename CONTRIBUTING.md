@@ -93,9 +93,9 @@ skips that cosmetic step and produces the same installer:
 ```
 
 CI runners set `CI` themselves, so the release workflow is unaffected. CI produces the same artifacts for all three
-platforms on a `v*` tag (`.github/workflows/release.yml`), also unsigned unless
-the repository's signing secrets are configured — ADR 0001 requires signed and
-notarized artifacts before the measured baseline in #65 can be taken.
+platforms on a `v*` tag, also unsigned unless the repository's signing secrets
+are configured. See [docs/releasing.md](docs/releasing.md) for the tag process
+and the full list of secrets.
 
 The endpoint the shell connects to is read from `LENSWORD_API_URL`, then from
 an `api-endpoint` file in the OS application-config directory, then defaults to
