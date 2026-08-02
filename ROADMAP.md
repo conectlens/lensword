@@ -70,8 +70,12 @@ depends on this.
       item does not.)*
 - [ ] **3.2** Wire OS-native notifications through the shell's per-platform
       API. *(Planned)*
-- [ ] **3.3** CI build+package jobs producing installers for all three
-      OSes on tagged releases. *(Planned)*
+- [x] **3.3** CI build+package jobs producing installers for all three
+      OSes on tagged releases. *(Shipped — a `v*` tag builds `.dmg`,
+      `.msi`/`.exe` and `.deb`/`.AppImage` and attaches them to a draft
+      release. The artifacts are **unsigned** unless the repository's signing
+      secrets are configured, so this does not by itself satisfy ADR 0001's
+      signed-build release gate, which 3.1 and #65 still depend on.)*
 - [x] **3.4** Decide bundled-local-backend vs. remote-only mode for
       desktop. Decided: the first desktop release is remote-only, and the
       architecture is kept sidecar-ready so bundling stays an additive
