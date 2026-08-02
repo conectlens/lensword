@@ -34,6 +34,31 @@ releases exist yet).
 
 ### Added
 
+- Knowledge-graph search and CEFR progress. `GET /api/v1/words/{id}/prerequisites`
+  answers "what should I learn before this word?" from related words the
+  learner already has at a strictly easier level; `GET /api/v1/words/{id}/related`
+  returns everything joined to a word, strongest first, each edge carrying the
+  evidence that produced it. Confusion pairs recorded by the mistake log feed
+  the graph, so the one relation derived from observed behaviour rather than a
+  typed label is also the one that outranks the others. A new profile tab shows
+  progress across CEFR levels; it deliberately does not name an overall level,
+  because a CEFR level describes what a person can do in a language while what
+  we hold is which words are in their deck. Words with no level recorded get
+  their own row rather than being distributed or hidden, so the parts still add
+  up to the learner's word count.
+- A "review my mistakes" session that offers words the learner got wrong and
+  has not relearned, regardless of whether the scheduler has come round to
+  them. Mistakes expire by successful review rather than by elapsed time: three
+  correct answers retire one, and successes recorded before the most recent
+  mistake do not count. Resolution is derived from the review log rather than
+  stored as a flag, so it cannot drift out of agreement with what happened.
+- Recorded mistakes, and a weakness profile built from them. Every incorrect or
+  skipped review is filed with its category, and a confusion pair is named only
+  when the answer given is another word the learner actually studies — a
+  misspelling that resembles one is not evidence of confusing the two. The
+  profile reports "not enough evidence yet" rather than an empty list, which
+  would read as "you have no weaknesses".
+
 - A hosted-deployment guide (`docs/hosted-deployment.md`) and a README section
   pointing at it, for running LensWord as a service rather than for one person:
   managed Postgres with TLS, secrets in a platform store, how the connection

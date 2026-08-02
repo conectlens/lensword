@@ -489,6 +489,25 @@ class SqlAlchemyWordRepository:
         stmt = select(WordModel).where(WordModel.group_id == group_id).order_by(WordModel.created_at.desc())
         return [_word_to_domain(m) for m in self.db.scalars(stmt)]
 
+    def list_all_for_user(self, user_id: int, limit: int = 5000) -> list[Word]:
+        """Every word this learner studies, across all their groups.
+
+        Feeds the knowledge graph and the CEFR view (#143), both of which are
+        whole-vocabulary questions — a graph built from one group would report
+        that words in different groups are unrelated, which is a statement
+        about the learner's filing rather than their language.
+
+        Bounded because both callers aggregate in memory.
+        """
+        stmt = (
+            select(WordModel)
+            .join(GroupModel, WordModel.group_id == GroupModel.id)
+            .where(GroupModel.owner_id == user_id)
+            .order_by(WordModel.id.asc())
+            .limit(limit)
+        )
+        return [_word_to_domain(m) for m in self.db.scalars(stmt)]
+
     def find_id_by_term(self, user_id: int, term: str) -> int | None:
         """Look up one of this learner's words by its exact term.
 
