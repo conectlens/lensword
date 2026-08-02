@@ -470,3 +470,22 @@ export interface ScenarioAttempt {
   finished_at: string | null
   evaluation: ScenarioEvaluation | null
 }
+
+// Scenario preparation vocabulary (issue #144).
+export interface ScenarioWord {
+  id: number
+  term: string
+  translations: string[]
+  cefr_level: string | null
+}
+
+export interface ScenarioVocabulary {
+  scenario_key: string
+  on_topic: ScenarioWord[]
+  // Reached through the knowledge graph rather than topic tags, so a word
+  // filed elsewhere but linked to an on-topic one still surfaces.
+  related: ScenarioWord[]
+  // True when the deck is too thin for a list to be worth showing.
+  sparse: boolean
+  detail: string
+}

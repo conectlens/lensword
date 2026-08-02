@@ -8,6 +8,7 @@ import type {
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { Spinner } from '../../components/ui/Spinner'
+import { ScenarioVocabulary } from './ScenarioVocabulary'
 
 /**
  * Role-play with a scored summary at the end (issue #136).
@@ -236,6 +237,11 @@ export function ScenarioPage() {
           ))}
         </ul>
       </Card>
+
+      {/* Words they already hold for this situation (#144). Shown during the
+          attempt rather than only before it: the moment you need a word is
+          mid-sentence, not while reading a briefing. */}
+      <ScenarioVocabulary scenarioKey={attempt.scenario.key} />
 
       <div className="flex flex-col gap-3">
         {messages.map((message) => (

@@ -357,6 +357,22 @@ _EXEMPT_PREFIXES = (
     "/api/v1/mcp",
 )
 
+# Exact route shapes exempt from the cross-tenant battery, with the reason.
+#
+# Shapes rather than prefixes because prefixes are too blunt here: exempting
+# "/api/v1/scenarios" would also exempt the attempt routes, which are very much
+# tenant-scoped. An exemption that silently widens is how an audit stops
+# auditing.
+_EXEMPT_SHAPES = {
+    # The identifier is a catalog key, not a resource anyone owns — every
+    # account may legitimately request any scenario, so there is no "someone
+    # else's" to reach. The *response* is still per-account (it lists the
+    # caller's own words), which is covered by
+    # test_another_accounts_words_are_never_suggested in
+    # test_scenario_endpoints.py.
+    "GET /api/v1/scenarios/{}/vocabulary",
+}
+
 
 def test_every_identifier_taking_endpoint_is_covered_by_this_audit():
     """Fail when a new endpoint takes a resource id without being audited.
@@ -397,12 +413,14 @@ def test_every_identifier_taking_endpoint_is_covered_by_this_audit():
         if "{" in path
         and path.startswith("/api/v1")
         and not path.startswith(_EXEMPT_PREFIXES)
+        and f"{method.upper()} {_shape(path)}" not in _EXEMPT_SHAPES
         and _shape(path) not in audited_shapes
     }
 
     assert not uncovered, (
         "these endpoints accept a resource identifier but are not in "
-        f"CROSS_TENANT_CASES: {sorted(uncovered)}. Add a case, or add the route "
+        f"CROSS_TENANT_CASES: {sorted(uncovered)}. Add a case, add the exact "
+        "shape to _EXEMPT_SHAPES with a reason, or add the route "
         "to _EXEMPT_PREFIXES with the reason it is not tenant-scoped."
     )
 
@@ -420,3 +438,13 @@ def test_the_coverage_check_actually_finds_routes():
     ]
 
     assert len(identifier_routes) >= 15, identifier_routes
+
+
+def test_the_shape_exemption_list_stays_narrow():
+    """An exemption that silently widens is how an audit stops auditing.
+
+    Prefix exemptions cover whole subtrees; these are exact method+shape pairs
+    precisely so adding a sibling route cannot inherit one. This test exists to
+    make growing the list a visible decision rather than a quiet one.
+    """
+    assert _EXEMPT_SHAPES == {"GET /api/v1/scenarios/{}/vocabulary"}

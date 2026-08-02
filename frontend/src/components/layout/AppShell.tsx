@@ -9,8 +9,9 @@ const NAV_ITEMS = [
   { to: '/groups', label: 'Groups', icon: 'style' },
   { to: '/mnemolab', label: 'MnemoLab', icon: 'science' },
   { to: '/paths', label: 'Paths', icon: 'route' },
-  { to: '/tutor', label: 'Tutor', icon: 'forum' },
-  { to: '/roleplay', label: 'Role-play', icon: 'theater_comedy' },
+  // One entry, not four. Someone who wants to practise should not have to
+  // know which of four places to go — the modes are tabs inside the lab.
+  { to: '/lab', label: 'Practice Lab', icon: 'science' },
 ]
 
 export function AppShell({ children }: { children: ReactNode }) {

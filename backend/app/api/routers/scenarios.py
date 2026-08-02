@@ -13,16 +13,20 @@ from fastapi import APIRouter, HTTPException, status
 from app.api.deps import (
     ConversationRepo,
     CurrentUser,
+    MistakeEventRepo,
     OptionalAIProvider,
     ScenarioAttemptRepo,
+    WordRepo,
 )
 from app.api.schemas.scenarios import (
     ScenarioAttemptResponse,
     ScenarioResponse,
+    ScenarioVocabularyResponse,
     StartAttemptRequest,
 )
 from app.domain.exceptions import AIProviderUnavailableError
 from app.domain.services.conversation import Speaker, Turn
+from app.domain.services.knowledge_graph import KnowledgeGraph, WordNode, build_edges
 from app.domain.services.scenarios import (
     CATALOG,
     MIN_LEARNER_TURNS_TO_SCORE,
@@ -55,6 +59,111 @@ def list_scenarios() -> list[ScenarioResponse]:
         )
         for scenario in CATALOG
     ]
+
+
+# Below this, a learner is not prepared enough for the suggestion list to be
+# worth showing as a list — it is worth saying so instead.
+SPARSE_BELOW = 5
+
+
+@router.get("/{scenario_key}/vocabulary", response_model=ScenarioVocabularyResponse)
+def scenario_vocabulary(
+    scenario_key: str,
+    current_user: CurrentUser,
+    word_repo: WordRepo,
+    mistake_repo: MistakeEventRepo,
+) -> ScenarioVocabularyResponse:
+    """Words worth revising before a scenario (issue #144).
+
+    Only words the learner already holds. Suggesting vocabulary they do not
+    have would be a shopping list dressed as preparation.
+
+    On-topic words come from their own topic tags; related ones come through
+    the knowledge graph (#138), so a word filed under a different topic but
+    *confused with* an on-topic one still surfaces — that confusion is exactly
+    what will trip them up mid-conversation.
+    """
+    scenario = get_scenario(scenario_key)
+    if scenario is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scenario not found")
+
+    words = word_repo.list_all_for_user(current_user.id)
+    wanted = {topic.strip().casefold() for topic in scenario.suggested_topics}
+
+    on_topic = [
+        word
+        for word in words
+        if any((topic or "").strip().casefold() in wanted for topic in word.topics)
+    ]
+    on_topic_ids = {word.id for word in on_topic}
+
+    graph = _graph_for(words, _confusions(mistake_repo, current_user.id))
+    related_ids: dict[int, float] = {}
+    for word in on_topic:
+        for edge in graph.related(word.id, limit=10):
+            other = edge.target_id if edge.source_id == word.id else edge.source_id
+            if other in on_topic_ids:
+                continue
+            related_ids[other] = max(related_ids.get(other, 0.0), edge.strength)
+
+    by_id = {word.id: word for word in words}
+    related = [
+        by_id[word_id]
+        for word_id, _ in sorted(related_ids.items(), key=lambda item: (-item[1], item[0]))
+        if word_id in by_id
+    ][:15]
+
+    total = len(on_topic) + len(related)
+    sparse = total < SPARSE_BELOW
+    detail = (
+        f"You have {total} word(s) for this situation. Add a few before "
+        "practising, or go ahead and see what you are missing."
+        if sparse
+        else f"{total} word(s) you already know for this situation."
+    )
+
+    return ScenarioVocabularyResponse(
+        scenario_key=scenario.key,
+        on_topic=[_word_brief(word) for word in on_topic[:25]],
+        related=[_word_brief(word) for word in related],
+        sparse=sparse,
+        detail=detail,
+    )
+
+
+def _word_brief(word) -> dict:
+    return {
+        "id": word.id,
+        "term": word.term,
+        "translations": list(word.translations)[:3],
+        "cefr_level": word.cefr_level,
+    }
+
+
+def _confusions(mistake_repo, user_id: int) -> dict:
+    counts: dict = {}
+    for row in mistake_repo.list_for_user(user_id):
+        if row.confused_with_word_id is None or row.confused_with_word_id == row.word_id:
+            continue
+        key = (min(row.word_id, row.confused_with_word_id), max(row.word_id, row.confused_with_word_id))
+        counts[key] = counts.get(key, 0) + row.occurrence_count
+    return counts
+
+
+def _graph_for(words, confusions) -> KnowledgeGraph:
+    nodes = [
+        WordNode(
+            word_id=word.id,
+            term=word.term,
+            synonyms=tuple(word.synonyms),
+            antonyms=tuple(word.antonyms),
+            topics=tuple(word.topics),
+            collocations=tuple(word.collocations),
+            cefr_level=word.cefr_level,
+        )
+        for word in words
+    ]
+    return KnowledgeGraph(nodes, build_edges(nodes, confusions))
 
 
 @router.post("/attempts", response_model=ScenarioAttemptResponse, status_code=status.HTTP_201_CREATED)

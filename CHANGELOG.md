@@ -49,6 +49,22 @@ releases exist yet).
 
 ### Added
 
+- A Practice Lab gathering conversation, role-play, writing correction and
+  pronunciation feedback behind one page. The four already existed and were
+  scattered across separate routes and buried inside a word's practice flow;
+  someone who wanted to practise had to know which of four places to go, which
+  is a navigation problem masquerading as four features. They are composed
+  rather than rewritten — each keeps its own component and endpoints. Only one
+  mode is mounted at a time, so a conversation cannot sit behind a tab holding
+  state and in-flight requests. Role-play now shows the words the learner
+  already holds for the situation, drawn from their topic tags and expanded
+  through the knowledge graph so a word filed elsewhere but confused with an
+  on-topic one still surfaces; nothing they do not already have is suggested,
+  and a deck too thin to list is said in words rather than shown as a two-item
+  list. The pronunciation check now states that it reads a transcript rather
+  than audio, which a learner told "accepted" after typing the word would
+  otherwise reasonably take for a fake.
+
 - Scenario role-play. Seven situations — job interview, airport, restaurant,
   customer support, meeting, presentation, travel emergency — each with tasks
   to accomplish, which is what a free conversation cannot be scored against.

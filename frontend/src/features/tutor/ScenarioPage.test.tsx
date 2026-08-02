@@ -5,7 +5,7 @@ import { ScenarioPage } from './ScenarioPage'
 import { conversationsApi, groupsApi, scenariosApi } from '../../lib/api'
 
 vi.mock('../../lib/api', () => ({
-  scenariosApi: { list: vi.fn(), start: vi.fn(), finish: vi.fn() },
+  scenariosApi: { list: vi.fn(), start: vi.fn(), finish: vi.fn(), vocabulary: vi.fn() },
   conversationsApi: { send: vi.fn() },
   groupsApi: { list: vi.fn() },
 }))
@@ -43,6 +43,15 @@ beforeEach(() => {
     { id: 1, name: 'Spanish', target_language: 'Spanish', word_count: 0, due_count: 0, mastered_count: 0 },
   ] as never)
   startAttempt.mockResolvedValue(attempt())
+  // The briefing now carries a vocabulary panel (#144); it must not fail
+  // the tests that are about the conversation itself.
+  vi.mocked(scenariosApi.vocabulary).mockResolvedValue({
+    scenario_key: 'restaurant',
+    on_topic: [],
+    related: [],
+    sparse: true,
+    detail: '',
+  })
 })
 
 async function begin() {
