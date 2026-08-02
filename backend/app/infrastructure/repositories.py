@@ -44,6 +44,7 @@ from app.infrastructure.models import (
     SyncOperationModel,
     GroupModel,
     ConversationMessageModel,
+    ScenarioAttemptModel,
     ConversationSessionModel,
     LearningPathModel,
     MistakeEventModel,
@@ -1502,11 +1503,22 @@ class SqlAlchemyConversationRepository:
 
     def delete(self, session_id: int) -> None:
         session = self.db.get(ConversationSessionModel, session_id)
-        if session is not None:
-            # Messages go with it through the cascade — a turn without its
-            # conversation is unreadable.
-            self.db.delete(session)
-            self.db.flush()
+        if session is None:
+            return
+        # A role-play attempt (#136) wraps this conversation, and the attempt is
+        # unreadable without its transcript — so it goes too. Deleted
+        # explicitly rather than left to a cascade that does not exist: without
+        # this the delete is a ForeignKeyViolation on Postgres and a silently
+        # orphaned row on SQLite, which is the same divergence the
+        # tenant-isolation audit caught for room placements and mistake events.
+        for attempt in self.db.scalars(
+            select(ScenarioAttemptModel).where(ScenarioAttemptModel.session_id == session_id)
+        ):
+            self.db.delete(attempt)
+        # Messages go with the session through the cascade — a turn without its
+        # conversation is unreadable.
+        self.db.delete(session)
+        self.db.flush()
 
     def recent_terms(self, user_id: int, limit: int = 40) -> list[str]:
         """Words the learner is currently studying, most recently added first.
@@ -1523,3 +1535,50 @@ class SqlAlchemyConversationRepository:
             .limit(limit)
         )
         return [term for term in self.db.scalars(stmt) if term]
+
+
+class SqlAlchemyScenarioAttemptRepository:
+    """Role-play attempts (issue #136).
+
+    Thin on purpose: the conversation itself is handled by the conversation
+    repository, and this only owns the scenario wrapper around it.
+    """
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add(self, user_id: int, session_id: int, scenario_key: str) -> ScenarioAttemptModel:
+        model = ScenarioAttemptModel(
+            user_id=user_id,
+            session_id=session_id,
+            scenario_key=scenario_key,
+            started_at=utcnow(),
+        )
+        self.db.add(model)
+        self.db.flush()
+        return model
+
+    def get(self, attempt_id: int) -> ScenarioAttemptModel | None:
+        return self.db.get(ScenarioAttemptModel, attempt_id)
+
+    def get_by_session(self, session_id: int) -> ScenarioAttemptModel | None:
+        stmt = select(ScenarioAttemptModel).where(ScenarioAttemptModel.session_id == session_id)
+        return self.db.scalars(stmt).first()
+
+    def list_for_user(self, user_id: int, limit: int = 50) -> list[ScenarioAttemptModel]:
+        stmt = (
+            select(ScenarioAttemptModel)
+            .where(ScenarioAttemptModel.user_id == user_id)
+            .order_by(ScenarioAttemptModel.started_at.desc())
+            .limit(limit)
+        )
+        return list(self.db.scalars(stmt))
+
+    def finish(self, attempt_id: int, evaluation: dict) -> ScenarioAttemptModel | None:
+        attempt = self.db.get(ScenarioAttemptModel, attempt_id)
+        if attempt is None:
+            return None
+        attempt.finished_at = utcnow()
+        attempt.evaluation = evaluation
+        self.db.flush()
+        return attempt

@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { to: '/mnemolab', label: 'MnemoLab', icon: 'science' },
   { to: '/paths', label: 'Paths', icon: 'route' },
   { to: '/tutor', label: 'Tutor', icon: 'forum' },
+  { to: '/roleplay', label: 'Role-play', icon: 'theater_comedy' },
 ]
 
 export function AppShell({ children }: { children: ReactNode }) {

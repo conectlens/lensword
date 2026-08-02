@@ -49,6 +49,19 @@ releases exist yet).
 
 ### Added
 
+- Scenario role-play. Seven situations — job interview, airport, restaurant,
+  customer support, meeting, presentation, travel emergency — each with tasks
+  to accomplish, which is what a free conversation cannot be scored against.
+  An attempt wraps a conversation rather than replacing it, so corrections and
+  bounded history are reused and turns go through one transport rather than
+  two. Finishing scores vocabulary, grammar, fluency and task completion, but
+  an attempt too short to judge is told so instead of being given a number: a
+  confident score derived from three messages is the kind of figure a learner
+  believes because it looks precise. A dimension the model stayed silent about
+  is absent rather than zero, since zero would be a claim the learner did badly
+  made on the model's silence, and only tasks the scenario actually set are
+  reported as met.
+
 - An AI conversation tutor. Sessions and their turns are stored, corrections
   are shown beside what the learner actually wrote rather than replacing it,
   and the tutor is told about the learner's own vocabulary and recent mistakes

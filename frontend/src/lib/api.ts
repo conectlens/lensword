@@ -1,6 +1,6 @@
 import type {
   AdminStats, Group, MnemonicNote, ProfileOverview, RecallSettings, Room,
-  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile, CefrProgress, Prerequisites, RelatedWord, WordRevision, AiState, OllamaProbe, LearningPath, GeneratePathResult, Conversation, ConversationMessage, SendMessageResult, Difficulty,
+  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile, CefrProgress, Prerequisites, RelatedWord, WordRevision, AiState, OllamaProbe, LearningPath, GeneratePathResult, Conversation, ConversationMessage, SendMessageResult, Difficulty, Scenario, ScenarioAttempt,
 } from './types'
 import { resolveApiBase } from './runtimeConfig'
 
@@ -139,6 +139,18 @@ export const conversationsApi = {
       body: JSON.stringify({ text }),
     }),
   end: (id: number) => request<Conversation>(`/api/v1/conversations/${id}/end`, { method: 'POST' }),
+}
+
+export const scenariosApi = {
+  list: () => request<Scenario[]>('/api/v1/scenarios'),
+  attempts: () => request<ScenarioAttempt[]>('/api/v1/scenarios/attempts'),
+  start: (scenario_key: string, target_language: string, difficulty: Difficulty = 'steady') =>
+    request<ScenarioAttempt>('/api/v1/scenarios/attempts', {
+      method: 'POST',
+      body: JSON.stringify({ scenario_key, target_language, difficulty }),
+    }),
+  finish: (attemptId: number) =>
+    request<ScenarioAttempt>(`/api/v1/scenarios/attempts/${attemptId}/finish`, { method: 'POST' }),
 }
 
 export const groupsApi = {

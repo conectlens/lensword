@@ -432,3 +432,41 @@ export interface SendMessageResult {
   tutor_message: ConversationMessage | null
   detail: string | null
 }
+
+// Role-play scenarios (issue #136).
+export interface Scenario {
+  key: string
+  title: string
+  // What the learner is shown. The tutor's instruction is deliberately not
+  // exposed by the API.
+  briefing: string
+  goals: string[]
+  suggested_topics: string[]
+}
+
+export interface DimensionScore {
+  dimension: string
+  score: number
+  comment: string
+}
+
+export interface ScenarioEvaluation {
+  // False when the attempt was too short to judge. Different from a zero,
+  // which would claim the learner did badly rather than admit we cannot tell.
+  scored: boolean
+  scores: DimensionScore[]
+  summary: string
+  goals_met: string[]
+  detail: string
+  overall: number | null
+}
+
+export interface ScenarioAttempt {
+  id: number
+  // Turns go through the conversation endpoint — one transport, not two.
+  session_id: number
+  scenario: Scenario
+  started_at: string
+  finished_at: string | null
+  evaluation: ScenarioEvaluation | null
+}
