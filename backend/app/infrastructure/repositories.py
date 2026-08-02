@@ -42,6 +42,7 @@ from app.infrastructure.models import (
     DesktopNotificationModel,
     SyncOperationModel,
     GroupModel,
+    MistakeEventModel,
     MnemonicNoteModel,
     RecallSettingsModel,
     DailySessionPreferenceModel,
@@ -353,9 +354,26 @@ def _delete_word_dependents(db: Session, word_ids: list[int]) -> None:
     """
     if not word_ids:
         return
-    for model in (RoomPlacementModel, ReviewAttemptModel, MnemonicNoteModel, PracticeExerciseModel):
+    for model in (
+        RoomPlacementModel,
+        ReviewAttemptModel,
+        MnemonicNoteModel,
+        PracticeExerciseModel,
+        MistakeEventModel,
+    ):
         for row in db.scalars(select(model).where(model.word_id.in_(word_ids))):
             db.delete(row)
+
+    # A mistake *about another word* that named one of these as the confusion
+    # is kept, with the reference cleared. The mistake still happened; it
+    # degrades to a plain wrong-word error rather than being deleted along with
+    # a word it was only mentioned by. Left as a dangling id it would be a
+    # foreign-key violation on Postgres and a silently orphaned row on SQLite —
+    # the same divergence the tenant-isolation audit caught for placements.
+    for row in db.scalars(
+        select(MistakeEventModel).where(MistakeEventModel.confused_with_word_id.in_(word_ids))
+    ):
+        row.confused_with_word_id = None
     db.flush()
 
 
@@ -470,6 +488,29 @@ class SqlAlchemyWordRepository:
     def list_by_group(self, group_id: int) -> list[Word]:
         stmt = select(WordModel).where(WordModel.group_id == group_id).order_by(WordModel.created_at.desc())
         return [_word_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def find_id_by_term(self, user_id: int, term: str) -> int | None:
+        """Look up one of this learner's words by its exact term.
+
+        Exists so classifying a wrong answer costs a single indexed lookup
+        rather than loading the learner's whole vocabulary to build a term map
+        on every mistake.
+
+        Case-insensitive, because "Gato" and "gato" are the same word to a
+        learner and a confusion pair that depended on capitalisation would be
+        an artefact of typing rather than of memory.
+        """
+        cleaned = (term or "").strip()
+        if not cleaned:
+            return None
+        stmt = (
+            select(WordModel.id)
+            .join(GroupModel, WordModel.group_id == GroupModel.id)
+            .where(GroupModel.owner_id == user_id, func.lower(WordModel.term) == cleaned.lower())
+            .order_by(WordModel.id.asc())
+            .limit(1)
+        )
+        return self.db.scalar(stmt)
 
     def list_due_for_user(self, user_id: int, limit: int, group_id: int | None = None) -> list[Word]:
         stmt = (
@@ -1133,3 +1174,62 @@ class SqlAlchemySyncOperationRepository:
             .order_by(SyncOperationModel.server_sequence.asc())
         )
         return list(self.db.scalars(stmt))
+
+
+class SqlAlchemyMistakeEventRepository:
+    """Append-only store of recorded mistakes (issue #134).
+
+    There is no `update`. A mistake is history: rewriting a row when the
+    learner later gets the word right would erase the signal the weakness
+    profile exists to read.
+    """
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def record(
+        self,
+        user_id: int,
+        word_id: int,
+        category: str,
+        attempted_answer: str | None = None,
+        confused_with_word_id: int | None = None,
+        context: str | None = None,
+        occurred_at: datetime | None = None,
+    ) -> MistakeEventModel:
+        model = MistakeEventModel(
+            user_id=user_id,
+            word_id=word_id,
+            category=category,
+            # Truncated rather than rejected. A pathological answer must not be
+            # able to fail a review submission — the review is the user's
+            # actual work and the mistake record is bookkeeping beside it.
+            attempted_answer=(attempted_answer or None) and attempted_answer[:255],
+            confused_with_word_id=confused_with_word_id,
+            context=context,
+            occurrence_count=1,
+            occurred_at=occurred_at or utcnow(),
+        )
+        self.db.add(model)
+        self.db.flush()
+        return model
+
+    def list_for_user(self, user_id: int, since: datetime | None = None, limit: int = 1000) -> list[MistakeEventModel]:
+        """Recent mistakes, newest first.
+
+        Bounded because the profile aggregates in memory, and a learner with
+        years of history should not load all of it to answer one question. The
+        cap is on rows rather than time so the answer stays useful for someone
+        who reviews rarely.
+        """
+        stmt = select(MistakeEventModel).where(MistakeEventModel.user_id == user_id)
+        if since is not None:
+            stmt = stmt.where(MistakeEventModel.occurred_at >= since)
+        stmt = stmt.order_by(MistakeEventModel.occurred_at.desc(), MistakeEventModel.id.desc()).limit(limit)
+        return list(self.db.scalars(stmt))
+
+    def count_for_user(self, user_id: int) -> int:
+        stmt = select(func.count()).select_from(MistakeEventModel).where(
+            MistakeEventModel.user_id == user_id
+        )
+        return self.db.scalar(stmt) or 0

@@ -1,6 +1,6 @@
 import type {
   AdminStats, Group, MnemonicNote, ProfileOverview, RecallSettings, Room,
-  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult,
+  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile,
 } from './types'
 import { resolveApiBase } from './runtimeConfig'
 
@@ -212,6 +212,7 @@ export const settingsApi = {
   updateRecallSettings: (settings: RecallSettings) =>
     request<RecallSettings>('/api/v1/recall-settings', { method: 'PUT', body: JSON.stringify(settings) }),
   profile: () => request<ProfileOverview>('/api/v1/profile'),
+  weaknesses: () => request<WeaknessProfile>('/api/v1/me/weaknesses'),
 }
 
 export const practiceApi = {

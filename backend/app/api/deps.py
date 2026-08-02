@@ -14,6 +14,7 @@ from app.infrastructure.db import get_db
 from app.infrastructure.repositories import (
     SqlAlchemyDesktopNotificationRepository,
     SqlAlchemyGroupRepository,
+    SqlAlchemyMistakeEventRepository,
     SqlAlchemyMnemonicRepository,
     SqlAlchemyRecallSettingsRepository,
     SqlAlchemyDailySessionPreferenceRepository,
@@ -85,6 +86,10 @@ def get_sync_operation_repository(db: DbSession) -> SqlAlchemySyncOperationRepos
     return SqlAlchemySyncOperationRepository(db)
 
 
+def get_mistake_event_repository(db: DbSession) -> SqlAlchemyMistakeEventRepository:
+    return SqlAlchemyMistakeEventRepository(db)
+
+
 @lru_cache
 def _ai_provider() -> AIProvider | None:
     """Built once per process, not per request — the Ollama adapter owns a
@@ -109,6 +114,7 @@ WeeklyLearningReportRepo = Annotated[SqlAlchemyWeeklyLearningReportRepository, D
 ReminderRepo = Annotated[SqlAlchemyReminderRepository, Depends(get_reminder_repository)]
 DesktopNotificationRepo = Annotated[SqlAlchemyDesktopNotificationRepository, Depends(get_desktop_notification_repository)]
 SyncOperationRepo = Annotated[SqlAlchemySyncOperationRepository, Depends(get_sync_operation_repository)]
+MistakeEventRepo = Annotated[SqlAlchemyMistakeEventRepository, Depends(get_mistake_event_repository)]
 OptionalAIProvider = Annotated[AIProvider | None, Depends(get_ai_provider)]
 
 

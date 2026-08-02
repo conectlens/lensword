@@ -257,3 +257,30 @@ export interface NotificationActionResult {
   applied: boolean
   open_review: boolean
 }
+
+// Weakness profile (issue #134). Every figure carries the count it came from:
+// a share on its own invites reading 60% of five mistakes and 60% of five
+// hundred as the same claim.
+export interface CategoryWeakness {
+  category: string
+  occurrences: number
+  share: number
+}
+
+export interface ConfusedPair {
+  word_id: number
+  word_term: string | null
+  confused_with_word_id: number
+  confused_with_term: string | null
+  occurrences: number
+}
+
+export interface WeaknessProfile {
+  total_mistakes: number
+  categories: CategoryWeakness[]
+  confused_pairs: ConfusedPair[]
+  // True when there is not enough history to say anything. Rendered as "not
+  // enough evidence yet" rather than an empty list, which would read as "you
+  // have no weaknesses".
+  insufficient_data: boolean
+}

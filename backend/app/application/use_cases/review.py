@@ -19,6 +19,7 @@ from app.domain.repositories import (
 )
 from app.domain.services.ai_provider import AIProvider
 from app.domain.services.spaced_repetition import Scheduler
+from app.domain.services.weakness import categorise
 from app.domain.value_objects import ReviewOutcome, SessionMode
 
 
@@ -43,13 +44,29 @@ class AnswerResult:
 
 
 class SubmitAnswerUseCase:
-    def __init__(self, session_repo: ReviewSessionRepository, word_repo: WordRepository, scheduler: Scheduler):
+    def __init__(
+        self,
+        session_repo: ReviewSessionRepository,
+        word_repo: WordRepository,
+        scheduler: Scheduler,
+        mistake_repo=None,
+    ):
         self.session_repo = session_repo
         self.word_repo = word_repo
         self.scheduler = scheduler
+        # Optional so every existing caller — and every test that only cares
+        # about scheduling — keeps working. Recording a mistake is bookkeeping
+        # beside the review, not part of it.
+        self.mistake_repo = mistake_repo
 
     def execute(
-        self, user_id: int, session_id: int, word_id: int, outcome: ReviewOutcome, response_time_ms: int | None
+        self,
+        user_id: int,
+        session_id: int,
+        word_id: int,
+        outcome: ReviewOutcome,
+        response_time_ms: int | None,
+        attempted_answer: str | None = None,
     ) -> AnswerResult:
         session = self.session_repo.get_by_id(session_id)
         if session is None:
@@ -68,8 +85,43 @@ class SubmitAnswerUseCase:
         word.apply_review(outcome, self.scheduler)
         self.word_repo.update(word)
 
+        self._record_mistake(user_id, word, outcome, attempted_answer)
+
         became_learned = was_new_word and outcome == ReviewOutcome.CORRECT
         return AnswerResult(word=word, was_new_word=became_learned)
+
+    def _record_mistake(
+        self, user_id: int, word: Word, outcome: ReviewOutcome, attempted_answer: str | None
+    ) -> None:
+        """File an incorrect or skipped answer for the weakness profile.
+
+        A confusion is only recorded when the attempt *is* another word this
+        learner studies — resolved by an exact lookup rather than by guessing
+        from similarity, so a misspelling that happens to resemble a word they
+        own does not manufacture a pair out of a typo.
+        """
+        if self.mistake_repo is None or outcome == ReviewOutcome.CORRECT:
+            return
+
+        known_terms = None
+        if attempted_answer and attempted_answer.strip():
+            matched = self.word_repo.find_id_by_term(user_id, attempted_answer)
+            # Answering a word with its own term is a grading disagreement, not
+            # a confusion between two words.
+            if matched is not None and matched != word.id:
+                known_terms = {attempted_answer.strip().casefold(): matched}
+
+        category, confused_with = categorise(
+            outcome.value, attempted_answer, word.term, known_terms
+        )
+        self.mistake_repo.record(
+            user_id=user_id,
+            word_id=word.id,
+            category=category.value,
+            attempted_answer=attempted_answer,
+            confused_with_word_id=confused_with,
+            context="review",
+        )
 
 
 class CompleteReviewSessionUseCase:

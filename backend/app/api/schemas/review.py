@@ -23,6 +23,11 @@ class SubmitAnswerRequest(BaseModel):
     word_id: int
     outcome: ReviewOutcome
     response_time_ms: int | None = None
+    # What the learner actually typed, when the client collects it (#134).
+    # Optional: a flashcard client that only reports right/wrong stays valid,
+    # and the mistake is still recorded — just without the confusion pair,
+    # which cannot be inferred from an outcome alone.
+    attempted_answer: str | None = None
 
 
 class SubmitAnswerResponse(BaseModel):

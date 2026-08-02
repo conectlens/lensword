@@ -5,10 +5,14 @@ import type { ProfileOverview } from '../../lib/types'
 import { Card } from '../../components/ui/Card'
 import { Icon } from '../../components/ui/Icon'
 import { Spinner } from '../../components/ui/Spinner'
+import { WeaknessesTab } from './WeaknessesTab'
+
+type Tab = 'overview' | 'weaknesses'
 
 export function ProfilePage() {
   const { user } = useAuth()
   const [overview, setOverview] = useState<ProfileOverview | null>(null)
+  const [tab, setTab] = useState<Tab>('overview')
 
   useEffect(() => {
     settingsApi.profile().then(setOverview)
@@ -28,6 +32,26 @@ export function ProfilePage() {
         </div>
       </div>
 
+      <div className="flex gap-2 border-b border-white/10">
+        {(['overview', 'weaknesses'] as const).map((name) => (
+          <button
+            key={name}
+            type="button"
+            onClick={() => setTab(name)}
+            aria-current={tab === name ? 'page' : undefined}
+            className={`px-4 py-2 text-sm font-semibold capitalize transition ${
+              tab === name ? 'border-b-2 border-primary text-white' : 'text-white/50 hover:text-white/80'
+            }`}
+          >
+            {name}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'weaknesses' && <WeaknessesTab />}
+
+      {tab === 'overview' && (
+      <>
       <div className="grid grid-cols-3 gap-4">
         <Card className="p-6 text-center">
           <p className="text-3xl font-black text-white">{overview.user.total_words_learned}</p>
@@ -55,6 +79,8 @@ export function ProfilePage() {
           ))}
         </div>
       </div>
+      </>
+      )}
     </div>
   )
 }

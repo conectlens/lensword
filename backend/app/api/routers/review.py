@@ -1,6 +1,13 @@
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.deps import CurrentUser, RecallSettingsRepo, ReviewSessionRepo, UserRepo, WordRepo
+from app.api.deps import (
+    CurrentUser,
+    MistakeEventRepo,
+    RecallSettingsRepo,
+    ReviewSessionRepo,
+    UserRepo,
+    WordRepo,
+)
 from app.api.mappers import word_to_response
 from app.api.schemas.review import (
     CompleteSessionRequest,
@@ -57,12 +64,18 @@ def submit_answer(
     session_repo: ReviewSessionRepo,
     word_repo: WordRepo,
     settings_repo: RecallSettingsRepo,
+    mistake_repo: MistakeEventRepo,
 ) -> SubmitAnswerResponse:
     try:
         settings = settings_repo.get_by_user(current_user.id)
         selected_scheduler = _fsrs_scheduler if settings and settings.scheduler == "fsrs" else _scheduler
-        result = SubmitAnswerUseCase(session_repo, word_repo, selected_scheduler).execute(
-            current_user.id, session_id, payload.word_id, payload.outcome, payload.response_time_ms
+        result = SubmitAnswerUseCase(session_repo, word_repo, selected_scheduler, mistake_repo).execute(
+            current_user.id,
+            session_id,
+            payload.word_id,
+            payload.outcome,
+            payload.response_time_ms,
+            payload.attempted_answer,
         )
     except (EntityNotFoundError, PermissionDeniedError) as exc:
         _raise_for(exc)
