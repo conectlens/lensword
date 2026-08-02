@@ -116,8 +116,10 @@ depends on this.
 - [x] **5.0** This file. *(Shipped)*
 - [x] **5.1** Update README's AI/notification disclaimers once Phases 1–2
       ship. *(Shipped)*
-- [ ] **5.2** Add a "Desktop" section to README once Phase 3 ships.
-      *(Planned)*
+- [x] **5.2** Add a "Desktop" section to README once Phase 3 ships.
+      *(Shipped — covers installing, building from source, endpoint
+      configuration, and what is implemented but unverified. States that no
+      release exists yet rather than linking a download that does not.)*
 - [x] **5.3** Add a hosted-deployment section to README once Phase 4 ships.
       *(Shipped — points at the guide, and states the notification gap up
       front so nobody hosts this without knowing about it.)*
