@@ -11,13 +11,14 @@ avoidable.
 """
 import logging
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.deps import (
     ConversationRepo,
     CurrentUser,
     MistakeEventRepo,
     OptionalAIProvider,
+    rate_limit_ai,
 )
 from app.api.schemas.conversations import (
     ConversationResponse,
@@ -67,7 +68,7 @@ def get_conversation(
     return _to_response(_owned(repo, session_id, current_user.id))
 
 
-@router.post("/{session_id}/message", response_model=SendMessageResponse)
+@router.post("/{session_id}/message", response_model=SendMessageResponse, dependencies=[Depends(rate_limit_ai)])
 async def send_message(
     session_id: int,
     payload: SendMessageRequest,

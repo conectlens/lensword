@@ -8,7 +8,7 @@ about corrections.
 """
 import logging
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.deps import (
     ConversationRepo,
@@ -17,6 +17,7 @@ from app.api.deps import (
     OptionalAIProvider,
     ScenarioAttemptRepo,
     WordRepo,
+    rate_limit_ai,
 )
 from app.api.schemas.scenarios import (
     ScenarioAttemptResponse,
@@ -215,7 +216,7 @@ def get_attempt(
     return _to_response(attempt, scenario)
 
 
-@router.post("/attempts/{attempt_id}/finish", response_model=ScenarioAttemptResponse)
+@router.post("/attempts/{attempt_id}/finish", response_model=ScenarioAttemptResponse, dependencies=[Depends(rate_limit_ai)])
 async def finish_attempt(
     attempt_id: int,
     current_user: CurrentUser,

@@ -1,7 +1,7 @@
 """Authenticated Phase-1 AI vocabulary endpoints."""
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api.deps import CurrentUser, OptionalAIProvider
+from app.api.deps import CurrentUser, OptionalAIProvider, rate_limit_ai
 from app.api.schemas.ai import (
     EnrichWordRequest,
     GenerateExamplesRequest,
@@ -91,7 +91,7 @@ async def _enrich(
     return result
 
 
-@router.post("/enrich", response_model=WordEnrichmentResponse)
+@router.post("/enrich", response_model=WordEnrichmentResponse, dependencies=[Depends(rate_limit_ai)])
 async def enrich_word(payload: EnrichWordRequest, current_user: CurrentUser, provider: OptionalAIProvider) -> WordEnrichmentResponse:
     return await _enrich(_provider(provider), payload, current_user.id)
 
