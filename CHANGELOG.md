@@ -10,6 +10,21 @@ releases exist yet).
 
 ### Security
 
+- URL import fetches a page the server chooses on the user's behalf, so it is
+  guarded as the server-side request forgery surface it is: only http and https
+  on ports 80 and 443, no embedded credentials, and every address a hostname
+  resolves to checked against loopback, private, link-local and reserved space
+  — all of them, not the first, since returning one public and one private
+  address is the standard way past a check that stops early. Redirects are
+  followed by hand and every hop is re-validated, because a 302 to
+  `169.254.169.254` is the oldest way past a check applied only to the URL that
+  was typed. Bodies are bounded while streaming rather than trusted to a
+  Content-Length header, and refusals deliberately do not say what was found,
+  so the endpoint cannot be used to scan the network the server sits in. The
+  residual DNS-rebinding gap cannot be closed in application code without
+  breaking TLS hostname validation; `docs/hosted-deployment.md` now documents
+  it and recommends egress restrictions.
+
 - Desktop authentication tokens are kept in the operating-system credential
   store (macOS Keychain, Windows Credential Manager, Linux Secret Service)
   rather than webview `localStorage`, as ADR 0001 requires. A typed adapter
@@ -33,6 +48,13 @@ releases exist yet).
   startup if set to zero or less.
 
 ### Added
+
+- File upload and URL import on the Extract page. The parsers landed in an
+  earlier change; nothing in the UI reached them. Both paths put the parsed
+  text in the textarea for the user to read and edit before extraction runs —
+  a parser can misread a PDF's columns or pull a site's navigation menu, and
+  feeding that to the model unseen would produce vocabulary from text nobody
+  ever saw.
 
 - Knowledge-graph search and CEFR progress. `GET /api/v1/words/{id}/prerequisites`
   answers "what should I learn before this word?" from related words the
