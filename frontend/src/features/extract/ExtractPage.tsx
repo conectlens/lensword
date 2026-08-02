@@ -6,6 +6,7 @@ import type { Group } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { Spinner } from '../../components/ui/Spinner'
+import { SourceLoader } from './SourceLoader'
 
 export function ExtractPage() {
   const { groupId } = useParams()
@@ -42,7 +43,12 @@ export function ExtractPage() {
   return <div className="mx-auto flex max-w-3xl flex-col gap-6">
     <div><h1 className="font-display text-3xl font-bold text-white">Extract vocabulary</h1><p className="text-white/50">Source language is auto-detected from the text. Review every suggestion before saving.</p></div>
     <Card className="flex flex-col gap-4 p-6">
-      <textarea value={text} onChange={(event) => setText(event.target.value)} rows={10} placeholder="Paste a passage…" className="w-full rounded-lg border border-white/10 bg-white/5 p-3 text-white" />
+      {/* Loaded text lands in the textarea rather than being extracted
+          straight away. A parser can misread a PDF's columns or pull a site's
+          navigation menu, and feeding that to the AI unseen would produce
+          vocabulary from text nobody ever read. */}
+      <SourceLoader onLoaded={setText} />
+      <textarea value={text} onChange={(event) => setText(event.target.value)} rows={10} placeholder="Paste a passage, or load one from a file or URL above…" className="w-full rounded-lg border border-white/10 bg-white/5 p-3 text-white" />
       <label className="text-sm text-white/70">Minimum CEFR level <select value={minLevel} onChange={(event) => setMinLevel(event.target.value)} className="ml-2 rounded bg-white/10 p-2 text-white"><option value="">Any</option>{['A1','A2','B1','B2','C1','C2'].map((level) => <option key={level} value={level}>{level}</option>)}</select></label>
       <Button onClick={extract} loading={loading} disabled={!text.trim()}>Extract with AI</Button>
     </Card>

@@ -105,6 +105,11 @@ export const importsApi = {
     if (!response.ok) throw new ApiRequestError(response.status, (await response.json()).detail ?? 'Could not parse file')
     return response.json() as Promise<{ records: { term: string; translations: string[]; definition?: string | null; part_of_speech?: string | null; cefr_level?: string | null; pronunciation?: string | null }[] }>
   },
+  parseUrl: (url: string) =>
+    request<{ records: { term: string; translations: string[] }[] }>('/api/v1/imports/parse-url', {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    }),
   preview: (group_id: number, records: { term: string; translations?: string[]; definition?: string | null; part_of_speech?: string | null; cefr_level?: string | null; pronunciation?: string | null }[], enrich_with_ai: boolean) => request<{ records: ImportPreviewRecord[] }>('/api/v1/imports/preview', { method: 'POST', body: JSON.stringify({ group_id, records, enrich_with_ai }) }),
   commit: (group_id: number, records: ImportPreviewRecord[]) => request<{ added: number }>('/api/v1/imports/commit', { method: 'POST', body: JSON.stringify({ group_id, records }) }),
 }

@@ -45,3 +45,15 @@ class ImportCommitRequest(BaseModel):
 
 class ImportParseResponse(BaseModel):
     records: list[ImportRecordRequest]
+
+
+class ImportUrlRequest(BaseModel):
+    """A page to fetch and parse (issue #145).
+
+    A plain string rather than pydantic's `AnyHttpUrl`: the real validation is
+    in `app.domain.services.url_safety`, which also has to resolve the host,
+    and having two validators disagree about what a URL is would mean one of
+    them is decorative.
+    """
+
+    url: str

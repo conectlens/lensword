@@ -5,11 +5,13 @@ import json
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 
 from app.api.deps import CurrentUser, GroupRepo, OptionalAIProvider, WordRepo
-from app.api.schemas.imports import ImportCommitRequest, ImportParseResponse, ImportPreviewRecord, ImportPreviewRequest, ImportPreviewResponse, ImportRecordRequest
+from app.api.schemas.imports import ImportCommitRequest, ImportParseResponse, ImportPreviewRecord, ImportPreviewRequest, ImportPreviewResponse, ImportRecordRequest, ImportUrlRequest
 from app.application.use_cases.vocabulary import AddWordUseCase, WordInput, _require_group_owner
 from app.domain.exceptions import AIProviderUnavailableError, EntityNotFoundError, PermissionDeniedError
 from app.domain.services.documents import DocumentStructureError, DocumentTooLargeError
+from app.domain.services.url_safety import UrlRejected
 from app.infrastructure.document_parsers import detect_media_type, parse_document
+from app.infrastructure.url_fetch import UrlFetchFailed, fetch_document
 
 router = APIRouter(prefix='/api/v1/imports', tags=['vocabulary import'])
 
@@ -22,6 +24,41 @@ def _language(value: str | None, term: str) -> str:
 # Formats whose records come from columns rather than from prose. Everything
 # else goes through the document parser registry, which returns sentences.
 _RECORD_TYPES = {'text/csv', 'text/tab-separated-values', 'application/json'}
+
+
+@router.post('/parse-url', response_model=ImportParseResponse)
+def parse_url(_user: CurrentUser, payload: ImportUrlRequest) -> ImportParseResponse:
+    """Fetch a page the user pasted and parse it like an uploaded file.
+
+    The fetch is the security-sensitive part, and its rules live in
+    `url_safety` / `url_fetch`: only http(s) on standard ports, no embedded
+    credentials, every resolved address checked against private space, and
+    every redirect hop re-validated. Refusals are deliberately vague — saying
+    which internal host was unreachable would turn this endpoint into a
+    network scanner.
+    """
+    try:
+        data, filename = fetch_document(payload.url)
+    except UrlRejected as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except UrlFetchFailed as exc:
+        # 502: the request was acceptable, the upstream page was not.
+        raise HTTPException(502, str(exc)) from exc
+
+    try:
+        document = parse_document(data, filename)
+    except DocumentTooLargeError as exc:
+        raise HTTPException(413, str(exc)) from exc
+    except DocumentStructureError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    records = [
+        ImportRecordRequest(term=sentence.text[:200], translations=[])
+        for section in document.sections for sentence in section.sentences
+    ]
+    if not records:
+        raise HTTPException(422, 'No readable text found at that URL')
+    return ImportParseResponse(records=records)
 
 
 @router.post('/parse', response_model=ImportParseResponse)
