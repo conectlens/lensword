@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Protocol
 
 from app.domain.entities import (
+    DesktopNotification,
     Group,
     MnemonicNote,
     RecallSettings,
@@ -115,3 +116,21 @@ class WeeklyLearningReportRepository(Protocol):
     def list_by_user(self, user_id: int) -> list[WeeklyLearningReport]: ...
     def add(self, report: WeeklyLearningReport) -> WeeklyLearningReport: ...
     def update(self, report: WeeklyLearningReport) -> WeeklyLearningReport: ...
+
+
+class DesktopNotificationRepository(Protocol):
+    """Outbox of desktop notifications awaiting collection by a shell.
+
+    `list_pending` is scoped by user and bounded by both a row limit and a
+    `not_before` cutoff. Neither is optional: an unbounded query would let a
+    shell that has been offline for a week collect every reminder it missed
+    and fire them as a burst of toasts, which is the storm the caller has to
+    be able to prevent.
+    """
+
+    def list_pending(
+        self, user_id: int, not_before: datetime, limit: int
+    ) -> list[DesktopNotification]: ...
+    def add(self, notification: DesktopNotification) -> DesktopNotification: ...
+    def mark_delivered(self, user_id: int, notification_ids: list[int]) -> int: ...
+    def purge_delivered_before(self, cutoff: datetime) -> int: ...

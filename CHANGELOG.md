@@ -34,6 +34,20 @@ releases exist yet).
 
 ### Added
 
+- A desktop notification adapter behind the existing `NotificationChannel`
+  port. Because ADR 0002 made the desktop app remote-only, the backend and the
+  machine that owns the notification tray are different processes — so the
+  adapter durably records what the tray is owed rather than trying to raise a
+  toast itself, and a shell collects it over
+  `GET /api/v1/desktop-notifications` and confirms with
+  `POST /api/v1/desktop-notifications/ack`. The adapter wraps the log adapter
+  instead of replacing it, so push, email and in-app delivery are unchanged.
+  Collection is scoped to the authenticated account, bounded per call, and
+  skips anything older than 12 hours, so a machine that has been offline for a
+  week does not fire its whole backlog at once. Acknowledgement is idempotent,
+  which the repeated OS callbacks in ROADMAP 3.2 will depend on. **No OS toast
+  is drawn yet** — that is the shell's half of the handoff (ROADMAP 3.2).
+
 - The desktop backend mode is decided: the first desktop release is
   **remote-only**, talking to a hosted or self-hosted LensWord server, and no
   Python interpreter or database is bundled into the installer. The loopback
@@ -107,8 +121,10 @@ releases exist yet).
 
 - The scheduler's job store is in-process, so running more than one backend
   instance delivers each reminder once per instance.
-- Desktop OS notifications are not yet dispatched; the desktop channel adapter
-  depends on the desktop shell (ROADMAP Phase 3).
+- Desktop notifications are queued but not yet shown. The backend records them
+  and serves them over the API; no OS toast is drawn until the shell collects
+  and displays them (ROADMAP 3.2). README's "configured but not dispatched"
+  disclaimer therefore still stands.
 
 ## [0.1.0] - 2026-07-22
 

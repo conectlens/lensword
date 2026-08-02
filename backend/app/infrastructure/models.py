@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.db import Base
@@ -277,3 +277,28 @@ class MCPIdempotencyKeyModel(Base):
     tool: Mapped[str] = mapped_column(String(255))
     response: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class DesktopNotificationModel(Base):
+    """Outbox row for one desktop notification (ROADMAP 2.2, issue #27).
+
+    ADR 0002 made the desktop app remote-only, so the process that decides a
+    notification is owed and the process that owns the notification tray are
+    not the same one. This table is the handoff between them.
+
+    Indexed on (user_id, delivered_at) rather than user_id alone, because the
+    only hot query is "pending rows for this user" — an index on user_id would
+    still walk every row this account has ever been sent.
+    """
+
+    __tablename__ = "desktop_notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    message: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("ix_desktop_notifications_user_undelivered", "user_id", "delivered_at"),
+    )
