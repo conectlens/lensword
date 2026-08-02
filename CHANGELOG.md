@@ -128,6 +128,15 @@ releases exist yet).
 
 ### Fixed
 
+- Deleting a word or a group no longer fails when anything references it.
+  `DELETE /api/v1/words/{id}` on a word placed in a room raised a foreign-key
+  violation — a 500 — against Postgres, and against SQLite silently left the
+  placement, mnemonics, practice exercises and review attempts behind as
+  orphans. SQLite does not enforce foreign keys unless `PRAGMA foreign_keys`
+  is on, which this project never sets, so the bug was invisible for as long
+  as SQLite was the only target. Deleting a group now also removes its rooms,
+  placements and reminders. Found by running the new tenant-isolation audit
+  against Postgres.
 - Mnemonic endpoints now verify that the requesting account owns the word.
   Previously any authenticated user could read and vote on mnemonics attached
   to another account's words.
