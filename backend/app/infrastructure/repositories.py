@@ -933,6 +933,27 @@ class SqlAlchemyDesktopNotificationRepository:
             self.db.flush()
         return model.action
 
+    def list_engagement_history(
+        self, user_id: int, since: datetime, limit: int = 500
+    ) -> list[DesktopNotification]:
+        """Delivered notifications, for working out when this account responds.
+
+        Only delivered rows: a notification that was never shown says nothing
+        about whether its hour was a good one. Bounded by both age and count so
+        a long-lived account cannot turn a recommendation into a table scan.
+        """
+        stmt = (
+            select(DesktopNotificationModel)
+            .where(
+                DesktopNotificationModel.user_id == user_id,
+                DesktopNotificationModel.delivered_at.is_not(None),
+                DesktopNotificationModel.created_at >= since,
+            )
+            .order_by(DesktopNotificationModel.created_at.desc())
+            .limit(limit)
+        )
+        return [_desktop_notification_to_domain(m) for m in self.db.scalars(stmt)]
+
     def dismiss_pending_for_reminder(self, user_id: int, reminder_id: int) -> int:
         """Retire every un-collected notification from one reminder.
 

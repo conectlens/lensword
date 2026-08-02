@@ -34,6 +34,21 @@ releases exist yet).
 
 ### Added
 
+- Reminder-time recommendations from real engagement. LensWord can now notice
+  that you start a review after most reminders at 20:00 and almost none at
+  09:00, and offer to move the reminder — but it will not move it. Reading a
+  recommendation changes nothing; accepting one is a separate, explicit action,
+  and the schedule you set stays the default. Every recommendation carries the
+  engagement rate and sample size for both the suggested hour and the current
+  one, so the reason can be checked against the data rather than taken on
+  trust. Nothing is suggested without enough evidence — a minimum history, a
+  minimum per hour, and a minimum improvement over the current time, so a
+  near-tie does not generate a prompt every week. An hour inside quiet hours is
+  never suggested however good it looks, and accepting re-derives the
+  suggestion rather than trusting the hour sent back, so this cannot become a
+  way to set a reminder to any time at all. The analysis is deterministic: the
+  same history always gives the same answer. (ROADMAP Phase 3.)
+
 - Desktop notifications carry **actions**: start a five-minute session, remind
   me later, or skip today. Handling is idempotent, which is the point rather
   than a nicety — an operating system is allowed to deliver the same activation
