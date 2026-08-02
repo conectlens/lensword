@@ -1,7 +1,8 @@
 # ADR 0002: Desktop backend mode — bundled local backend vs. remote-only
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-07-23
+- Accepted: 2026-08-02
 - Decision owners: LensWord maintainers
 - Related issues: [#17](https://github.com/conectlens/lensword/issues/17),
   [#30](https://github.com/conectlens/lensword/issues/30),
@@ -41,8 +42,8 @@ mode.
 
 ## Decision
 
-**Recommended: ship the first desktop release remote-only, and keep the
-architecture sidecar-ready rather than sidecar-dependent.**
+**Ship the first desktop release remote-only, and keep the architecture
+sidecar-ready rather than sidecar-dependent.**
 
 Concretely:
 
@@ -57,8 +58,9 @@ Concretely:
    the triggers below are met — most naturally after Phase 4 has produced a
    hardened, packageable backend.
 
-This decision is a recommendation to the maintainers. Issue #17 remains open
-until it is accepted, amended, or rejected.
+Accepted by the maintainers on 2026-08-02, as recommended and without
+amendment. The *Revisit triggers* section below, not a reopening of #17, is the
+route back to the bundled-backend option.
 
 ## Decision drivers
 
@@ -86,7 +88,7 @@ Ordered by weight for LensWord's current stage.
 
 ## Options considered
 
-| Criterion | Remote-only (recommended) | Bundled local backend |
+| Criterion | Remote-only (accepted) | Bundled local backend |
 | --- | --- | --- |
 | User setup | Needs a reachable server (hosted or self-hosted) | None beyond installing the app |
 | Installer size | Shell + frontend only | Adds a self-contained Python runtime and dependencies |
