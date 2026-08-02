@@ -29,7 +29,7 @@ if settings_.environment == "development":
 async def lifespan(_app: FastAPI):
     init_db()
     _seed_first_admin()
-    _app.state.scheduler = create_scheduler()
+    _app.state.scheduler = create_scheduler(settings_)
     # Held on app state so a request that has to re-register a user's jobs
     # (a time-zone change) delivers through the same channel startup used,
     # rather than quietly constructing a second one.

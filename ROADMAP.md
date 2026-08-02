@@ -92,9 +92,13 @@ depends on this.
       zero-setup local default, not as a second supported deployment.)*
 - [ ] **4.1** Per-tenant data isolation audit across all repository
       queries. *(Planned)*
-- [ ] **4.2** Move the scheduler to a durable, horizontally-safe job store
+- [x] **4.2** Move the scheduler to a durable, horizontally-safe job store
       (Postgres-backed locking or a real queue) — required before running
-      more than one backend instance. *(Planned)*
+      more than one backend instance. *(Shipped — jobs persist in a SQLAlchemy
+      job store, and each firing is claimed through a unique constraint so
+      concurrent instances deliver it once. Verified against two dispatchers
+      sharing one database; not yet measured against two real processes under
+      load.)*
 - [ ] **4.3** Hosted-deployment guide (managed Postgres, secrets, TLS),
       distinct from the current self-hosted Docker Compose instructions.
       *(Planned)*
