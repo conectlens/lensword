@@ -12,6 +12,7 @@ from app.domain.value_objects import UserRole
 from app.infrastructure.ai import build_ai_provider
 from app.infrastructure.db import get_db
 from app.infrastructure.repositories import (
+    SqlAlchemyDesktopNotificationRepository,
     SqlAlchemyGroupRepository,
     SqlAlchemyMnemonicRepository,
     SqlAlchemyRecallSettingsRepository,
@@ -75,6 +76,10 @@ def get_reminder_repository(db: DbSession) -> SqlAlchemyReminderRepository:
     return SqlAlchemyReminderRepository(db)
 
 
+def get_desktop_notification_repository(db: DbSession) -> SqlAlchemyDesktopNotificationRepository:
+    return SqlAlchemyDesktopNotificationRepository(db)
+
+
 @lru_cache
 def _ai_provider() -> AIProvider | None:
     """Built once per process, not per request — the Ollama adapter owns a
@@ -97,6 +102,7 @@ DailySessionPreferenceRepo = Annotated[SqlAlchemyDailySessionPreferenceRepositor
 PracticeExerciseRepo = Annotated[SqlAlchemyPracticeExerciseRepository, Depends(get_practice_exercise_repository)]
 WeeklyLearningReportRepo = Annotated[SqlAlchemyWeeklyLearningReportRepository, Depends(get_weekly_learning_report_repository)]
 ReminderRepo = Annotated[SqlAlchemyReminderRepository, Depends(get_reminder_repository)]
+DesktopNotificationRepo = Annotated[SqlAlchemyDesktopNotificationRepository, Depends(get_desktop_notification_repository)]
 OptionalAIProvider = Annotated[AIProvider | None, Depends(get_ai_provider)]
 
 

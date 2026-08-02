@@ -49,7 +49,10 @@ depends on this.
       quiet hours, triggers) to actually gate delivery through the
       notification port. *(Shipped)*
 - [ ] **2.2** Desktop OS-notification adapter (depends on Phase 3's shell;
-      can use a log adapter until then). *(Planned)*
+      can use a log adapter until then). *(In Progress — the backend adapter
+      exists and durably queues desktop notifications for collection over the
+      API. No OS toast is drawn yet: ADR 0002 made the shell a remote client,
+      so displaying one is the shell's side of the handoff, tracked in 3.2.)*
 - [ ] **2.3** Remove README's "notifications configured but not dispatched"
       disclaimer once true. *(Planned)*
 
