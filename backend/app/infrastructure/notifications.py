@@ -9,13 +9,14 @@ DesktopNotificationChannel is the Phase 2.2 desktop adapter (issue #27).
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from typing import Callable
 
 from sqlalchemy.orm import Session
 
 from app.domain.entities import DesktopNotification, User
 from app.domain.services.notification_channel import NotificationChannel
-from app.domain.value_objects import Channel
+from app.domain.value_objects import NOTIFICATION_ACTION_TTL, Channel, utcnow
 from app.infrastructure.repositories import SqlAlchemyDesktopNotificationRepository
 
 logger = logging.getLogger(__name__)
@@ -53,9 +54,25 @@ class DesktopNotificationChannel:
         self,
         session_factory: Callable[[], Session],
         fallback: NotificationChannel | None = None,
+        reminder_id: int | None = None,
+        action_ttl: timedelta = NOTIFICATION_ACTION_TTL,
     ):
         self.session_factory = session_factory
         self.fallback = fallback or LogNotificationChannel()
+        # Which reminder this adapter is delivering for, so the stored row can
+        # point back at it and "skip today" knows what to skip. The
+        # NotificationChannel port carries only (user, message, channel), and
+        # widening it would touch every adapter for something only this one
+        # can use — so the dispatcher binds a per-delivery copy instead.
+        self.reminder_id = reminder_id
+        self.action_ttl = action_ttl
+
+    def for_reminder(self, reminder_id: int) -> "DesktopNotificationChannel":
+        """A copy bound to one reminder. Cheap, and avoids mutating a channel
+        that is shared across concurrently-dispatched reminders."""
+        return DesktopNotificationChannel(
+            self.session_factory, self.fallback, reminder_id, self.action_ttl
+        )
 
     def send(self, user: User, message: str, channel: str) -> None:
         if channel != Channel.DESKTOP.value:
@@ -71,7 +88,17 @@ class DesktopNotificationChannel:
         db = self.session_factory()
         try:
             SqlAlchemyDesktopNotificationRepository(db).add(
-                DesktopNotification(id=None, user_id=user.id, message=message)
+                DesktopNotification(
+                    id=None,
+                    user_id=user.id,
+                    message=message,
+                    reminder_id=self.reminder_id,
+                    # Bounded here rather than at collection: the shell decides
+                    # when to show it, but how long it stays answerable is a
+                    # property of the firing, not of when someone got round to
+                    # looking at their tray.
+                    expires_at=utcnow() + self.action_ttl,
+                )
             )
             db.commit()
             logger.info("desktop notification queued for %s", user.username)

@@ -394,6 +394,15 @@ class RecallSettings:
     in_app_enabled: bool = True
     quiet_hours_start: str | None = None
     quiet_hours_end: str | None = None
+    # Keeps specifics out of notification bodies. A desktop toast is drawn on
+    # a lock screen, over a shared screen, or on a second monitor in an open
+    # office — none of which the person who set the reminder chose. With this
+    # on, the body says a review is waiting and nothing about what is in it.
+    hide_notification_details: bool = False
+    # Suppresses delivery entirely without unsetting the schedule, so a user
+    # can pause reminders for a while and get the same ones back afterwards
+    # rather than rebuilding them.
+    notifications_paused: bool = False
     # Kept with the user's review preferences so every answer in a session
     # uses the same algorithm.  New accounts retain the established SM-2
     # behaviour until they explicitly opt into FSRS.
@@ -471,10 +480,29 @@ class DesktopNotification:
     message: str
     created_at: datetime = field(default_factory=utcnow)
     delivered_at: datetime | None = None
+    reminder_id: int | None = None
+    expires_at: datetime | None = None
+    action: str | None = None
+    action_at: datetime | None = None
 
     @property
     def pending(self) -> bool:
         return self.delivered_at is None
+
+    def is_expired(self, now: datetime | None = None) -> bool:
+        """Whether the actions on this notification are still answerable.
+
+        A notification with no expiry never expires — that is the shape a
+        non-reminder notification takes, and it should not silently stop
+        working because this field was added for reminders.
+        """
+        if self.expires_at is None:
+            return False
+        return (now or utcnow()) >= self.expires_at
+
+    @property
+    def acted_on(self) -> bool:
+        return self.action is not None
 
     def mark_delivered(self, at: datetime | None = None) -> None:
         """Record collection by a shell. Idempotent: a repeated acknowledgement

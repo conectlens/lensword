@@ -93,6 +93,12 @@ features/      one folder per bounded context (auth, groups, rooms, review, ...)
   Windows or Linux** — that needs a packaged and, on macOS, signed build
   (ROADMAP 3.1). Treat it as implemented and unverified rather than proven.
 
+  Desktop notifications carry actions — start a session, remind me later, skip
+  today — and handling them is idempotent, since an operating system may
+  deliver the same activation twice. Two settings govern them: *hide
+  notification details* keeps specifics off a lock screen, and *pause
+  notifications* stops delivery without unsetting the schedule.
+
   **Push and email** still have no credentialed provider behind the port: the
   only adapter for them writes the message to the application log, so nothing
   arrives. The settings page says so rather than silently no-op'ing.

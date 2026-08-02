@@ -89,3 +89,13 @@ class AIProviderUnavailableError(DomainError):
 
     def __init__(self, message: str = "The AI provider is not reachable — try again shortly."):
         super().__init__(message)
+
+
+class NotificationExpiredError(DomainError):
+    """An action was taken on a notification whose actions have lapsed.
+
+    Distinct from "not found": the notification is real and belongs to the
+    caller, it is simply too old to answer. The caller needs to tell those
+    apart to decide whether to show an error or quietly drop a stale OS
+    callback.
+    """

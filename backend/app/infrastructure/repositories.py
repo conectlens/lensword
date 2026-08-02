@@ -290,6 +290,8 @@ def _settings_to_domain(m: RecallSettingsModel) -> RecallSettings:
         in_app_enabled=m.in_app_enabled,
         quiet_hours_start=m.quiet_hours_start,
         quiet_hours_end=m.quiet_hours_end,
+        hide_notification_details=m.hide_notification_details,
+        notifications_paused=m.notifications_paused,
         scheduler=m.scheduler,
     )
 
@@ -775,6 +777,8 @@ class SqlAlchemyRecallSettingsRepository:
         m.in_app_enabled = settings.in_app_enabled
         m.quiet_hours_start = settings.quiet_hours_start
         m.quiet_hours_end = settings.quiet_hours_end
+        m.hide_notification_details = settings.hide_notification_details
+        m.notifications_paused = settings.notifications_paused
         m.scheduler = settings.scheduler
         self.db.flush()
         return _settings_to_domain(m)
@@ -862,6 +866,10 @@ def _desktop_notification_to_domain(m: DesktopNotificationModel) -> DesktopNotif
         message=m.message,
         created_at=m.created_at,
         delivered_at=m.delivered_at,
+        reminder_id=m.reminder_id,
+        expires_at=m.expires_at,
+        action=m.action,
+        action_at=m.action_at,
     )
 
 
@@ -891,10 +899,59 @@ class SqlAlchemyDesktopNotificationRepository:
             message=notification.message,
             created_at=notification.created_at,
             delivered_at=notification.delivered_at,
+            reminder_id=notification.reminder_id,
+            expires_at=notification.expires_at,
+            action=notification.action,
+            action_at=notification.action_at,
         )
         self.db.add(model)
         self.db.flush()
         return _desktop_notification_to_domain(model)
+
+    def get_owned(self, user_id: int, notification_id: int) -> DesktopNotification | None:
+        """Fetch scoped by owner in the query, not checked afterwards, so a
+        guessed id cannot even be read."""
+        model = self.db.get(DesktopNotificationModel, notification_id)
+        if model is None or model.user_id != user_id:
+            return None
+        return _desktop_notification_to_domain(model)
+
+    def record_action(self, user_id: int, notification_id: int, action: str) -> str | None:
+        """Record the action, or report the one already recorded.
+
+        Returns whichever action now stands: the caller's if it won, or the
+        existing one if this notification was already answered. That is what
+        makes a repeated OS callback harmless — the second call is not an
+        error, it simply does not change anything.
+        """
+        model = self.db.get(DesktopNotificationModel, notification_id)
+        if model is None or model.user_id != user_id:
+            return None
+        if model.action is None:
+            model.action = action
+            model.action_at = utcnow()
+            self.db.flush()
+        return model.action
+
+    def dismiss_pending_for_reminder(self, user_id: int, reminder_id: int) -> int:
+        """Retire every un-collected notification from one reminder.
+
+        Marked delivered rather than deleted: the record that the prompt was
+        owed is worth keeping, and `delivered_at` is already what stops a row
+        being shown. Returns how many were retired.
+        """
+        stmt = select(DesktopNotificationModel).where(
+            DesktopNotificationModel.user_id == user_id,
+            DesktopNotificationModel.reminder_id == reminder_id,
+            DesktopNotificationModel.delivered_at.is_(None),
+        )
+        now = utcnow()
+        retired = 0
+        for model in self.db.scalars(stmt):
+            model.delivered_at = now
+            retired += 1
+        self.db.flush()
+        return retired
 
     def mark_delivered(self, user_id: int, notification_ids: list[int]) -> int:
         """Acknowledge collection. Returns the number of rows actually moved.

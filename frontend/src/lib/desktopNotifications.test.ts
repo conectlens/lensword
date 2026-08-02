@@ -9,15 +9,26 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const listPending = vi.fn()
 const acknowledge = vi.fn()
+const actApi = vi.fn()
+
+class FakeApiRequestError extends Error {
+  status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+  }
+}
 
 vi.mock('./api', () => ({
+  ApiRequestError: FakeApiRequestError,
   notificationsApi: {
     listPending: () => listPending(),
     acknowledge: (ids: number[]) => acknowledge(ids),
+    act: (id: number, action: string) => actApi(id, action),
   },
 }))
 
-const { drainOnce, isDesktopShell } = await import('./desktopNotifications')
+const { act, drainOnce, isDesktopShell } = await import('./desktopNotifications')
 
 function pending(...messages: string[]) {
   return {
@@ -25,14 +36,20 @@ function pending(...messages: string[]) {
       id: index + 1,
       message,
       created_at: '2026-08-02T09:00:00',
+      title: 'LensWord',
+      body: message,
+      actions: ['start_session', 'remind_later', 'skip_today'],
+      expires_at: null,
     })),
     has_more: false,
+    payload_version: 1,
   }
 }
 
 beforeEach(() => {
   listPending.mockReset()
   acknowledge.mockReset()
+  actApi.mockReset()
   acknowledge.mockResolvedValue({ acknowledged: 0 })
 })
 
@@ -112,5 +129,52 @@ describe('isDesktopShell', () => {
     } finally {
       delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__
     }
+  })
+})
+
+
+describe('act', () => {
+  it('reports when the review UI should be opened', async () => {
+    actApi.mockResolvedValue({ action: 'start_session', applied: true, open_review: true })
+
+    expect(await act(1, 'start_session')).toBe(true)
+    expect(actApi).toHaveBeenCalledWith(1, 'start_session')
+  })
+
+  it('does not reopen the review for a duplicate callback', async () => {
+    // The backend reports applied:false and open_review:false for a repeat, so
+    // a second OS activation must not reopen a window the user has closed.
+    actApi.mockResolvedValue({ action: 'start_session', applied: false, open_review: false })
+
+    expect(await act(1, 'start_session')).toBe(false)
+  })
+
+  it('swallows a notification that expired while it sat in the tray', async () => {
+    // Clicking a stale toast is an ordinary thing to do, not an error worth
+    // showing the user.
+    actApi.mockRejectedValue(new FakeApiRequestError(409, 'no longer actionable'))
+
+    expect(await act(1, 'skip_today')).toBe(false)
+  })
+
+  it('still surfaces a real failure', async () => {
+    actApi.mockRejectedValue(new FakeApiRequestError(500, 'boom'))
+
+    await expect(act(1, 'skip_today')).rejects.toThrow('boom')
+  })
+})
+
+describe('body rendering', () => {
+  it('shows the body the backend supplied, not the raw message', async () => {
+    // The lock-screen redaction decision is made server-side; rebuilding the
+    // body from `message` here would undo it.
+    const page = pending('5 words are due')
+    page.notifications[0].body = 'A review is waiting.'
+    listPending.mockResolvedValue(page)
+    const show = vi.fn().mockResolvedValue(undefined)
+
+    await drainOnce(show)
+
+    expect(show).toHaveBeenCalledWith('LensWord', 'A review is waiting.')
   })
 })

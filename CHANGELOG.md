@@ -34,6 +34,26 @@ releases exist yet).
 
 ### Added
 
+- Desktop notifications carry **actions**: start a five-minute session, remind
+  me later, or skip today. Handling is idempotent, which is the point rather
+  than a nicety — an operating system is allowed to deliver the same activation
+  more than once, and there is no way to stop it, so the first action recorded
+  is the one that stands and every later callback reports it without repeating
+  its effect. *Remind later* re-queues the prompt half an hour on, with its own
+  expiry so repeated snoozing cannot extend one notification indefinitely.
+  *Skip today* retires that reminder's remaining prompts without disabling it,
+  so tomorrow fires normally. Actions lapse after twelve hours and an expired
+  notification offers none, rather than showing three buttons that all fail.
+  The payload is versioned so a shell older than the backend can tell an
+  unfamiliar shape from a familiar one with a new field. (ROADMAP Phase 3.2.)
+
+- Two new Forced Recall settings. **Hide notification details** replaces the
+  body with a generic line, because a toast is drawn on lock screens, shared
+  screens and second monitors that the person who set the reminder did not
+  choose; the stored record keeps the real text. **Pause notifications**
+  suppresses delivery without unsetting the schedule, and unpausing gets the
+  same reminders back rather than needing them rebuilt.
+
 - A per-tenant isolation audit, kept as a test rather than a document. Every
   endpoint that accepts a resource identifier is exercised from a second
   account and must be denied, and the same request is checked to still succeed
