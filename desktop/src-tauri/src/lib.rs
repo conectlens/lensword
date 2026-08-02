@@ -13,6 +13,7 @@ mod clipboard;
 mod credential;
 mod mcp;
 mod selection_capture;
+mod tray;
 
 use lensword_api_config::{read_endpoint_file, resolve, ApiConfig};
 use tauri::Manager;
@@ -80,7 +81,23 @@ pub fn run() {
         .manage(mcp::McpState::default())
         .manage(clipboard::ClipboardState::default())
         .manage(selection_capture::SelectionCaptureState::default())
-        .setup(|app| selection_capture::install(app.handle()).map_err(Into::into))
+        .manage(tray::TrayState::default())
+        .setup(|app| {
+            selection_capture::install(app.handle())?;
+            tray::install(app.handle())?;
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Close-to-tray is per-OS (issue #82). On macOS an application
+            // outliving its last window is the convention; elsewhere a process
+            // that keeps running after the close button reads as a bug.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if tray::close_behaviour() == tray::CloseBehaviour::HideToTray {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             get_api_config,
             credential::credential_get,
@@ -98,6 +115,8 @@ pub fn run() {
             mcp::mcp_server_connect,
             mcp::mcp_server_disconnect,
             mcp::mcp_server_invoke,
+            tray::tray_set_status,
+            tray::tray_status,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start the LensWord desktop shell");
