@@ -176,7 +176,7 @@ releases exist yet).
   (ROADMAP Phase 0.)
 - Repository infrastructure for public contribution: CI (backend tests,
   frontend lint/build/tests, Docker build validation), CodeQL analysis,
-  dependency review, Dependabot, issue/PR templates, `CONTRIBUTING.md`,
+  dependency review, issue/PR templates, `CONTRIBUTING.md`,
   `CODE_OF_CONDUCT.md`, and `SECURITY.md`.
 
 ### Fixed
