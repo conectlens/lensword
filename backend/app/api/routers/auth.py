@@ -1,6 +1,6 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api.deps import CurrentUser, UserRepo
+from app.api.deps import CurrentUser, UserRepo, rate_limit_login
 from app.api.schemas.auth import AuthenticatedResponse, LoginRequest, RegisterRequest, TokenResponse, UserResponse
 from app.application.use_cases.auth import AuthenticateUserUseCase, RegisterUserUseCase
 from app.domain.exceptions import DuplicateEmailError, DuplicateUsernameError, InvalidCredentialsError
@@ -38,7 +38,7 @@ def register(payload: RegisterRequest, user_repo: UserRepo) -> AuthenticatedResp
     return AuthenticatedResponse(user=_to_user_response(user), token=TokenResponse(access_token=token))
 
 
-@router.post("/login", response_model=AuthenticatedResponse)
+@router.post("/login", response_model=AuthenticatedResponse, dependencies=[Depends(rate_limit_login)])
 def login(payload: LoginRequest, user_repo: UserRepo) -> AuthenticatedResponse:
     try:
         user = AuthenticateUserUseCase(user_repo).execute(payload.email, payload.password)

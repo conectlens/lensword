@@ -34,7 +34,7 @@ from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
-from app.api.deps import _ai_provider  # noqa: E402
+from app.api.deps import _ai_provider, get_rate_limiter  # noqa: E402
 from app.config import Settings, get_settings  # noqa: E402
 from app.infrastructure.db import Base, get_db  # noqa: E402
 from app.main import app  # noqa: E402
@@ -75,6 +75,21 @@ def isolate_ai_settings(monkeypatch):
     yield
     get_settings.cache_clear()
     _ai_provider.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def isolate_rate_limits():
+    """Every test starts with an empty rate limiter.
+
+    The limiter is a process-wide singleton (app.api.deps._rate_limiter), same
+    as _ai_provider above — without a reset here, a test earlier in the run
+    that logs in or calls an AI endpoint several times would count toward the
+    budget of every test after it, and an unrelated test could start failing
+    only when run after a specific neighbour.
+    """
+    get_rate_limiter().reset()
+    yield
+    get_rate_limiter().reset()
 
 
 @pytest.fixture(scope="session")

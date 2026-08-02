@@ -2,9 +2,9 @@ import csv
 import io
 import json
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
-from app.api.deps import CurrentUser, GroupRepo, OptionalAIProvider, WordRepo
+from app.api.deps import CurrentUser, GroupRepo, OptionalAIProvider, WordRepo, rate_limit_import_upload, rate_limit_import_url
 from app.api.schemas.imports import ImportCommitRequest, ImportParseResponse, ImportPreviewRecord, ImportPreviewRequest, ImportPreviewResponse, ImportRecordRequest, ImportUrlRequest
 from app.application.use_cases.vocabulary import AddWordUseCase, WordInput, _require_group_owner
 from app.domain.exceptions import AIProviderUnavailableError, EntityNotFoundError, PermissionDeniedError
@@ -26,7 +26,7 @@ def _language(value: str | None, term: str) -> str:
 _RECORD_TYPES = {'text/csv', 'text/tab-separated-values', 'application/json'}
 
 
-@router.post('/parse-url', response_model=ImportParseResponse)
+@router.post('/parse-url', response_model=ImportParseResponse, dependencies=[Depends(rate_limit_import_url)])
 def parse_url(_user: CurrentUser, payload: ImportUrlRequest) -> ImportParseResponse:
     """Fetch a page the user pasted and parse it like an uploaded file.
 
@@ -61,7 +61,7 @@ def parse_url(_user: CurrentUser, payload: ImportUrlRequest) -> ImportParseRespo
     return ImportParseResponse(records=records)
 
 
-@router.post('/parse', response_model=ImportParseResponse)
+@router.post('/parse', response_model=ImportParseResponse, dependencies=[Depends(rate_limit_import_upload)])
 async def parse_file(_user: CurrentUser, file: UploadFile = File(...)) -> ImportParseResponse:
     if not file.filename: raise HTTPException(422, 'A named import file is required')
     data = await file.read()
