@@ -24,19 +24,34 @@ fn entry() -> Result<Entry, String> {
 }
 
 /// The stored token, or `None` when nothing has been stored yet.
+///
+/// Logging here never includes the token itself — only presence/absence and
+/// failures — since log output can end up in a file on disk.
 #[tauri::command]
 pub fn credential_get() -> Result<Option<String>, String> {
     match entry()?.get_password() {
-        Ok(token) => Ok(Some(token)),
-        Err(Error::NoEntry) => Ok(None),
-        Err(err) => Err(err.to_string()),
+        Ok(token) => {
+            log::debug!("credential_get: entry present");
+            Ok(Some(token))
+        }
+        Err(Error::NoEntry) => {
+            log::debug!("credential_get: no entry stored");
+            Ok(None)
+        }
+        Err(err) => {
+            log::error!("credential_get failed: {err}");
+            Err(err.to_string())
+        }
     }
 }
 
 /// Store or replace the token.
 #[tauri::command]
 pub fn credential_set(token: String) -> Result<(), String> {
-    entry()?.set_password(&token).map_err(|err| err.to_string())
+    entry()?.set_password(&token).map_err(|err| {
+        log::error!("credential_set failed: {err}");
+        err.to_string()
+    })
 }
 
 /// Remove the token. Clearing an already-absent credential is success, so a
@@ -45,6 +60,9 @@ pub fn credential_set(token: String) -> Result<(), String> {
 pub fn credential_clear() -> Result<(), String> {
     match entry()?.delete_credential() {
         Ok(()) | Err(Error::NoEntry) => Ok(()),
-        Err(err) => Err(err.to_string()),
+        Err(err) => {
+            log::error!("credential_clear failed: {err}");
+            Err(err.to_string())
+        }
     }
 }

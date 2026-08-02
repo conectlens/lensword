@@ -73,10 +73,12 @@ depends on this.
       release. The artifacts are **unsigned** unless the repository's signing
       secrets are configured, so this does not by itself satisfy ADR 0001's
       signed-build release gate, which 3.1 and #65 still depend on.)*
-- [ ] **3.4** Decide bundled-local-backend vs. remote-only mode for
-      desktop. A recommendation (remote-only first, sidecar-ready) is drafted
-      in [ADR 0002](docs/adr/0002-desktop-backend-mode.md); the item stays open
-      until that ADR is accepted. *(Planned — product decision)*
+- [x] **3.4** Decide bundled-local-backend vs. remote-only mode for
+      desktop. Decided: the first desktop release is remote-only, and the
+      architecture is kept sidecar-ready so bundling stays an additive
+      capability rather than a rewrite. Recorded in
+      [ADR 0002](docs/adr/0002-desktop-backend-mode.md) (Accepted 2026-08-02),
+      including the triggers for revisiting it. *(Shipped — product decision)*
 
 ## Phase 4 — Cloud support (multi-tenant hosting)
 
