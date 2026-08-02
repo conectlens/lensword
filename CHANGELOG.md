@@ -34,6 +34,16 @@ releases exist yet).
 
 ### Added
 
+- A per-tenant isolation audit, kept as a test rather than a document. Every
+  endpoint that accepts a resource identifier is exercised from a second
+  account and must be denied, and the same request is checked to still succeed
+  for its owner — so a passing audit cannot be an endpoint that is broken for
+  everyone. A companion check fails when a new identifier-taking endpoint is
+  added without being audited, which stops the review going stale the way a
+  written one would. **Zero findings**: ownership is enforced in the use-case
+  layer on every route, and no collection endpoint returns another account's
+  rows. (ROADMAP Phase 4.1.)
+
 - Desktop installers are built by CI. Pushing a `v*` tag builds the shell on
   macOS, Windows and Linux and attaches `.dmg`, `.msi`/`.exe` and
   `.deb`/`.AppImage` artifacts to a **draft** GitHub release, so a tag never
@@ -128,6 +138,15 @@ releases exist yet).
 
 ### Fixed
 
+- Deleting a word or a group no longer fails when anything references it.
+  `DELETE /api/v1/words/{id}` on a word placed in a room raised a foreign-key
+  violation — a 500 — against Postgres, and against SQLite silently left the
+  placement, mnemonics, practice exercises and review attempts behind as
+  orphans. SQLite does not enforce foreign keys unless `PRAGMA foreign_keys`
+  is on, which this project never sets, so the bug was invisible for as long
+  as SQLite was the only target. Deleting a group now also removes its rooms,
+  placements and reminders. Found by running the new tenant-isolation audit
+  against Postgres.
 - Mnemonic endpoints now verify that the requesting account owns the word.
   Previously any authenticated user could read and vote on mnemonics attached
   to another account's words.
