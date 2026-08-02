@@ -90,8 +90,11 @@ depends on this.
       starts. CI runs the whole backend suite against both dialects and applies
       every migration to an empty Postgres database. SQLite is retained as the
       zero-setup local default, not as a second supported deployment.)*
-- [ ] **4.1** Per-tenant data isolation audit across all repository
-      queries. *(Planned)*
+- [x] **4.1** Per-tenant data isolation audit across all repository
+      queries. *(Shipped — zero findings. The audit is executable rather than
+      written down: `backend/tests/test_tenant_isolation.py` denies a second
+      account on every endpoint that accepts a resource identifier, and fails
+      if a new such endpoint is added without being audited.)*
 - [x] **4.2** Move the scheduler to a durable, horizontally-safe job store
       (Postgres-backed locking or a real queue) — required before running
       more than one backend instance. *(Shipped — jobs persist in a SQLAlchemy

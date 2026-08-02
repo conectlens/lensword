@@ -319,6 +319,39 @@ def _weekly_report_to_domain(m: WeeklyLearningReportModel) -> WeeklyLearningRepo
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Cascading deletes
+#
+# Postgres enforces foreign keys; SQLite does not, unless PRAGMA foreign_keys
+# is turned on, which this project never does. Deleting a word that is placed
+# in a room therefore appeared to work for the entire life of the SQLite
+# deployment and raises ForeignKeyViolation — a 500 — the moment the same
+# request runs against Postgres.
+#
+# Dependants are removed explicitly here rather than through ON DELETE CASCADE
+# so the behaviour is identical on both dialects and needs no constraint
+# migration, and so the choice to discard each dependant is visible in code
+# rather than implied by a schema attribute.
+# ---------------------------------------------------------------------------
+
+
+def _delete_word_dependents(db: Session, word_ids: list[int]) -> None:
+    """Remove every row that references these words.
+
+    Review attempts are deleted with the word, which does lose a little session
+    history. The alternative is refusing to delete a word that has ever been
+    reviewed, which would make a vocabulary list permanently un-prunable — a
+    worse answer for a learning tool whose whole point is editing what you
+    study.
+    """
+    if not word_ids:
+        return
+    for model in (RoomPlacementModel, ReviewAttemptModel, MnemonicNoteModel, PracticeExerciseModel):
+        for row in db.scalars(select(model).where(model.word_id.in_(word_ids))):
+            db.delete(row)
+    db.flush()
+
+
 class SqlAlchemyUserRepository:
     def __init__(self, db: Session):
         self.db = db
@@ -401,9 +434,22 @@ class SqlAlchemyGroupRepository:
 
     def delete(self, group_id: int) -> None:
         m = self.db.get(GroupModel, group_id)
-        if m is not None:
-            self.db.delete(m)
-            self.db.flush()
+        if m is None:
+            return
+        # Depth first: placements reference both a room and a word, so both
+        # sides have to go before either parent can.
+        word_ids = list(self.db.scalars(select(WordModel.id).where(WordModel.group_id == group_id)))
+        _delete_word_dependents(self.db, word_ids)
+        for room in self.db.scalars(select(RoomModel).where(RoomModel.group_id == group_id)):
+            for placement in list(room.placements):
+                self.db.delete(placement)
+            self.db.delete(room)
+        for reminder in self.db.scalars(select(ReminderModel).where(ReminderModel.group_id == group_id)):
+            self.db.delete(reminder)
+        for word in self.db.scalars(select(WordModel).where(WordModel.group_id == group_id)):
+            self.db.delete(word)
+        self.db.delete(m)
+        self.db.flush()
 
 
 class SqlAlchemyWordRepository:
@@ -447,6 +493,7 @@ class SqlAlchemyWordRepository:
     def delete(self, word_id: int) -> None:
         m = self.db.get(WordModel, word_id)
         if m is not None:
+            _delete_word_dependents(self.db, [word_id])
             self.db.delete(m)
             self.db.flush()
 
