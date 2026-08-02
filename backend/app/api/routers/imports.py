@@ -8,6 +8,8 @@ from app.api.deps import CurrentUser, GroupRepo, OptionalAIProvider, WordRepo
 from app.api.schemas.imports import ImportCommitRequest, ImportParseResponse, ImportPreviewRecord, ImportPreviewRequest, ImportPreviewResponse, ImportRecordRequest
 from app.application.use_cases.vocabulary import AddWordUseCase, WordInput, _require_group_owner
 from app.domain.exceptions import AIProviderUnavailableError, EntityNotFoundError, PermissionDeniedError
+from app.domain.services.documents import DocumentStructureError, DocumentTooLargeError
+from app.infrastructure.document_parsers import detect_media_type, parse_document
 
 router = APIRouter(prefix='/api/v1/imports', tags=['vocabulary import'])
 
@@ -17,10 +19,35 @@ def _language(value: str | None, term: str) -> str:
     return 'Turkish' if any(char in term.lower() for char in 'çğıöşü') else 'Unknown'
 
 
+# Formats whose records come from columns rather than from prose. Everything
+# else goes through the document parser registry, which returns sentences.
+_RECORD_TYPES = {'text/csv', 'text/tab-separated-values', 'application/json'}
+
+
 @router.post('/parse', response_model=ImportParseResponse)
 async def parse_file(_user: CurrentUser, file: UploadFile = File(...)) -> ImportParseResponse:
     if not file.filename: raise HTTPException(422, 'A named import file is required')
-    raw = (await file.read()).decode('utf-8-sig', errors='replace')
+    data = await file.read()
+    try:
+        media_type = detect_media_type(data, file.filename)
+    except DocumentStructureError as exc: raise HTTPException(422, str(exc)) from exc
+
+    # Prose formats (PDF, EPUB, DOCX, HTML, subtitles, Markdown, text) are
+    # parsed into sections and sentences, and each sentence becomes a candidate
+    # carrying where it came from. Bounds and refusals live in the parsers.
+    if media_type not in _RECORD_TYPES:
+        try:
+            document = parse_document(data, file.filename)
+        except DocumentTooLargeError as exc: raise HTTPException(413, str(exc)) from exc
+        except DocumentStructureError as exc: raise HTTPException(422, str(exc)) from exc
+        records = [
+            ImportRecordRequest(term=sentence.text[:200], translations=[])
+            for section in document.sections for sentence in section.sentences
+        ]
+        if not records: raise HTTPException(422, 'No readable text found in file')
+        return ImportParseResponse(records=records)
+
+    raw = data.decode('utf-8-sig', errors='replace')
     suffix = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else 'txt'
     try:
         if suffix == 'json': rows = json.loads(raw)
