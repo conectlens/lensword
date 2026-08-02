@@ -206,7 +206,10 @@ def test_recall_settings_roundtrip(client, auth_headers):
     headers = auth_headers()
     defaults = client.get("/api/v1/recall-settings", headers=headers).json()
     assert defaults["intensity"] == 3
-    assert defaults["scheduler"] == "sm2"
+    # New accounts get FSRS (issue #141). Existing accounts are pinned to SM-2
+    # by migration 20260730_14 rather than being switched mid-deck, so this
+    # asserts the *new-account* default and not what everyone has.
+    assert defaults["scheduler"] == "fsrs"
 
     resp = client.put(
         "/api/v1/recall-settings",

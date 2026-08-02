@@ -408,9 +408,14 @@ class RecallSettings:
     # rather than rebuilding them.
     notifications_paused: bool = False
     # Kept with the user's review preferences so every answer in a session
-    # uses the same algorithm.  New accounts retain the established SM-2
-    # behaviour until they explicitly opt into FSRS.
-    scheduler: str = "sm2"
+    # uses the same algorithm. New accounts get FSRS, which schedules from a
+    # target retrievability rather than SM-2's fixed first intervals.
+    #
+    # Existing accounts are *not* switched. Migration 20260730_14 writes an
+    # explicit "sm2" row for every account that had none, so changing this
+    # default cannot silently move someone who never opened the settings
+    # screen onto a different algorithm mid-deck.
+    scheduler: str = "fsrs"
 
     def set_intensity(self, level: int) -> None:
         if not (1 <= level <= 5):
