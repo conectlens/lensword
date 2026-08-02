@@ -227,3 +227,15 @@ export interface AISettings {
   max_output_tokens: number
   context_max_chars: number
 }
+
+export interface DesktopNotification {
+  id: number
+  message: string
+  created_at: string
+}
+
+export interface PendingDesktopNotifications {
+  notifications: DesktopNotification[]
+  /** True when the page was cut short by the limit, so more are waiting. */
+  has_more: boolean
+}

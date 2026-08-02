@@ -20,8 +20,16 @@ import { ExtractPage } from './features/extract/ExtractPage'
 import { ImportPage } from './features/import/ImportPage'
 import { PracticePage } from './features/practice/PracticePage'
 import { WeeklyReportPage } from './features/reports/WeeklyReportPage'
+import { useAuth } from './context/AuthContext'
+import { useDesktopNotifications } from './lib/useDesktopNotifications'
 
 export default function App() {
+  // Only while signed in: the outbox endpoint is authenticated, and polling it
+  // without a token would produce nothing but 401s. A no-op in the browser
+  // build (ROADMAP 3.2).
+  const { user } = useAuth()
+  useDesktopNotifications(user !== null)
+
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />

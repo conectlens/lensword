@@ -80,14 +80,22 @@ features/      one folder per bounded context (auth, groups, rooms, review, ...)
   pretending to call a provider. See
   [Optional: local AI mnemonic suggestions](#optional-local-ai-mnemonic-suggestions-ollama).
   Image generation is still not implemented — no image provider is wired up.
-- **Reminders are scheduled and delivered; no user-facing channel receives them
-  yet.** Recall settings (channels, quiet hours, triggers) persist for real, a
+- **Reminders reach the desktop; push and email still only reach the log.**
+  Recall settings (channels, quiet hours, triggers) persist for real, a
   background scheduler registers each reminder and fires it at the configured
-  time on the account's own clock, and those settings gate the delivery before
-  it reaches the notification port. What is missing is a credentialed provider
-  behind that port: the only adapter writes the message to the application log,
-  so nothing arrives as a push, email, or desktop notification. The settings
-  page says so rather than silently no-op'ing.
+  time on the account's own clock, and those settings gate delivery before it
+  reaches the notification port.
+
+  The **desktop** channel is now backed by a real adapter. Since the desktop
+  app is remote-only (ADR 0002), the backend records what the notification tray
+  is owed and the shell collects it and raises a native toast. That path is
+  unit-tested end to end, but **no toast has actually been observed on macOS,
+  Windows or Linux** — that needs a packaged and, on macOS, signed build
+  (ROADMAP 3.1). Treat it as implemented and unverified rather than proven.
+
+  **Push and email** still have no credentialed provider behind the port: the
+  only adapter for them writes the message to the application log, so nothing
+  arrives. The settings page says so rather than silently no-op'ing.
 
 ## Running it
 
