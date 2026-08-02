@@ -6,8 +6,9 @@ import { Card } from '../../components/ui/Card'
 import { Icon } from '../../components/ui/Icon'
 import { Spinner } from '../../components/ui/Spinner'
 import { WeaknessesTab } from './WeaknessesTab'
+import { CefrProgressTab } from './CefrProgressTab'
 
-type Tab = 'overview' | 'weaknesses'
+type Tab = 'overview' | 'weaknesses' | 'levels'
 
 export function ProfilePage() {
   const { user } = useAuth()
@@ -33,7 +34,7 @@ export function ProfilePage() {
       </div>
 
       <div className="flex gap-2 border-b border-white/10">
-        {(['overview', 'weaknesses'] as const).map((name) => (
+        {(['overview', 'weaknesses', 'levels'] as const).map((name) => (
           <button
             key={name}
             type="button"
@@ -49,6 +50,7 @@ export function ProfilePage() {
       </div>
 
       {tab === 'weaknesses' && <WeaknessesTab />}
+      {tab === 'levels' && <CefrProgressTab />}
 
       {tab === 'overview' && (
       <>

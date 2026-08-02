@@ -284,3 +284,39 @@ export interface WeaknessProfile {
   // have no weaknesses".
   insufficient_data: boolean
 }
+
+// Knowledge-graph search and CEFR progress (issue #143).
+export interface RelatedWord {
+  word_id: number
+  term: string
+  relation: string
+  strength: number
+  // Why the two are related, in words. A graph that cannot justify an edge is
+  // one nobody trusts enough to act on.
+  evidence: string
+}
+
+export interface Prerequisites {
+  word_id: number
+  term: string
+  cefr_level: string | null
+  prerequisites: RelatedWord[]
+  // The word's own level is unknown, so no comparison is possible. Different
+  // from "nothing easier found", which is a real answer.
+  level_unknown: boolean
+}
+
+export interface LevelProgress {
+  level: string
+  total: number
+  started: number
+  mastered: number
+  mastery_share: number
+}
+
+export interface CefrProgress {
+  levels: LevelProgress[]
+  // Words with no level recorded, kept separate so the parts add up.
+  unlevelled: LevelProgress | null
+  total_words: number
+}

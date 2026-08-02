@@ -1,6 +1,6 @@
 import type {
   AdminStats, Group, MnemonicNote, ProfileOverview, RecallSettings, Room,
-  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile,
+  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile, CefrProgress, Prerequisites, RelatedWord,
 } from './types'
 import { resolveApiBase } from './runtimeConfig'
 
@@ -213,6 +213,13 @@ export const settingsApi = {
     request<RecallSettings>('/api/v1/recall-settings', { method: 'PUT', body: JSON.stringify(settings) }),
   profile: () => request<ProfileOverview>('/api/v1/profile'),
   weaknesses: () => request<WeaknessProfile>('/api/v1/me/weaknesses'),
+  cefrProgress: () => request<CefrProgress>('/api/v1/me/cefr-progress'),
+}
+
+export const graphApi = {
+  prerequisites: (wordId: number) => request<Prerequisites>(`/api/v1/words/${wordId}/prerequisites`),
+  related: (wordId: number, limit = 10) =>
+    request<RelatedWord[]>(`/api/v1/words/${wordId}/related?limit=${limit}`),
 }
 
 export const practiceApi = {

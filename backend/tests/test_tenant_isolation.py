@@ -155,6 +155,11 @@ CROSS_TENANT_CASES = [
           {"term": "stolen", "target_language": "Spanish", "translations": ["y"]}),
     _case("PATCH", "/api/v1/words/{word}/associations", {"synonyms": ["stolen"]}),
     _case("DELETE", "/api/v1/words/{word}"),
+    # Knowledge graph (#143). Read-only, but a graph that answered for
+    # someone else's word would disclose both that it exists and what it
+    # relates to.
+    _case("GET", "/api/v1/words/{word}/prerequisites"),
+    _case("GET", "/api/v1/words/{word}/related"),
     # Rooms
     _case("GET", "/api/v1/rooms/{room}"),
     _case("GET", "/api/v1/rooms/{room}/words"),
