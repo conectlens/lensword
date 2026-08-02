@@ -23,6 +23,7 @@ from app.config import Settings, get_settings
 from app.infrastructure.db import engine
 from app.domain.services.notification_channel import NotificationChannel
 from app.infrastructure.jobs import dev_heartbeat
+from app.infrastructure.jobs.claim_maintenance import JOB_ID as PURGE_CLAIMS_JOB_ID, ClaimPurger
 from app.infrastructure.notifications import LogNotificationChannel
 from app.infrastructure.reminders import restore_reminder_jobs
 
@@ -76,6 +77,28 @@ def register_jobs(
         scheduler.add_job(dev_heartbeat.run, "interval", seconds=10, id="dev_heartbeat")
     if session_factory is None:
         return
+
+    # Housekeeping for the claims that make firing exclusive (issue #20).
+    # Nothing reads a claim after the firing it guarded, so without this the
+    # table only ever grows. Daily rather than hourly: the retention window is
+    # a week, so the reclaimable volume changes slowly.
+    #
+    # Removed first, then added. `replace_existing` alone is not enough: before
+    # the scheduler is started APScheduler only queues jobs and applies the
+    # replacement at start time, so a job added twice beforehand is genuinely
+    # there twice in the meantime. Same reasoning as
+    # ApSchedulerReminderScheduler.schedule.
+    if scheduler.get_job(PURGE_CLAIMS_JOB_ID) is not None:
+        scheduler.remove_job(PURGE_CLAIMS_JOB_ID)
+    scheduler.add_job(
+        ClaimPurger(session_factory),
+        "interval",
+        days=1,
+        id=PURGE_CLAIMS_JOB_ID,
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
 
     try:
         restore_reminder_jobs(scheduler, session_factory, channel or LogNotificationChannel())

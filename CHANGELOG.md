@@ -158,6 +158,10 @@ releases exist yet).
 
 ### Fixed
 
+- The scheduler's claims table no longer grows without bound. `#20` added a row
+  per job firing to make delivery exclusive, and wrote a prune for them, but
+  nothing ever called it — so the table was append-only for the life of a
+  deployment. A daily housekeeping job now runs it.
 - Deleting a word or a group no longer fails when anything references it.
   `DELETE /api/v1/words/{id}` on a word placed in a room raised a foreign-key
   violation — a 500 — against Postgres, and against SQLite silently left the
