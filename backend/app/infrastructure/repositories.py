@@ -1326,3 +1326,96 @@ class SqlAlchemyWordRevisionRepository:
             .limit(limit)
         )
         return list(self.db.scalars(stmt))
+
+
+class SqlAlchemyConversationRepository:
+    """Tutoring conversations and their turns (issue #135)."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def start(
+        self,
+        user_id: int,
+        target_language: str,
+        difficulty: str,
+        group_id: int | None = None,
+        scenario: str | None = None,
+    ) -> ConversationSessionModel:
+        model = ConversationSessionModel(
+            user_id=user_id,
+            group_id=group_id,
+            target_language=target_language,
+            difficulty=difficulty,
+            scenario=scenario,
+            created_at=utcnow(),
+        )
+        self.db.add(model)
+        self.db.flush()
+        return model
+
+    def get(self, session_id: int) -> ConversationSessionModel | None:
+        stmt = (
+            select(ConversationSessionModel)
+            .where(ConversationSessionModel.id == session_id)
+            .options(selectinload(ConversationSessionModel.messages))
+        )
+        return self.db.scalar(stmt)
+
+    def list_for_user(self, user_id: int, limit: int = 50) -> list[ConversationSessionModel]:
+        stmt = (
+            select(ConversationSessionModel)
+            .where(ConversationSessionModel.user_id == user_id)
+            .options(selectinload(ConversationSessionModel.messages))
+            .order_by(ConversationSessionModel.created_at.desc())
+            .limit(limit)
+        )
+        return list(self.db.scalars(stmt))
+
+    def add_message(
+        self,
+        session_id: int,
+        speaker: str,
+        text: str,
+        corrections: list | None = None,
+    ) -> ConversationMessageModel:
+        model = ConversationMessageModel(
+            session_id=session_id,
+            speaker=speaker,
+            text=text,
+            corrections=corrections or None,
+            created_at=utcnow(),
+        )
+        self.db.add(model)
+        self.db.flush()
+        return model
+
+    def end(self, session_id: int) -> None:
+        session = self.db.get(ConversationSessionModel, session_id)
+        if session is not None and session.ended_at is None:
+            session.ended_at = utcnow()
+            self.db.flush()
+
+    def delete(self, session_id: int) -> None:
+        session = self.db.get(ConversationSessionModel, session_id)
+        if session is not None:
+            # Messages go with it through the cascade — a turn without its
+            # conversation is unreadable.
+            self.db.delete(session)
+            self.db.flush()
+
+    def recent_terms(self, user_id: int, limit: int = 40) -> list[str]:
+        """Words the learner is currently studying, most recently added first.
+
+        Ordered by recency rather than alphabetically because it is what the
+        tutor should weave in, and the newest words are the ones needing
+        practice.
+        """
+        stmt = (
+            select(WordModel.term)
+            .join(GroupModel, WordModel.group_id == GroupModel.id)
+            .where(GroupModel.owner_id == user_id)
+            .order_by(WordModel.created_at.desc())
+            .limit(limit)
+        )
+        return [term for term in self.db.scalars(stmt) if term]

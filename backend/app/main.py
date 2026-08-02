@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routers import admin, ai, ai_settings, auth, extract, graph, groups, imports, mcp, mcp_plans, mnemonics, notifications, practice, reminder_windows, reports, sync, review, rooms, settings, weaknesses, words
+from app.api.routers import admin, ai, ai_settings, auth, conversations, extract, graph, groups, imports, mcp, mcp_plans, mnemonics, notifications, practice, reminder_windows, reports, sync, review, rooms, settings, weaknesses, words
 from app.application.use_cases.auth import RegisterUserUseCase
 from app.config import get_settings
 from app.domain.exceptions import DomainError
