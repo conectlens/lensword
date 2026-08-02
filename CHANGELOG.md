@@ -49,6 +49,18 @@ releases exist yet).
 
 ### Added
 
+- Personalized learning paths. A stated goal — "order food confidently in
+  Spain" — becomes a short, ordered set of milestones, each naming a vocabulary
+  topic and a word target. Progress is counted from the learner's actual deck
+  at read time and never stored, so the bar cannot disagree with the word list
+  beside it, and deleting words moves it back. A model's plan is bounded and
+  cleaned before anything is stored: over-long plans are truncated, steps
+  without a title or topic are dropped, absurd word targets are capped, and a
+  plan with nothing usable is reported as unavailable rather than saved as an
+  empty path — which would leave the learner unable to tell "no steps needed"
+  from "this went wrong". Generation answers with a status rather than an
+  error, keeping "AI not configured" distinguishable from "temporarily down".
+
 - Local AI through Ollama as a first-class setup. An admin-only check reports
   whether the daemon is reachable and whether the configured model is actually
   installed, keeping the three failure modes distinct — nothing listening,

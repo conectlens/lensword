@@ -10,6 +10,7 @@ import { RoomsPage } from './features/rooms/RoomsPage'
 import { RoomDetailPage } from './features/rooms/RoomDetailPage'
 import { ReviewSessionPage } from './features/review/ReviewSessionPage'
 import { MnemoLabPage } from './features/mnemolab/MnemoLabPage'
+import { LearningPathsPage } from './features/paths/LearningPathsPage'
 import { MindMapPage } from './features/mindmap/MindMapPage'
 import { ProfilePage } from './features/profile/ProfilePage'
 import { SettingsPage } from './features/settings/SettingsPage'
@@ -54,6 +55,7 @@ export default function App() {
 
       <Route path="/review" element={<ProtectedRoute><ReviewSessionPage /></ProtectedRoute>} />
 
+      <Route path="/paths" element={<ProtectedRoute><LearningPathsPage /></ProtectedRoute>} />
       <Route path="/mnemolab" element={<ProtectedRoute><MnemoLabPage /></ProtectedRoute>} />
       <Route path="/mnemolab/:wordId" element={<ProtectedRoute><MnemoLabPage /></ProtectedRoute>} />
       <Route path="/mindmap/:wordId" element={<ProtectedRoute><MindMapPage /></ProtectedRoute>} />

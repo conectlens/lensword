@@ -1,6 +1,6 @@
 import type {
   AdminStats, Group, MnemonicNote, ProfileOverview, RecallSettings, Room,
-  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile, CefrProgress, Prerequisites, RelatedWord, WordRevision, AiState, OllamaProbe,
+  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile, CefrProgress, Prerequisites, RelatedWord, WordRevision, AiState, OllamaProbe, LearningPath, GeneratePathResult,
 } from './types'
 import { resolveApiBase } from './runtimeConfig'
 
@@ -112,6 +112,17 @@ export const importsApi = {
     }),
   preview: (group_id: number, records: { term: string; translations?: string[]; definition?: string | null; part_of_speech?: string | null; cefr_level?: string | null; pronunciation?: string | null }[], enrich_with_ai: boolean) => request<{ records: ImportPreviewRecord[] }>('/api/v1/imports/preview', { method: 'POST', body: JSON.stringify({ group_id, records, enrich_with_ai }) }),
   commit: (group_id: number, records: ImportPreviewRecord[]) => request<{ added: number }>('/api/v1/imports/commit', { method: 'POST', body: JSON.stringify({ group_id, records }) }),
+}
+
+export const learningPathsApi = {
+  list: () => request<LearningPath[]>('/api/v1/learning-paths'),
+  get: (id: number) => request<LearningPath>(`/api/v1/learning-paths/${id}`),
+  generate: (goal: string, target_language: string, group_id: number | null = null) =>
+    request<GeneratePathResult>('/api/v1/learning-paths/generate', {
+      method: 'POST',
+      body: JSON.stringify({ goal, target_language, group_id }),
+    }),
+  remove: (id: number) => request<void>(`/api/v1/learning-paths/${id}`, { method: 'DELETE' }),
 }
 
 export const groupsApi = {
