@@ -232,6 +232,7 @@ def _reminder_to_domain(m: ReminderModel) -> Reminder:
         trigger_time=m.trigger_time,
         recurrence=Recurrence(m.recurrence),
         enabled=m.enabled,
+        revision=m.revision,
         created_at=m.created_at,
     )
 
@@ -269,6 +270,9 @@ def _apply_reminder(m: ReminderModel, e: Reminder) -> None:
     m.recurrence = e.recurrence.value
     m.enabled = e.enabled
     m.created_at = e.created_at
+    # `revision` is deliberately absent. It is server-authoritative (issue
+    # #87): a client that could set it could claim to be newer than it is and
+    # win every convergence. It is bumped in update() instead.
 
 
 def _settings_to_domain(m: RecallSettingsModel) -> RecallSettings:
@@ -738,6 +742,9 @@ class SqlAlchemyReminderRepository:
         if m is None:
             raise ValueError(f"Reminder {reminder.id} not found")
         _apply_reminder(m, reminder)
+        # Bumped here rather than taken from the caller, so the number a
+        # failover decision rests on cannot be chosen by whoever is asking.
+        m.revision = (m.revision or 1) + 1
         self.db.flush()
         return _reminder_to_domain(m)
 

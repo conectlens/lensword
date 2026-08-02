@@ -334,6 +334,10 @@ class Reminder:
     trigger_time: str
     recurrence: Recurrence
     enabled: bool = True
+    # Bumped on every edit. Compared rather than timestamps, because two
+    # devices' clocks disagree and an edit made on a slow clock must not lose
+    # to an older one made on a fast clock (issue #87).
+    revision: int = 1
     created_at: datetime = field(default_factory=utcnow)
 
     def enable(self) -> None:

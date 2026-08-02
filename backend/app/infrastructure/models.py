@@ -182,6 +182,10 @@ class ReminderModel(Base):
     trigger_time: Mapped[str] = mapped_column(String(8))
     recurrence: Mapped[str] = mapped_column(String(16))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Authority for failover (issue #87). Two devices holding different
+    # revisions hold the same reminder; the higher one is the real schedule,
+    # and a firing computed from a lower one is discarded on reconnect.
+    revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime)
 
 
