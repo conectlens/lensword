@@ -49,7 +49,10 @@ depends on this.
       quiet hours, triggers) to actually gate delivery through the
       notification port. *(Shipped)*
 - [ ] **2.2** Desktop OS-notification adapter (depends on Phase 3's shell;
-      can use a log adapter until then). *(Planned)*
+      can use a log adapter until then). *(In Progress — the backend adapter
+      exists and durably queues desktop notifications for collection over the
+      API. No OS toast is drawn yet: ADR 0002 made the shell a remote client,
+      so displaying one is the shell's side of the handoff, tracked in 3.2.)*
 - [ ] **2.3** Remove README's "notifications configured but not dispatched"
       disclaimer once true. *(Planned)*
 
@@ -69,10 +72,12 @@ depends on this.
       API. *(Planned)*
 - [ ] **3.3** CI build+package jobs producing installers for all three
       OSes on tagged releases. *(Planned)*
-- [ ] **3.4** Decide bundled-local-backend vs. remote-only mode for
-      desktop. A recommendation (remote-only first, sidecar-ready) is drafted
-      in [ADR 0002](docs/adr/0002-desktop-backend-mode.md); the item stays open
-      until that ADR is accepted. *(Planned — product decision)*
+- [x] **3.4** Decide bundled-local-backend vs. remote-only mode for
+      desktop. Decided: the first desktop release is remote-only, and the
+      architecture is kept sidecar-ready so bundling stays an additive
+      capability rather than a rewrite. Recorded in
+      [ADR 0002](docs/adr/0002-desktop-backend-mode.md) (Accepted 2026-08-02),
+      including the triggers for revisiting it. *(Shipped — product decision)*
 
 ## Phase 4 — Cloud support (multi-tenant hosting)
 

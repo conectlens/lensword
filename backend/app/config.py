@@ -15,11 +15,19 @@ class Settings(BaseSettings):
     app_name: str = "LensWord API"
     environment: str = "development"
 
+    # Root logger level. INFO in development gives request/scheduler visibility
+    # without SQL noise; DEBUG additionally requires db_echo below to see queries.
+    log_level: str = "INFO"
+
     # SQLite remains the default so a fresh checkout runs with no database
     # server to install. Postgres is the supported deployment target (ROADMAP
     # 4.0) and is what docker-compose starts; point this at
     # `postgresql+psycopg://user:pass@host:5432/db` to use it.
     database_url: str = "sqlite:///./data/lensword.db"
+    # Echoes every SQL statement SQLAlchemy issues to the log. Off by default —
+    # even at DEBUG log level — since it's noisy; opt in per-session when
+    # tracking down a query.
+    db_echo: bool = False
 
     # Connection-pool bounds. Ignored on SQLite, which has no server-side
     # connection to budget. The defaults are deliberately modest: a managed
@@ -74,6 +82,16 @@ class Settings(BaseSettings):
         if value <= 0:
             raise ValueError(f"must be greater than 0 (got {value})")
         return value
+
+    @field_validator("log_level")
+    @classmethod
+    def _known_log_level(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if normalized not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
+            raise ValueError(
+                f"must be one of DEBUG, INFO, WARNING, ERROR, CRITICAL (got '{value}')"
+            )
+        return normalized
 
     @field_validator("ai_provider")
     @classmethod

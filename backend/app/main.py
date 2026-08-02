@@ -5,24 +5,24 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routers import admin, ai, ai_settings, auth, extract, groups, imports, mcp, mcp_plans, mnemonics, practice, reports, review, rooms, settings, words
+from app.api.routers import admin, ai, ai_settings, auth, extract, groups, imports, mcp, mcp_plans, mnemonics, notifications, practice, reports, review, rooms, settings, words
 from app.application.use_cases.auth import RegisterUserUseCase
 from app.config import get_settings
 from app.domain.exceptions import DomainError
 from app.domain.value_objects import UserRole
 from app.infrastructure.db import SessionLocal, init_db
 from app.infrastructure.repositories import SqlAlchemyUserRepository
-from app.infrastructure.notifications import LogNotificationChannel
+from app.infrastructure.notifications import DesktopNotificationChannel, LogNotificationChannel
 from app.infrastructure.scheduler import create_scheduler, register_jobs
 
 settings_ = get_settings()
 
 if settings_.environment == "development":
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=settings_.log_level)
     # basicConfig is intentionally a no-op once pytest/a host process has
     # installed a handler. Set the level explicitly so development diagnostics
     # do not disappear merely because the app is imported second.
-    logging.getLogger().setLevel(logging.INFO)
+    logging.getLogger().setLevel(settings_.log_level)
 
 
 @asynccontextmanager
@@ -33,7 +33,13 @@ async def lifespan(_app: FastAPI):
     # Held on app state so a request that has to re-register a user's jobs
     # (a time-zone change) delivers through the same channel startup used,
     # rather than quietly constructing a second one.
-    _app.state.notification_channel = LogNotificationChannel()
+    #
+    # Desktop wraps the log adapter rather than replacing it: only the desktop
+    # channel becomes an outbox row, and push/email/in-app keep logging exactly
+    # as before (ROADMAP 2.2, issue #27).
+    _app.state.notification_channel = DesktopNotificationChannel(
+        SessionLocal, fallback=LogNotificationChannel()
+    )
     register_jobs(
         _app.state.scheduler, settings_, SessionLocal, _app.state.notification_channel
     )
@@ -65,6 +71,7 @@ app.include_router(rooms.router)
 app.include_router(review.router)
 app.include_router(practice.router)
 app.include_router(reports.router)
+app.include_router(notifications.router)
 app.include_router(mnemonics.router)
 app.include_router(settings.router)
 app.include_router(admin.router)

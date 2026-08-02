@@ -13,6 +13,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.domain.entities import (
+    DesktopNotification,
     Group,
     MnemonicNote,
     RecallSettings,
@@ -38,6 +39,7 @@ from app.domain.value_objects import (
     utcnow,
 )
 from app.infrastructure.models import (
+    DesktopNotificationModel,
     GroupModel,
     MnemonicNoteModel,
     RecallSettingsModel,
@@ -804,3 +806,88 @@ class SqlAlchemyWeeklyLearningReportRepository:
         model.narration = report.narration
         self.db.flush()
         return _weekly_report_to_domain(model)
+
+
+def _desktop_notification_to_domain(m: DesktopNotificationModel) -> DesktopNotification:
+    return DesktopNotification(
+        id=m.id,
+        user_id=m.user_id,
+        message=m.message,
+        created_at=m.created_at,
+        delivered_at=m.delivered_at,
+    )
+
+
+class SqlAlchemyDesktopNotificationRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def list_pending(self, user_id: int, not_before: datetime, limit: int) -> list[DesktopNotification]:
+        stmt = (
+            select(DesktopNotificationModel)
+            .where(
+                DesktopNotificationModel.user_id == user_id,
+                DesktopNotificationModel.delivered_at.is_(None),
+                DesktopNotificationModel.created_at >= not_before,
+            )
+            # Oldest first: a shell that collects a truncated page gets the
+            # notifications it missed earliest, and repeated collection walks
+            # forward through the backlog instead of re-reading the newest page.
+            .order_by(DesktopNotificationModel.created_at.asc(), DesktopNotificationModel.id.asc())
+            .limit(limit)
+        )
+        return [_desktop_notification_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def add(self, notification: DesktopNotification) -> DesktopNotification:
+        model = DesktopNotificationModel(
+            user_id=notification.user_id,
+            message=notification.message,
+            created_at=notification.created_at,
+            delivered_at=notification.delivered_at,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _desktop_notification_to_domain(model)
+
+    def mark_delivered(self, user_id: int, notification_ids: list[int]) -> int:
+        """Acknowledge collection. Returns the number of rows actually moved.
+
+        The `user_id` predicate is not redundant with the id list: without it,
+        a caller could acknowledge — and so hide — another account's pending
+        notifications by guessing ids. Rows already delivered are excluded, so
+        a repeated acknowledgement is a no-op returning 0 rather than
+        overwriting the first collection's timestamp.
+        """
+        if not notification_ids:
+            return 0
+        stmt = select(DesktopNotificationModel).where(
+            DesktopNotificationModel.user_id == user_id,
+            DesktopNotificationModel.id.in_(notification_ids),
+            DesktopNotificationModel.delivered_at.is_(None),
+        )
+        now = utcnow()
+        moved = 0
+        for model in self.db.scalars(stmt):
+            model.delivered_at = now
+            moved += 1
+        self.db.flush()
+        return moved
+
+    def purge_delivered_before(self, cutoff: datetime) -> int:
+        """Drop collected rows older than `cutoff`, across all accounts.
+
+        Only delivered rows are removed. A pending row is never purged by age
+        here — deciding that a notification is too old to still be worth
+        showing is the collecting caller's policy (`not_before`), and applying
+        it destructively would also discard the record that it was owed.
+        """
+        stmt = select(DesktopNotificationModel).where(
+            DesktopNotificationModel.delivered_at.is_not(None),
+            DesktopNotificationModel.delivered_at < cutoff,
+        )
+        removed = 0
+        for model in self.db.scalars(stmt):
+            self.db.delete(model)
+            removed += 1
+        self.db.flush()
+        return removed
