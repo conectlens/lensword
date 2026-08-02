@@ -160,6 +160,11 @@ CROSS_TENANT_CASES = [
     # relates to.
     _case("GET", "/api/v1/words/{word}/prerequisites"),
     _case("GET", "/api/v1/words/{word}/related"),
+    # AI provenance (#140). The history of someone else's card describes
+    # their vocabulary, and verification is a claim about their data.
+    _case("GET", "/api/v1/words/{word}/history"),
+    _case("POST", "/api/v1/words/{word}/verify"),
+    _case("DELETE", "/api/v1/words/{word}/verify"),
     # Rooms
     _case("GET", "/api/v1/rooms/{room}"),
     _case("GET", "/api/v1/rooms/{room}/words"),

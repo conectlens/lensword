@@ -1,6 +1,6 @@
 import type {
   AdminStats, Group, MnemonicNote, ProfileOverview, RecallSettings, Room,
-  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile, CefrProgress, Prerequisites, RelatedWord,
+  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile, CefrProgress, Prerequisites, RelatedWord, WordRevision, AiState,
 } from './types'
 import { resolveApiBase } from './runtimeConfig'
 
@@ -127,6 +127,25 @@ export const groupsApi = {
 }
 
 export const wordsApi = {
+  history: (wordId: number) => request<WordRevision[]>(`/api/v1/words/${wordId}/history`),
+  verify: (wordId: number) =>
+    request<{ word_id: number; state: AiState; ai_verified_at: string | null }>(
+      `/api/v1/words/${wordId}/verify`,
+      { method: 'POST' },
+    ),
+  unverify: (wordId: number) =>
+    request<{ word_id: number; state: AiState; ai_verified_at: string | null }>(
+      `/api/v1/words/${wordId}/verify`,
+      { method: 'DELETE' },
+    ),
+  bulkEdit: (
+    word_ids: number[],
+    fields: { cefr_level?: string | null; part_of_speech?: string | null; category?: string | null; tags?: string[] | null },
+  ) =>
+    request<{ updated: number; skipped: number[] }>('/api/v1/words/bulk', {
+      method: 'PATCH',
+      body: JSON.stringify({ word_ids, ...fields }),
+    }),
   get: (wordId: number) => request<Word>(`/api/v1/words/${wordId}`),
   update: (wordId: number, input: WordInput) =>
     request<Word>(`/api/v1/words/${wordId}`, { method: 'PUT', body: JSON.stringify(input) }),

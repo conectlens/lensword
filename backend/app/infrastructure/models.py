@@ -76,6 +76,12 @@ class WordModel(Base):
     ai_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     ai_provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
     ai_model: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # When a human last confirmed the model-written fields on this card
+    # (#140). A timestamp rather than a boolean: "verified" without "when"
+    # cannot be reasoned about once the card changes again. Cleared when a
+    # model rewrites a field, because the badge would otherwise vouch for
+    # text nobody read.
+    ai_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     synonyms: Mapped[list] = mapped_column(JSON, default=list)
     antonyms: Mapped[list] = mapped_column(JSON, default=list)
     topics: Mapped[list] = mapped_column(JSON, default=list)
@@ -433,3 +439,35 @@ class MistakeEventModel(Base):
     context: Mapped[str | None] = mapped_column(String(32), nullable=True)
     occurrence_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
+class WordFieldRevisionModel(Base):
+    """One AI-authored field changing value (issue #140).
+
+    Append-only. The point of a history is to answer "what did this say
+    before?", and a row that can be rewritten cannot answer it.
+
+    Values are stored as text even for list fields, joined on newline. A JSON
+    column would preserve structure the history does not need — nobody diffs a
+    synonym list programmatically, they read it — and it would make the table
+    harder to inspect by hand when someone is trying to work out what happened.
+    """
+
+    __tablename__ = "word_field_revisions"
+    __table_args__ = (
+        # Every read is "this word's history, newest first".
+        Index("ix_word_field_revisions_word_changed", "word_id", "changed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    word_id: Mapped[int] = mapped_column(ForeignKey("words.id"), index=True)
+    field: Mapped[str] = mapped_column(String(32), index=True)
+    # Null means the field had no value before, which is different from having
+    # been an empty string — the first is "the model added this", the second
+    # would be a change that changed nothing.
+    before_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    after_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # "ai", "human" or "bulk". Recorded at the time rather than inferred later,
+    # because after the fact there is no way to tell them apart.
+    source: Mapped[str] = mapped_column(String(8), index=True)
+    changed_at: Mapped[datetime] = mapped_column(DateTime, index=True)

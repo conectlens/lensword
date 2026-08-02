@@ -15,6 +15,7 @@ from app.infrastructure.repositories import (
     SqlAlchemyDesktopNotificationRepository,
     SqlAlchemyGroupRepository,
     SqlAlchemyMistakeEventRepository,
+    SqlAlchemyWordRevisionRepository,
     SqlAlchemyMnemonicRepository,
     SqlAlchemyRecallSettingsRepository,
     SqlAlchemyDailySessionPreferenceRepository,
@@ -90,6 +91,10 @@ def get_mistake_event_repository(db: DbSession) -> SqlAlchemyMistakeEventReposit
     return SqlAlchemyMistakeEventRepository(db)
 
 
+def get_word_revision_repository(db: DbSession) -> SqlAlchemyWordRevisionRepository:
+    return SqlAlchemyWordRevisionRepository(db)
+
+
 @lru_cache
 def _ai_provider() -> AIProvider | None:
     """Built once per process, not per request — the Ollama adapter owns a
@@ -115,6 +120,7 @@ ReminderRepo = Annotated[SqlAlchemyReminderRepository, Depends(get_reminder_repo
 DesktopNotificationRepo = Annotated[SqlAlchemyDesktopNotificationRepository, Depends(get_desktop_notification_repository)]
 SyncOperationRepo = Annotated[SqlAlchemySyncOperationRepository, Depends(get_sync_operation_repository)]
 MistakeEventRepo = Annotated[SqlAlchemyMistakeEventRepository, Depends(get_mistake_event_repository)]
+WordRevisionRepo = Annotated[SqlAlchemyWordRevisionRepository, Depends(get_word_revision_repository)]
 OptionalAIProvider = Annotated[AIProvider | None, Depends(get_ai_provider)]
 
 

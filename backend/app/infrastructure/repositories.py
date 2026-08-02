@@ -43,6 +43,7 @@ from app.infrastructure.models import (
     SyncOperationModel,
     GroupModel,
     MistakeEventModel,
+    WordFieldRevisionModel,
     MnemonicNoteModel,
     RecallSettingsModel,
     DailySessionPreferenceModel,
@@ -133,6 +134,7 @@ def _word_to_domain(m: WordModel) -> Word:
         ai_confidence=m.ai_confidence,
         ai_provider=m.ai_provider,
         ai_model=m.ai_model,
+        ai_verified_at=m.ai_verified_at,
         synonyms=list(m.synonyms or []),
         antonyms=list(m.antonyms or []),
         topics=list(m.topics or []),
@@ -165,6 +167,7 @@ def _apply_word(m: WordModel, e: Word) -> None:
     m.ai_confidence = e.ai_confidence
     m.ai_provider = e.ai_provider
     m.ai_model = e.ai_model
+    m.ai_verified_at = e.ai_verified_at
     m.synonyms = list(e.synonyms)
     m.antonyms = list(e.antonyms)
     m.topics = list(e.topics)
@@ -360,6 +363,7 @@ def _delete_word_dependents(db: Session, word_ids: list[int]) -> None:
         MnemonicNoteModel,
         PracticeExerciseModel,
         MistakeEventModel,
+        WordFieldRevisionModel,
     ):
         for row in db.scalars(select(model).where(model.word_id.in_(word_ids))):
             db.delete(row)
@@ -1275,3 +1279,50 @@ class SqlAlchemyMistakeEventRepository:
             MistakeEventModel.user_id == user_id
         )
         return self.db.scalar(stmt) or 0
+
+
+class SqlAlchemyWordRevisionRepository:
+    """Append-only history of AI-authored field changes (issue #140).
+
+    No update and no delete-by-id. A history whose rows can be rewritten
+    cannot answer the one question it exists for.
+    """
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def record(
+        self,
+        word_id: int,
+        field: str,
+        before_value: str | None,
+        after_value: str | None,
+        source: str,
+        changed_at: datetime | None = None,
+    ) -> WordFieldRevisionModel:
+        model = WordFieldRevisionModel(
+            word_id=word_id,
+            field=field,
+            before_value=before_value,
+            after_value=after_value,
+            source=source,
+            changed_at=changed_at or utcnow(),
+        )
+        self.db.add(model)
+        self.db.flush()
+        return model
+
+    def list_for_word(self, word_id: int, limit: int = 200) -> list[WordFieldRevisionModel]:
+        """Newest first.
+
+        Bounded because a card enriched repeatedly could accumulate a long
+        history, and the answer to "what did this say before?" is almost always
+        in the last few entries.
+        """
+        stmt = (
+            select(WordFieldRevisionModel)
+            .where(WordFieldRevisionModel.word_id == word_id)
+            .order_by(WordFieldRevisionModel.changed_at.desc(), WordFieldRevisionModel.id.desc())
+            .limit(limit)
+        )
+        return list(self.db.scalars(stmt))

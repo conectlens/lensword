@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { Icon } from '../../components/ui/Icon'
 import { Spinner } from '../../components/ui/Spinner'
+import { AiProvenancePanel } from '../words/AiProvenance'
 import { Textarea } from '../../components/ui/Textarea'
 import { MnemonicSuggestion } from './MnemonicSuggestion'
 
@@ -114,6 +115,20 @@ export function MnemoLabPage() {
         ) : (
           <div className="mx-auto flex max-w-3xl flex-col gap-8 pb-8">
             <h1 className="font-display text-5xl font-bold text-primary">{selected.term}</h1>
+            {/* Provenance sits next to the card rather than buried in a menu:
+                whether a model wrote this and whether anyone checked it is
+                context for reading the card, not a setting. */}
+            <AiProvenancePanel
+              wordId={selected.id}
+              state={selected.ai_state}
+              onStateChange={(next) =>
+                setWords((current) =>
+                  current?.map((word) =>
+                    word.id === selected.id ? { ...word, ai_state: next } : word,
+                  ) ?? current,
+                )
+              }
+            />
             <Card className="p-6">
               <div className="grid grid-cols-2 gap-6">
                 <div>
