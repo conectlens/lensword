@@ -48,6 +48,16 @@ releases exist yet).
   which the repeated OS callbacks in ROADMAP 3.2 will depend on. **No OS toast
   is drawn yet** — that is the shell's half of the handoff (ROADMAP 3.2).
 
+- The desktop backend mode is decided: the first desktop release is
+  **remote-only**, talking to a hosted or self-hosted LensWord server, and no
+  Python interpreter or database is bundled into the installer. The loopback
+  branch of the endpoint contract is retained and kept working, so bundling a
+  local backend later is an additive capability rather than a rewrite. The
+  trade-off, the options weighed against it, and the conditions for revisiting
+  it are recorded in [ADR 0002](docs/adr/0002-desktop-backend-mode.md), now
+  Accepted. This closes the question ADR 0001 deliberately left open; it
+  changes no code, since nothing in the shell foreclosed either mode.
+
 - Desktop shell scaffold (Tauri 2), under `desktop/`. The shell hosts the
   existing frontend production build and resolves its API endpoint at runtime
   rather than at build time, so one build can address either a local backend or
