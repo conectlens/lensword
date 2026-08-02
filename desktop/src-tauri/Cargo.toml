@@ -15,7 +15,8 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 lensword-api-config = { path = "../api-config" }
 serde = { version = "1", features = ["derive"] }
-tauri = { version = "2", features = [] }
+# `tray-icon` gates the tray/menu-bar API used by src/tray.rs (issue #82).
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-global-shortcut = "2"
 # OS-native notifications (ROADMAP 3.2). The plugin wraps each platform's own
 # notification service, so no per-OS code is needed here.
