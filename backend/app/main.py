@@ -79,6 +79,7 @@ app.include_router(settings.router)
 app.include_router(weaknesses.router)
 app.include_router(graph.router)
 app.include_router(learning_paths.router)
+app.include_router(conversations.router)
 app.include_router(admin.router)
 
 

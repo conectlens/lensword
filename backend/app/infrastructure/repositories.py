@@ -43,6 +43,8 @@ from app.infrastructure.models import (
     DesktopNotificationModel,
     SyncOperationModel,
     GroupModel,
+    ConversationMessageModel,
+    ConversationSessionModel,
     LearningPathModel,
     MistakeEventModel,
     PathMilestoneModel,
@@ -1337,8 +1339,6 @@ class SqlAlchemyLearningPathRepository:
     Stores no progress. Progress is counted from the learner's vocabulary at
     read time — a stored percentage is a number that was true once.
     """
-class SqlAlchemyConversationRepository:
-    """Tutoring conversations and their turns (issue #135)."""
 
     def __init__(self, db: Session):
         self.db = db
@@ -1424,6 +1424,14 @@ class SqlAlchemyConversationRepository:
                 held_count, mastered_count = counts.get(key, (0, 0))
                 counts[key] = (held_count + 1, mastered_count + (1 if mastered else 0))
         return counts
+
+
+class SqlAlchemyConversationRepository:
+    """Tutoring conversations and their turns (issue #135)."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
     def start(
         self,
         user_id: int,
@@ -1449,6 +1457,12 @@ class SqlAlchemyConversationRepository:
             select(ConversationSessionModel)
             .where(ConversationSessionModel.id == session_id)
             .options(selectinload(ConversationSessionModel.messages))
+            # populate_existing because messages are appended by id rather than
+            # through the relationship, so an instance already in the identity
+            # map keeps whatever collection it was first loaded with. Without
+            # this, a turn added earlier in the same request is invisible to a
+            # read later in it — which looks like the message was never stored.
+            .execution_options(populate_existing=True)
         )
         return self.db.scalar(stmt)
 

@@ -1,6 +1,6 @@
 import type {
   AdminStats, Group, MnemonicNote, ProfileOverview, RecallSettings, Room,
-  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile, CefrProgress, Prerequisites, RelatedWord, WordRevision, AiState, OllamaProbe, LearningPath, GeneratePathResult,
+  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile, CefrProgress, Prerequisites, RelatedWord, WordRevision, AiState, OllamaProbe, LearningPath, GeneratePathResult, Conversation, ConversationMessage, SendMessageResult, Difficulty,
 } from './types'
 import { resolveApiBase } from './runtimeConfig'
 
@@ -123,6 +123,22 @@ export const learningPathsApi = {
       body: JSON.stringify({ goal, target_language, group_id }),
     }),
   remove: (id: number) => request<void>(`/api/v1/learning-paths/${id}`, { method: 'DELETE' }),
+}
+
+export const conversationsApi = {
+  list: () => request<Conversation[]>('/api/v1/conversations'),
+  get: (id: number) => request<Conversation>(`/api/v1/conversations/${id}`),
+  start: (target_language: string, difficulty: Difficulty, scenario: string | null = null) =>
+    request<Conversation>('/api/v1/conversations', {
+      method: 'POST',
+      body: JSON.stringify({ target_language, difficulty, scenario }),
+    }),
+  send: (id: number, text: string) =>
+    request<SendMessageResult>(`/api/v1/conversations/${id}/message`, {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    }),
+  end: (id: number) => request<Conversation>(`/api/v1/conversations/${id}/end`, { method: 'POST' }),
 }
 
 export const groupsApi = {
