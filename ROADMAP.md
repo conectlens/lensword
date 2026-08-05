@@ -16,7 +16,7 @@ works — no stubbed capability is documented as shipped.
 Shared infrastructure. No user-visible behavior change; everything below
 depends on this.
 
-- [x] **0.0** Background scheduler in `backend/app/infrastructure/`, wired
+- [x] **0.0** Background scheduler in `apps/backend/app/infrastructure/`, wired
       into the FastAPI app lifespan, with a `jobs/` module for registered
       tasks. *(Shipped)*
 - [x] **0.1** `NotificationChannel` domain port (`send(user, message,
@@ -61,7 +61,7 @@ depends on this.
       rationale, security requirements, release gates, and revisit triggers are
       recorded in [ADR 0001](docs/adr/0001-use-tauri-for-desktop-shell.md).
       *(Shipped)*
-- [ ] **3.1** Scaffold the chosen shell around the existing `frontend/`
+- [ ] **3.1** Scaffold the chosen shell around the existing `apps/frontend/`
       build output; API client points at either a bundled local backend or
       a remote server via config. *(In Progress — the shell project, the
       validated runtime endpoint, and the frontend adapter exist; the measured
@@ -95,7 +95,7 @@ depends on this.
       zero-setup local default, not as a second supported deployment.)*
 - [x] **4.1** Per-tenant data isolation audit across all repository
       queries. *(Shipped — zero findings. The audit is executable rather than
-      written down: `backend/tests/test_tenant_isolation.py` denies a second
+      written down: `apps/backend/tests/test_tenant_isolation.py` denies a second
       account on every endpoint that accepts a resource identifier, and fails
       if a new such endpoint is added without being audited.)*
 - [x] **4.2** Move the scheduler to a durable, horizontally-safe job store
@@ -133,3 +133,9 @@ depends on this.
 - Phase 4 is a data-architecture change, not a feature add. It should be
   scoped and started independently of the others, not bundled into the
   same release cycle.
+- The spaced-repetition scheduler (not the Phase 0 background job scheduler)
+  had its own defect, independent of this roadmap's phases: FSRS intervals
+  never grew past 1.00 day. See
+  [ADR 0004](docs/adr/0004-memory-scheduling-model.md) for the fix, why
+  stability is now persisted rather than derived, and the remediation for
+  accounts affected before the fix.

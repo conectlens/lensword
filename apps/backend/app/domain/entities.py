@@ -1,0 +1,530 @@
+"""Domain entities (aggregates).
+
+Aggregate boundaries chosen for this domain:
+  - User: its own aggregate. Owns denormalized stats (streak, totals) that
+    are updated when a ReviewSession completes.
+  - Group: its own aggregate (a named, owned collection of Words). Does not
+    hold Words in memory because Words are queried/updated far more
+    frequently than Groups and independently — Word is its own aggregate
+    root referencing group_id, which avoids loading potentially thousands
+    of words to change a group's name.
+  - Word: its own aggregate root. Owns its ReviewState (embedded value
+    object) and its own lexical associations (translations/synonyms/
+    antonyms/topics), which have no identity or lifecycle apart from the
+    word.
+  - Room: aggregate root that DOES own its RoomPlacement child entities in
+    memory, because the invariant "a placed word must belong to the room's
+    group" is a Room-level rule that must be enforced atomically with the
+    placement being added — a textbook case for keeping child entities
+    inside the aggregate boundary that owns the invariant.
+  - ReviewSession: aggregate root owning its ReviewAttempt child entities,
+    and is the Information Expert for its own summary statistics (it has
+    all the data needed to compute them; no external service should
+    recompute this from scratch).
+  - MnemonicNote: small, independent aggregate root.
+  - Reminder: its own aggregate root. Holds only the *schedule* (when to
+    fire, how often, which group), never delivery preferences — those live
+    on RecallSettings and change independently of any single reminder.
+  - RecallSettings: 1:1 with User, independent aggregate root (kept
+    separate from User because it changes for different reasons and at a
+    different rate than identity/auth data — divergent change avoidance).
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import date, datetime, time, timedelta
+
+from app.domain.exceptions import InvalidPlacementError, SessionAlreadyCompletedError, ValidationError
+from app.domain.value_objects import (
+    DEFAULT_TIME_ZONE,
+    Recurrence,
+    ReviewOutcome,
+    ReviewState,
+    SessionMode,
+    SupportedLanguage,
+    UserRole,
+    utcnow,
+)
+
+
+@dataclass(slots=True)
+class User:
+    id: int | None
+    username: str
+    email: str
+    hashed_password: str
+    role: UserRole = UserRole.USER
+    created_at: datetime = field(default_factory=utcnow)
+    is_active: bool = True
+    streak_days: int = 0
+    longest_streak_days: int = 0
+    last_activity_date: date | None = None
+    total_words_learned: int = 0
+    total_study_seconds: int = 0
+    # IANA identifier. Defaults to UTC, which is the convention every
+    # stored datetime already follows, so an account that never chooses
+    # one behaves exactly as it did before (issue #44).
+    time_zone: str = DEFAULT_TIME_ZONE
+
+    def record_completed_session(self, session: "ReviewSession") -> None:
+        """Update denormalized profile stats after a session completes.
+
+        User is the Information Expert for streak continuity because it is
+        the only object that knows the user's last activity date.
+        """
+        if session.ended_at is None:
+            raise SessionAlreadyCompletedError(session.id or 0)
+
+        today = session.ended_at.date()
+        if self.last_activity_date is None or self.last_activity_date < today - timedelta(days=1):
+            self.streak_days = 1
+        elif self.last_activity_date == today - timedelta(days=1):
+            self.streak_days += 1
+        # if last_activity_date == today, streak already counted today: no-op
+
+        self.last_activity_date = today
+        self.longest_streak_days = max(self.longest_streak_days, self.streak_days)
+        self.total_study_seconds += session.duration_seconds
+        self.total_words_learned += session.new_words_learned_count
+
+    def promote_to_admin(self) -> None:
+        self.role = UserRole.ADMIN
+
+    def suspend(self) -> None:
+        self.is_active = False
+
+    def reactivate(self) -> None:
+        self.is_active = True
+
+
+@dataclass(slots=True)
+class Group:
+    """A named, personal collection of vocabulary words (shown as 'Group' /
+    'Deck' in the UI). Deliberately does not hold its words in memory —
+    see module docstring."""
+
+    id: int | None
+    owner_id: int
+    name: str
+    target_language: SupportedLanguage
+    created_at: datetime = field(default_factory=utcnow)
+
+    def rename(self, new_name: str) -> None:
+        if not new_name.strip():
+            raise InvalidPlacementError("Group name cannot be empty")
+        self.name = new_name.strip()
+
+
+@dataclass(slots=True)
+class Word:
+    """A single vocabulary word owned by a Group, with its own spaced-
+    repetition state and lexical associations."""
+
+    id: int | None
+    group_id: int
+    term: str
+    target_language: SupportedLanguage
+    translations: list[str] = field(default_factory=list)
+    example_sentence: str | None = None
+    mnemonic: str | None = None
+    category: str | None = None
+    definition: str | None = None
+    part_of_speech: str | None = None
+    cefr_level: str | None = None
+    pronunciation: str | None = None
+    collocations: list[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
+    ai_confidence: float | None = None
+    ai_provider: str | None = None
+    ai_model: str | None = None
+    # When a human last confirmed the model-written fields (#140). None
+    # means unverified, which for a card no model wrote simply does not
+    # apply — there is nothing to have checked.
+    ai_verified_at: datetime | None = None
+    synonyms: list[str] = field(default_factory=list)
+    antonyms: list[str] = field(default_factory=list)
+    topics: list[str] = field(default_factory=list)
+    review_state: ReviewState = field(default_factory=ReviewState.initial)
+    created_at: datetime = field(default_factory=utcnow)
+    # Bumped on every update (issue #90). An offline edit names the revision
+    # it believed it was editing; a mismatch at reconciliation time is a
+    # conflict, not a guess resolved by arrival order.
+    revision: int = 1
+
+    def add_translation(self, text: str) -> None:
+        text = text.strip()
+        if text and text not in self.translations:
+            self.translations.append(text)
+
+    def remove_translation(self, text: str) -> None:
+        self.translations = [t for t in self.translations if t != text]
+
+    def set_mnemonic(self, text: str | None) -> None:
+        self.mnemonic = text.strip() if text else None
+
+    def add_association(self, kind: str, value: str) -> None:
+        bucket = self._association_bucket(kind)
+        value = value.strip()
+        if value and value not in bucket:
+            bucket.append(value)
+
+    def remove_association(self, kind: str, value: str) -> None:
+        bucket = self._association_bucket(kind)
+        bucket[:] = [v for v in bucket if v != value]
+
+    def _association_bucket(self, kind: str) -> list[str]:
+        mapping = {"synonym": self.synonyms, "antonym": self.antonyms, "topic": self.topics}
+        if kind not in mapping:
+            raise InvalidPlacementError(f"Unknown association kind '{kind}'")
+        return mapping[kind]
+
+    def apply_review(self, outcome: ReviewOutcome, scheduler: "SpacedRepetitionScheduler") -> None:
+        """Delegate the *algorithm* to the scheduler (protected variation
+        point — SM-2 today, could be FSRS tomorrow) while Word retains
+        control over *when* and *that* its own state changes."""
+        self.review_state = scheduler.schedule_next(self.review_state, outcome)
+
+    @property
+    def is_due(self) -> bool:
+        return self.review_state.is_due
+
+
+@dataclass(slots=True)
+class RoomPlacement:
+    """A word positioned on a Room's 2D canvas (the memory-palace anchor)."""
+
+    word_id: int
+    x_percent: float
+    y_percent: float
+    placed_at: datetime = field(default_factory=utcnow)
+
+
+@dataclass(slots=True)
+class Room:
+    """A 'memory room' — a spatial canvas used to place a Group's words as
+    visual/spatial mnemonic anchors (method-of-loci technique)."""
+
+    id: int | None
+    owner_id: int
+    group_id: int
+    name: str
+    icon: str = "meeting_room"
+    created_at: datetime = field(default_factory=utcnow)
+    placements: list[RoomPlacement] = field(default_factory=list)
+
+    def place_word(self, word: Word, x_percent: float, y_percent: float) -> None:
+        if word.group_id != self.group_id:
+            raise InvalidPlacementError(
+                f"Word '{word.id}' belongs to group '{word.group_id}', not this room's group '{self.group_id}'"
+            )
+        if not (0 <= x_percent <= 100 and 0 <= y_percent <= 100):
+            raise InvalidPlacementError("Placement coordinates must be within 0-100 percent")
+
+        existing = self._find_placement(word.id)
+        if existing:
+            existing.x_percent = x_percent
+            existing.y_percent = y_percent
+            existing.placed_at = utcnow()
+        else:
+            self.placements.append(RoomPlacement(word_id=word.id, x_percent=x_percent, y_percent=y_percent))
+
+    def remove_placement(self, word_id: int) -> None:
+        self.placements = [p for p in self.placements if p.word_id != word_id]
+
+    def _find_placement(self, word_id: int | None) -> RoomPlacement | None:
+        return next((p for p in self.placements if p.word_id == word_id), None)
+
+    def placement_ratio(self, total_group_words: int) -> float:
+        if total_group_words <= 0:
+            return 0.0
+        return min(1.0, len(self.placements) / total_group_words)
+
+
+@dataclass(slots=True)
+class ReviewAttempt:
+    word_id: int
+    outcome: ReviewOutcome
+    response_time_ms: int | None
+    answered_at: datetime = field(default_factory=utcnow)
+
+
+@dataclass(slots=True)
+class ReviewSession:
+    """A single sitting of reviewing due words. Owns its attempts and is the
+    Information Expert for its own summary — nothing outside the session
+    should recompute these figures independently."""
+
+    id: int | None
+    user_id: int
+    mode: SessionMode
+    started_at: datetime = field(default_factory=utcnow)
+    ended_at: datetime | None = None
+    attempts: list[ReviewAttempt] = field(default_factory=list)
+    new_words_learned_count: int = 0
+
+    def record_attempt(self, word_id: int, outcome: ReviewOutcome, response_time_ms: int | None = None) -> None:
+        if self.ended_at is not None:
+            raise SessionAlreadyCompletedError(self.id or 0)
+        self.attempts.append(ReviewAttempt(word_id=word_id, outcome=outcome, response_time_ms=response_time_ms))
+
+    def complete(self) -> None:
+        if self.ended_at is None:
+            self.ended_at = utcnow()
+
+    @property
+    def duration_seconds(self) -> int:
+        end = self.ended_at or utcnow()
+        return max(0, int((end - self.started_at).total_seconds()))
+
+    @property
+    def words_reviewed_count(self) -> int:
+        return len(self.attempts)
+
+    @property
+    def correct_count(self) -> int:
+        return sum(1 for a in self.attempts if a.outcome == ReviewOutcome.CORRECT)
+
+    @property
+    def incorrect_count(self) -> int:
+        return sum(1 for a in self.attempts if a.outcome == ReviewOutcome.INCORRECT)
+
+    @property
+    def accuracy_percent(self) -> float:
+        if not self.attempts:
+            return 0.0
+        return round(100 * self.correct_count / len(self.attempts), 1)
+
+
+@dataclass(slots=True)
+class MnemonicNote:
+    """A user-authored mnemonic/memory-trick for a word, part of the
+    MnemoLab gallery. Voting is intentionally unbounded per user in this
+    version — see README for the documented scope simplification around
+    cross-user visibility."""
+
+    id: int | None
+    word_id: int
+    author_id: int
+    text: str
+    is_ai_generated: bool = False
+    upvotes: int = 0
+    downvotes: int = 0
+    created_at: datetime = field(default_factory=utcnow)
+
+    def upvote(self) -> None:
+        self.upvotes += 1
+
+    def downvote(self) -> None:
+        self.downvotes += 1
+
+    @property
+    def score(self) -> int:
+        return self.upvotes - self.downvotes
+
+
+@dataclass(slots=True)
+class Reminder:
+    """A user's standing instruction to be prompted to review a group.
+
+    `trigger_time` is a wall-clock time of day, "HH:MM" or "HH:MM:SS", and is
+    interpreted in UTC — the same naive-UTC convention every other datetime in
+    this domain follows (see value_objects.utcnow). Per-user local time zones
+    would be a user-profile concern, not a reminder one, and are not modeled.
+
+    The entity knows *when* it should next fire but nothing about how jobs are
+    registered or how notifications are delivered: computing the next
+    occurrence is pure arithmetic that must stay testable without a scheduler.
+    """
+
+    id: int | None
+    user_id: int
+    group_id: int
+    trigger_time: str
+    recurrence: Recurrence
+    enabled: bool = True
+    # Bumped on every edit. Compared rather than timestamps, because two
+    # devices' clocks disagree and an edit made on a slow clock must not lose
+    # to an older one made on a fast clock (issue #87).
+    revision: int = 1
+    created_at: datetime = field(default_factory=utcnow)
+
+    def enable(self) -> None:
+        self.enabled = True
+
+    def disable(self) -> None:
+        self.enabled = False
+
+    @property
+    def time_of_day(self) -> time:
+        parts = self.trigger_time.split(":")
+        if len(parts) not in (2, 3):
+            raise ValidationError(f"Reminder trigger time '{self.trigger_time}' is not HH:MM or HH:MM:SS")
+        try:
+            hour, minute = int(parts[0]), int(parts[1])
+            second = int(parts[2]) if len(parts) == 3 else 0
+            return time(hour=hour, minute=minute, second=second)
+        except ValueError as exc:
+            raise ValidationError(
+                f"Reminder trigger time '{self.trigger_time}' is not a valid time of day"
+            ) from exc
+
+    def next_occurrence(self, now: datetime) -> datetime:
+        """The next instant this reminder is due, strictly after `now`.
+
+        An exact hit on `now` rolls forward to the following day rather than
+        returning `now` itself, so a caller can never register a job whose run
+        time has already elapsed by the time it is added.
+        """
+        candidate = datetime.combine(now.date(), self.time_of_day)
+        if candidate <= now:
+            candidate += timedelta(days=1)
+        return candidate
+
+
+@dataclass(slots=True)
+class RecallSettings:
+    """Per-user 'Forced Recall Engine' configuration. Persisting/updating
+    these is fully implemented; actually *dispatching* push/email/desktop
+    notifications on a schedule is not (see README — no credentialed
+    notification provider is configured in this build)."""
+
+    user_id: int
+    enabled: bool = True
+    intensity: int = 3  # 1 (gentle) - 5 (intense)
+    morning_checkin_enabled: bool = True
+    idle_time_enabled: bool = True
+    walking_mode_enabled: bool = False
+    walking_steps_threshold: int = 1000
+    study_breaks_enabled: bool = True
+    study_blocks_before_break: int = 2
+    night_winddown_enabled: bool = False
+    night_start_time: str = "22:00"
+    night_end_time: str = "23:00"
+    push_enabled: bool = True
+    email_enabled: bool = False
+    desktop_enabled: bool = False
+    in_app_enabled: bool = True
+    quiet_hours_start: str | None = None
+    quiet_hours_end: str | None = None
+    # Keeps specifics out of notification bodies. A desktop toast is drawn on
+    # a lock screen, over a shared screen, or on a second monitor in an open
+    # office — none of which the person who set the reminder chose. With this
+    # on, the body says a review is waiting and nothing about what is in it.
+    hide_notification_details: bool = False
+    # Suppresses delivery entirely without unsetting the schedule, so a user
+    # can pause reminders for a while and get the same ones back afterwards
+    # rather than rebuilding them.
+    notifications_paused: bool = False
+    # Kept with the user's review preferences so every answer in a session
+    # uses the same algorithm. New accounts get FSRS, which schedules from a
+    # target retrievability rather than SM-2's fixed first intervals.
+    #
+    # Existing accounts are *not* switched. Migration 20260730_14 writes an
+    # explicit "sm2" row for every account that had none, so changing this
+    # default cannot silently move someone who never opened the settings
+    # screen onto a different algorithm mid-deck.
+    scheduler: str = "fsrs"
+
+    def set_intensity(self, level: int) -> None:
+        if not (1 <= level <= 5):
+            raise InvalidPlacementError("Intensity must be between 1 and 5")
+        self.intensity = level
+
+
+@dataclass(slots=True)
+class PracticeExercise:
+    """A generated, answerable practice item tied to one vocabulary word."""
+
+    id: int | None
+    user_id: int
+    word_id: int
+    kind: str
+    prompt: str
+    answer: str
+    options: list[str] = field(default_factory=list)
+    answered: bool = False
+    correct: bool | None = None
+    created_at: datetime = field(default_factory=utcnow)
+
+
+@dataclass(slots=True)
+class DailySessionPreference:
+    """A user's lightweight daily practice target and queue size."""
+
+    user_id: int
+    enabled: bool = True
+    goal_minutes: int = 10
+    review_limit: int = 20
+
+
+@dataclass(slots=True)
+class WeeklyLearningReport:
+    """Immutable, reproducible weekly analytics snapshot for one learner."""
+
+    id: int | None
+    user_id: int
+    week_start: datetime
+    week_end: datetime
+    time_zone: str
+    snapshot: dict
+    narration: str | None = None
+    created_at: datetime = field(default_factory=utcnow)
+
+
+@dataclass(slots=True)
+class DesktopNotification:
+    """One desktop notification awaiting collection by a desktop shell.
+
+    ADR 0002 settled the desktop app as remote-only, which decides the shape
+    of this entity: the backend and the machine that owns the notification
+    tray are different processes, usually on different hosts, so the backend
+    cannot raise a toast itself. It can only record that one is owed and let
+    the shell collect it. That makes this an outbox record, not a delivery.
+
+    `delivered_at` is set when a shell acknowledges the row. It is deliberately
+    an acknowledgement of *collection*, not proof the operating system drew
+    anything on screen — the backend has no way to observe the latter, and
+    claiming otherwise in a field name would invite code that trusts it.
+
+    The entity carries the rendered `message` rather than a template and
+    arguments. Reminder text is decided at fire time by the delivery use case,
+    against settings read at that moment; storing the inputs instead would let
+    a shell that collects late render text the policy would no longer produce.
+    """
+
+    id: int | None
+    user_id: int
+    message: str
+    created_at: datetime = field(default_factory=utcnow)
+    delivered_at: datetime | None = None
+    reminder_id: int | None = None
+    expires_at: datetime | None = None
+    action: str | None = None
+    action_at: datetime | None = None
+
+    @property
+    def pending(self) -> bool:
+        return self.delivered_at is None
+
+    def is_expired(self, now: datetime | None = None) -> bool:
+        """Whether the actions on this notification are still answerable.
+
+        A notification with no expiry never expires — that is the shape a
+        non-reminder notification takes, and it should not silently stop
+        working because this field was added for reminders.
+        """
+        if self.expires_at is None:
+            return False
+        return (now or utcnow()) >= self.expires_at
+
+    @property
+    def acted_on(self) -> bool:
+        return self.action is not None
+
+    def mark_delivered(self, at: datetime | None = None) -> None:
+        """Record collection by a shell. Idempotent: a repeated acknowledgement
+        keeps the first timestamp, because the OS callbacks that will drive
+        this (issue #88) are explicitly allowed to arrive more than once, and
+        the first collection is the one that actually happened."""
+        if self.delivered_at is None:
+            self.delivered_at = at or utcnow()

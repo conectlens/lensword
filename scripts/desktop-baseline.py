@@ -312,7 +312,7 @@ def main() -> int:
         action="store_true",
         help="Assert this build is signed. Without it every figure is labelled NOT-THE-GATE.",
     )
-    parser.add_argument("--bundles", default="desktop/src-tauri/target/release/bundle")
+    parser.add_argument("--bundles", default="apps/desktop/src-tauri/target/release/bundle")
     parser.add_argument("--quick", action="store_true", help="Fewer samples, for wiring checks")
     args = parser.parse_args()
 

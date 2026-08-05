@@ -161,13 +161,13 @@ they sign up.
 
 ```bash
 # Backend — defaults to SQLite, so no database server is needed
-cd backend
+cd apps/backend
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env
 .venv/bin/uvicorn app.main:app --reload
 
 # Frontend (separate terminal)
-cd frontend
+cd apps/frontend
 npm install
 cp .env.example .env   # VITE_API_URL=http://localhost:8000
 npm run dev
@@ -175,7 +175,7 @@ npm run dev
 
 ## Desktop
 
-LensWord has a desktop shell (Tauri 2) under `desktop/`. It hosts the same
+LensWord has a desktop shell (Tauri 2) under `apps/desktop/`. It hosts the same
 frontend build as the browser version and talks to a LensWord server over the
 network — [ADR 0002](docs/adr/0002-desktop-backend-mode.md) decided the first
 release is **remote-only**, so the app does not bundle a database or a Python
@@ -200,11 +200,11 @@ webview development packages, listed in the
 [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
 
 ```bash
-(cd frontend && npm ci && npm run build)   # the shell embeds this build
-(cd desktop && npx @tauri-apps/cli@2 build)
+(cd apps/frontend && npm ci && npm run build)   # the shell embeds this build
+(cd apps/desktop && npx @tauri-apps/cli@2 build)
 ```
 
-The artifact lands under `desktop/target/release/bundle/`. On macOS, add
+The artifact lands under `apps/desktop/target/release/bundle/`. On macOS, add
 `CI=1` if you are building over SSH or from a headless process — the `.dmg`
 step ends with an AppleScript that needs a GUI session.
 
@@ -259,7 +259,7 @@ ollama serve            # leave running; listens on http://localhost:11434
 ollama pull llama3.2
 ```
 
-**3. Turn the provider on** in `backend/.env`:
+**3. Turn the provider on** in `apps/backend/.env`:
 
 ```bash
 AI_PROVIDER=ollama
@@ -289,7 +289,7 @@ rather than a server error:
 | `ok` | Success | The suggestion, which you can drop straight into your draft. |
 
 Setting names above match the `Settings` fields `ai_provider`, `ollama_model`
-and `ollama_base_url` in `backend/app/config.py`.
+and `ollama_base_url` in `apps/backend/app/config.py`.
 
 #### Checking your setup
 
@@ -359,7 +359,7 @@ the cache.
 
 ## Verification actually run
 
-- **Backend: 96/96 tests passing** (`cd backend && .venv/bin/pytest`) — SM-2
+- **Backend: 96/96 tests passing** (`cd apps/backend && .venv/bin/pytest`) — SM-2
   scheduler edge cases, badge thresholds, full auth/group/word/room/review/
   mnemonic/settings/admin flows, cross-user permission checks, cascade deletes.
   Also boot-tested with a real `uvicorn` process and `curl`, not just
@@ -385,7 +385,7 @@ the cache.
 
 ## Known gaps
 
-- Alembic manages schema changes. Run `cd backend && alembic upgrade head`
+- Alembic manages schema changes. Run `cd apps/backend && alembic upgrade head`
   before a direct local server start; the Docker backend runs this automatically.
 - No refresh-token rotation — a single 7-day access token. Fine for an MVP, not
   for a production launch.

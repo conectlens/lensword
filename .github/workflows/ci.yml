@@ -19,7 +19,7 @@ jobs:
         python-version: ["3.12"]
     defaults:
       run:
-        working-directory: backend
+        working-directory: apps/backend
     steps:
       - uses: actions/checkout@v7
 
@@ -27,7 +27,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: apps/backend/requirements.txt
 
       - name: Install dependencies
         run: pip install -r requirements.txt
@@ -51,7 +51,7 @@ jobs:
         python-version: ["3.12"]
     defaults:
       run:
-        working-directory: backend
+        working-directory: apps/backend
     services:
       postgres:
         # Pinned to a major version so a new Postgres release cannot change
@@ -78,7 +78,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: apps/backend/requirements.txt
 
       - name: Install dependencies
         run: pip install -r requirements.txt
@@ -108,7 +108,7 @@ jobs:
         node-version: [20]
     defaults:
       run:
-        working-directory: frontend
+        working-directory: apps/frontend
     steps:
       - uses: actions/checkout@v7
 
@@ -116,7 +116,7 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: apps/frontend/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -131,8 +131,18 @@ jobs:
         run: npm test
 
   desktop:
-    name: Desktop shell (Rust)
-    runs-on: ubuntu-latest
+    name: Desktop shell (Rust, ${{ matrix.platform }})
+    # macOS added alongside Linux for issue #84: the screen-capture/OCR code
+    # is macOS-only (`cfg(target_os = "macos")`), so the Linux leg alone
+    # never compiles a line of it — this job would stay green while that
+    # code silently bit-rotted. Windows is not added here: nothing in this
+    # crate is Windows-specific yet, so a second runner would only repeat
+    # what the Linux leg already checks.
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.platform }}
     # Bounded so a package manager waiting on a lock fails the job instead of
     # occupying a runner until the six-hour default expires.
     timeout-minutes: 25
@@ -150,31 +160,33 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            desktop/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('desktop/Cargo.lock') }}
+            apps/desktop/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('apps/desktop/Cargo.lock') }}
           restore-keys: cargo-${{ runner.os }}-
 
       - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: apps/frontend/package-lock.json
 
       # `tauri::generate_context!` embeds the frontend production build, so the
       # shell cannot be compiled at all without it.
       - name: Build the frontend the shell embeds
-        working-directory: frontend
+        working-directory: apps/frontend
         run: |
           npm ci
           npm run build
 
-      # Tauri links against the system webview on Linux.
+      # Tauri links against the system webview on Linux; macOS's WebKit is
+      # already part of the OS, so this step is Linux-only.
       #
       # `noninteractive` and `--no-install-recommends` are both load-bearing:
       # without the first, a package that wants to prompt blocks until the job
       # times out, and without the second this pulls in a large recommended set
       # that is useless for compiling against the headers.
       - name: Install webview build dependencies
+        if: matrix.platform == 'ubuntu-latest'
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
@@ -188,22 +200,22 @@ jobs:
             patchelf
 
       - name: Format
-        working-directory: desktop
+        working-directory: apps/desktop
         run: cargo fmt --check
 
       # Whole workspace, not just the validator crate. Scoping these to
       # `-p lensword-api-config` left the shell with no compiler pass at all:
       # renaming a field it consumes broke it while every check stayed green.
       - name: Clippy
-        working-directory: desktop
+        working-directory: apps/desktop
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
 
       - name: Tests
-        working-directory: desktop
+        working-directory: apps/desktop
         run: cargo test --locked --workspace
 
       - name: Compile the shell
-        working-directory: desktop
+        working-directory: apps/desktop
         run: cargo check --locked --workspace
 
   docker-build:
@@ -216,11 +228,11 @@ jobs:
       - name: Build backend image
         uses: docker/build-push-action@v7
         with:
-          context: backend
+          context: apps/backend
           push: false
 
       - name: Build frontend image
         uses: docker/build-push-action@v7
         with:
-          context: frontend
+          context: apps/frontend
           push: false

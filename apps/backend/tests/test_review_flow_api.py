@@ -1,0 +1,317 @@
+def _setup_group_with_word(client, headers, term="Hola", translation="Hello"):
+    group = client.post(
+        "/api/v1/groups", json={"name": "G", "target_language": "Spanish"}, headers=headers
+    ).json()
+    word = client.post(
+        f"/api/v1/groups/{group['id']}/words",
+        json={"term": term, "target_language": "Spanish", "translations": [translation]},
+        headers=headers,
+    ).json()
+    return group, word
+
+
+def test_cannot_start_session_with_no_due_words(client, auth_headers):
+    headers = auth_headers()
+    resp = client.post("/api/v1/review/sessions", json={"mode": "standard"}, headers=headers)
+    assert resp.status_code == 409
+
+
+def test_full_review_session_flow_updates_word_and_user_stats(client, auth_headers):
+    headers = auth_headers()
+    _group, word = _setup_group_with_word(client, headers)
+
+    start = client.post("/api/v1/review/sessions", json={"mode": "standard", "limit": 20}, headers=headers)
+    assert start.status_code == 201
+    session_id = start.json()["session_id"]
+    assert len(start.json()["words"]) == 1
+    assert start.json()["words"][0]["id"] == word["id"]
+
+    answer = client.post(
+        f"/api/v1/review/sessions/{session_id}/answers",
+        json={"word_id": word["id"], "outcome": "correct", "response_time_ms": 1200},
+        headers=headers,
+    )
+    assert answer.status_code == 200
+    body = answer.json()
+    assert body["was_new_word_learned"] is True
+    assert body["word"]["review_state"]["strength"] == 15
+    assert body["word"]["review_state"]["repetitions"] == 1
+
+    complete = client.post(
+        f"/api/v1/review/sessions/{session_id}/complete",
+        json={"new_words_learned_count": 1},
+        headers=headers,
+    )
+    assert complete.status_code == 200
+    summary = complete.json()
+    assert summary["words_reviewed"] == 1
+    assert summary["correct_count"] == 1
+    assert summary["incorrect_count"] == 0
+    assert summary["accuracy_percent"] == 100.0
+    assert summary["new_words_learned"] == 1
+
+    me = client.get("/api/v1/auth/me", headers=headers).json()
+    assert me["streak_days"] == 1
+    assert me["total_words_learned"] == 1
+
+
+def test_incorrect_answer_lowers_strength_and_resets_repetitions(client, auth_headers):
+    headers = auth_headers()
+    _group, word = _setup_group_with_word(client, headers)
+
+    session_id = client.post(
+        "/api/v1/review/sessions", json={"mode": "standard"}, headers=headers
+    ).json()["session_id"]
+
+    answer = client.post(
+        f"/api/v1/review/sessions/{session_id}/answers",
+        json={"word_id": word["id"], "outcome": "incorrect"},
+        headers=headers,
+    )
+    body = answer.json()
+    assert body["was_new_word_learned"] is False
+    assert body["word"]["review_state"]["strength"] == 0  # clamped at 0, started at 0
+    assert body["word"]["review_state"]["repetitions"] == 0
+
+
+def test_cannot_answer_in_another_users_session(client, auth_headers):
+    headers_a = auth_headers(username="alex", email="alex@example.com")
+    headers_b = auth_headers(username="sam", email="sam@example.com")
+    _group, word = _setup_group_with_word(client, headers_a)
+
+    session_id = client.post(
+        "/api/v1/review/sessions", json={"mode": "standard"}, headers=headers_a
+    ).json()["session_id"]
+
+    resp = client.post(
+        f"/api/v1/review/sessions/{session_id}/answers",
+        json={"word_id": word["id"], "outcome": "correct"},
+        headers=headers_b,
+    )
+    assert resp.status_code == 403
+
+
+def test_weekly_progress_reflects_completed_sessions(client, auth_headers):
+    headers = auth_headers()
+    _group, word = _setup_group_with_word(client, headers)
+
+    session_id = client.post(
+        "/api/v1/review/sessions", json={"mode": "standard"}, headers=headers
+    ).json()["session_id"]
+    client.post(
+        f"/api/v1/review/sessions/{session_id}/answers",
+        json={"word_id": word["id"], "outcome": "correct"},
+        headers=headers,
+    )
+    client.post(f"/api/v1/review/sessions/{session_id}/complete", json={}, headers=headers)
+
+    resp = client.get("/api/v1/review/weekly-progress", headers=headers)
+    assert resp.status_code == 200
+    counts = resp.json()["counts_by_day"]
+    assert sum(counts.values()) == 1
+
+
+def test_mnemonic_lifecycle(client, auth_headers):
+    headers = auth_headers()
+    _group, word = _setup_group_with_word(client, headers, term="Ephemeral", translation="Fleeting")
+
+    resp = client.post(
+        f"/api/v1/words/{word['id']}/mnemonics", json={"text": "Sounds like 'ephemeral wall'"}, headers=headers
+    )
+    assert resp.status_code == 201
+    note = resp.json()
+    assert note["upvotes"] == 0
+    assert note["score"] == 0
+
+    resp = client.post(
+        f"/api/v1/words/{word['id']}/mnemonics/{note['id']}/vote", json={"upvote": True}, headers=headers
+    )
+    assert resp.json()["upvotes"] == 1
+    assert resp.json()["score"] == 1
+
+    resp = client.get(f"/api/v1/words/{word['id']}/mnemonics", headers=headers)
+    assert len(resp.json()) == 1
+
+
+def test_cannot_list_mnemonics_for_another_users_word(client, auth_headers):
+    headers_a = auth_headers(username="alex", email="alex@example.com")
+    headers_b = auth_headers(username="sam", email="sam@example.com")
+    _group, word = _setup_group_with_word(client, headers_a, term="Ephemeral", translation="Fleeting")
+    client.post(
+        f"/api/v1/words/{word['id']}/mnemonics", json={"text": "alex's private note"}, headers=headers_a
+    )
+
+    resp = client.get(f"/api/v1/words/{word['id']}/mnemonics", headers=headers_b)
+
+    assert resp.status_code == 403
+    assert "private note" not in resp.text
+
+
+def test_cannot_add_mnemonic_to_another_users_word(client, auth_headers):
+    headers_a = auth_headers(username="alex", email="alex@example.com")
+    headers_b = auth_headers(username="sam", email="sam@example.com")
+    _group, word = _setup_group_with_word(client, headers_a)
+
+    resp = client.post(
+        f"/api/v1/words/{word['id']}/mnemonics", json={"text": "sneaking in"}, headers=headers_b
+    )
+
+    assert resp.status_code == 403
+
+
+def test_cannot_vote_on_a_mnemonic_of_another_users_word(client, auth_headers):
+    headers_a = auth_headers(username="alex", email="alex@example.com")
+    headers_b = auth_headers(username="sam", email="sam@example.com")
+    _group, word = _setup_group_with_word(client, headers_a)
+    note = client.post(
+        f"/api/v1/words/{word['id']}/mnemonics", json={"text": "alex's note"}, headers=headers_a
+    ).json()
+
+    resp = client.post(
+        f"/api/v1/words/{word['id']}/mnemonics/{note['id']}/vote", json={"upvote": True}, headers=headers_b
+    )
+
+    assert resp.status_code == 403
+
+
+def test_cannot_vote_using_your_own_word_id_with_a_foreign_mnemonic_id(client, auth_headers):
+    """The subtle one: ownership is checked against the path's word_id, so a
+    caller who owns *some* word could otherwise pair it with a stranger's
+    mnemonic_id and pass the check while mutating someone else's row. The
+    mnemonic must actually belong to the word in the path."""
+    headers_a = auth_headers(username="alex", email="alex@example.com")
+    headers_b = auth_headers(username="sam", email="sam@example.com")
+
+    _group_a, word_a = _setup_group_with_word(client, headers_a, term="Alex", translation="A")
+    victim_note = client.post(
+        f"/api/v1/words/{word_a['id']}/mnemonics", json={"text": "alex's note"}, headers=headers_a
+    ).json()
+
+    _group_b, word_b = _setup_group_with_word(client, headers_b, term="Sam", translation="S")
+
+    resp = client.post(
+        f"/api/v1/words/{word_b['id']}/mnemonics/{victim_note['id']}/vote",
+        json={"upvote": True},
+        headers=headers_b,
+    )
+
+    assert resp.status_code == 404
+
+    # And the victim's row is untouched.
+    still = client.get(f"/api/v1/words/{word_a['id']}/mnemonics", headers=headers_a).json()
+    assert still[0]["upvotes"] == 0
+
+
+def test_recall_settings_roundtrip(client, auth_headers):
+    headers = auth_headers()
+    defaults = client.get("/api/v1/recall-settings", headers=headers).json()
+    assert defaults["intensity"] == 3
+    # New accounts get FSRS (issue #141). Existing accounts are pinned to SM-2
+    # by migration 20260730_14 rather than being switched mid-deck, so this
+    # asserts the *new-account* default and not what everyone has.
+    assert defaults["scheduler"] == "fsrs"
+
+    resp = client.put(
+        "/api/v1/recall-settings",
+        json={
+            "enabled": True,
+            "intensity": 5,
+            "walking_mode_enabled": True,
+            "walking_steps_threshold": 2000,
+            "scheduler": "fsrs",
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["intensity"] == 5
+    assert resp.json()["walking_mode_enabled"] is True
+    assert resp.json()["scheduler"] == "fsrs"
+
+    again = client.get("/api/v1/recall-settings", headers=headers).json()
+    assert again["intensity"] == 5
+    assert again["scheduler"] == "fsrs"
+
+
+def test_recall_settings_fields_survive_an_unrelated_put(client, auth_headers):
+    """Issue #173 TODO 4: PUT rebuilt RecallSettings from schema defaults on
+    every save, so quiet_hours_start, quiet_hours_end, notifications_paused
+    and hide_notification_details were silently reset to None/False by any
+    save that did not explicitly re-send them. This test fails on `main`
+    today."""
+    headers = auth_headers()
+
+    resp = client.put(
+        "/api/v1/recall-settings",
+        json={
+            "quiet_hours_start": "22:00",
+            "quiet_hours_end": "07:00",
+            "notifications_paused": True,
+            "hide_notification_details": True,
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["quiet_hours_start"] == "22:00"
+    assert resp.json()["notifications_paused"] is True
+
+    # An unrelated save that never mentions any of the four fields above.
+    unrelated = client.put("/api/v1/recall-settings", json={"intensity": 4}, headers=headers)
+
+    assert unrelated.status_code == 200
+    assert unrelated.json()["quiet_hours_start"] == "22:00"
+    assert unrelated.json()["quiet_hours_end"] == "07:00"
+    assert unrelated.json()["notifications_paused"] is True
+    assert unrelated.json()["hide_notification_details"] is True
+    assert unrelated.json()["intensity"] == 4
+
+
+def test_adaptive_practice_exercise_daily_preferences_and_pronunciation(client, auth_headers):
+    headers = auth_headers()
+    _group, word = _setup_group_with_word(client, headers, term="hola", translation="hello")
+
+    exercise = client.post(
+        "/api/v1/practice/exercises", json={"word_id": word["id"], "kind": "translation"}, headers=headers
+    )
+    assert exercise.status_code == 201
+    assert exercise.json()["prompt"] == "Translate 'hola'."
+
+    answer = client.post(
+        f"/api/v1/practice/exercises/{exercise.json()['id']}/answer", json={"response": "hello"}, headers=headers
+    )
+    assert answer.status_code == 200
+    assert answer.json()["correct"] is True
+
+    feedback = client.post(
+        "/api/v1/practice/pronunciation-feedback", json={"word_id": word["id"], "transcript": "Hola"}, headers=headers
+    )
+    assert feedback.status_code == 200
+    assert feedback.json()["accepted"] is True
+
+    saved = client.put(
+        "/api/v1/practice/daily-session", json={"enabled": True, "goal_minutes": 15, "review_limit": 12}, headers=headers
+    )
+    assert saved.status_code == 200
+    assert saved.json()["goal_minutes"] == 15
+    assert client.get("/api/v1/practice/daily-session", headers=headers).json()["review_limit"] == 12
+
+
+def test_weekly_learning_report_is_persisted_and_private(client, auth_headers):
+    headers = auth_headers(username="reporter", email="reporter@example.com")
+    _group, word = _setup_group_with_word(client, headers, term="hola", translation="hello")
+    session = client.post("/api/v1/review/sessions", json={"mode": "standard"}, headers=headers).json()
+    client.post(f"/api/v1/review/sessions/{session['session_id']}/answers", json={"word_id": word["id"], "outcome": "correct"}, headers=headers)
+    report = client.post("/api/v1/reports/weekly", headers=headers)
+    assert report.status_code == 201
+    assert report.json()["snapshot"]["studied"] == 1
+    assert client.get("/api/v1/reports/weekly", headers=headers).json()[0]["id"] == report.json()["id"]
+    stranger = auth_headers(username="other", email="other@example.com")
+    assert client.get(f"/api/v1/reports/weekly/{report.json()['id']}", headers=stranger).status_code == 403
+
+
+def test_profile_overview_reports_badge_progress(client, auth_headers):
+    headers = auth_headers()
+    resp = client.get("/api/v1/profile", headers=headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["badges"]) == 5
+    assert all(b["earned"] is False for b in body["badges"])

@@ -1,0 +1,58 @@
+[package]
+name = "lensword-desktop"
+description = "LensWord desktop shell — wraps the existing frontend production build."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "lensword_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+lensword-api-config = { path = "../api-config" }
+serde = { version = "1", features = ["derive"] }
+# `tray-icon` gates the tray/menu-bar API used by src/tray.rs (issue #82).
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-global-shortcut = "2"
+# OS-native notifications (ROADMAP 3.2). The plugin wraps each platform's own
+# notification service, so no per-OS code is needed here.
+tauri-plugin-notification = "2"
+# Launch-at-login (issue #82): a launch agent on macOS, a registry run key on
+# Windows, a .desktop file on Linux. Cross-platform, unlike the OCR capture
+# dependencies below, so it lives in the universal dependency set.
+tauri-plugin-autostart = "2"
+# Debug-tooling: RUST_LOG-controlled tracing to stdout. `env_logger` reads
+# RUST_LOG at init and is a no-op overhead-wise once configured, so it's safe
+# to leave compiled into release builds rather than feature-gating it out.
+log = "0.4"
+env_logger = "0.11"
+# Native OS credential storage (ADR 0001): macOS Keychain, Windows Credential
+# Manager, Linux Secret Service. The `sync-secret-service` + `crypto-rust`
+# defaults keep the Linux backend pure-Rust, so CI compiles it without extra
+# system packages.
+keyring = "3"
+arboard = "3"
+serde_json = "1"
+sha2 = "0.10"
+tokio = { version = "1", features = ["io-util", "macros", "process", "rt", "sync", "time"] }
+
+# Screen-region capture and OCR (issue #84), macOS-only today: capture uses
+# the system `screencapture` tool, which Windows and Linux have no equivalent
+# built-in for (see ocr_capture.rs's module docs). Scoped as a target-specific
+# dependency rather than a universal one so Linux and Windows builds never
+# compile an OCR engine they cannot reach — the alternative, compiling it
+# everywhere but calling it from nowhere outside `cfg(target_os = "macos")`,
+# is dead code on every other platform and `-D warnings` denies that.
+[target.'cfg(target_os = "macos")'.dependencies]
+# Pure Rust with no system library dependency, unlike a Tesseract binding —
+# relevant even though this is macOS-only, since a system Tesseract install
+# is not guaranteed there either. Does not report per-line confidence; see
+# ocr_capture.rs.
+ocrs = "0.12"
+rten = "0.24"
+rten-imageproc = "0.24"
+image = { version = "0.25", default-features = false, features = ["png"] }

@@ -1,27 +1,27 @@
 # Backend
 # Both forms: the trailing-slash pattern alone matches a directory but
 # not a symlink of the same name, which a worktree-based checkout may use.
-backend/.venv
-backend/.venv/
-backend/__pycache__/
-backend/**/__pycache__/
-backend/*.egg-info/
-backend/.pytest_cache/
-backend/data/
-backend/.env
+apps/backend/.venv
+apps/backend/.venv/
+apps/backend/__pycache__/
+apps/backend/**/__pycache__/
+apps/backend/*.egg-info/
+apps/backend/.pytest_cache/
+apps/backend/data/
+apps/backend/.env
 
 # Frontend
-frontend/node_modules
-frontend/node_modules/
-frontend/dist/
-frontend/.env
-frontend/tsconfig.tsbuildinfo
+apps/frontend/node_modules
+apps/frontend/node_modules/
+apps/frontend/dist/
+apps/frontend/.env
+apps/frontend/tsconfig.tsbuildinfo
 
 # Desktop shell
 # Both forms, for the same reason as the backend entries above.
-desktop/target
-desktop/target/
-desktop/src-tauri/gen/
+apps/desktop/target
+apps/desktop/target/
+apps/desktop/src-tauri/gen/
 
 # Deployment
 # Compose reads a root .env automatically, and it holds the database password

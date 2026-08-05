@@ -73,6 +73,19 @@ releases exist yet).
 
 ### Changed
 
+- `Backend on Postgres` is now a required status check on `development` and
+  `main`, alongside the existing SQLite-based `Backend` check. Before this,
+  Postgres — the supported deployment target, and what `docker compose`
+  starts — ran on every PR but could not block a merge, so the dialect
+  production actually runs on was the one that couldn't gate one. The same
+  class of bug (a new table's foreign key not cleared on delete: silently
+  orphaned on SQLite, a `ForeignKeyViolation` 500 on Postgres) reached
+  `development` three times (#19, #134, #136) before this, caught only by
+  luck or a later full-suite run. Verified by deliberately pushing a
+  Postgres-only failure on a scratch branch and confirming GitHub reported
+  it `BLOCKED` rather than mergeable, then closing that branch without
+  merging (issue #164). Repository setting, applied directly — not
+  expressible as a diff in this repo.
 - The README no longer says scheduled notification delivery is unimplemented.
   It is: a durable job dispatches due reminders, claims each occurrence so two
   instances cannot deliver it twice, and writes a desktop notification the
@@ -294,7 +307,7 @@ releases exist yet).
   Accepted. This closes the question ADR 0001 deliberately left open; it
   changes no code, since nothing in the shell foreclosed either mode.
 
-- Desktop shell scaffold (Tauri 2), under `desktop/`. The shell hosts the
+- Desktop shell scaffold (Tauri 2), under `apps/desktop/`. The shell hosts the
   existing frontend production build and resolves its API endpoint at runtime
   rather than at build time, so one build can address either a local backend or
   a remote server. The endpoint is validated in the host process and must be
@@ -341,6 +354,36 @@ releases exist yet).
 
 ### Fixed
 
+- FSRS review intervals now actually grow. `FSRSScheduler` re-derived
+  stability from the previous interval on every review instead of persisting
+  it, which mathematically pinned every FSRS word at a 1.00-day interval
+  forever regardless of how many times it was answered correctly — no word
+  ever left daily review. `retrievability()` had a related bug: it divided
+  elapsed time by `interval_days` instead of `stability`, reporting `R ≈
+  0.368` at the exact moment the scheduler's own contract said `R = 0.9`.
+  Stability is now persisted (`ReviewState.stability`, a new nullable column
+  on `words`) and compounds correctly across reviews. See
+  [ADR 0004](docs/adr/0004-memory-scheduling-model.md).
+
+  **Existing data:** every FSRS account's affected words are backfilled with
+  a stability consistent with what the buggy scheduler already implied
+  (`interval_days / -log(0.9)`), not reset to zero and not reverse-engineered
+  from repetition count — the bug made every repetition count converge to the
+  same interval, so that count carries no usable signal. SM-2 accounts are
+  untouched; SM-2 never used this field. Some affected words will re-earn
+  longer intervals faster or slower than their real (unrecoverable) review
+  history would have produced.
+
+- `PUT /api/v1/recall-settings` no longer silently resets fields it doesn't
+  mention. It rebuilt the settings record from the request schema's defaults
+  on every save, so any save that didn't explicitly re-send
+  `quiet_hours_start`, `quiet_hours_end`, `notifications_paused` or
+  `hide_notification_details` reset them to `None`/`false` underneath
+  whatever had set them — and the latter two had no API surface to re-send in
+  the first place, despite being enforced on notification delivery. The
+  endpoint now applies only the fields present in the request onto the
+  persisted record, and both fields are now part of the request/response
+  schema.
 - The scheduler's claims table no longer grows without bound. `#20` added a row
   per job firing to make delivery exclusive, and wrote a prune for them, but
   nothing ever called it — so the table was append-only for the life of a
@@ -368,6 +411,15 @@ releases exist yet).
 
 ### Known limitations
 
+- AI output had never been checked against a real model before issue #166 —
+  every code path was tested against fakes only. A verification pass against
+  a real `llama3.2` daemon found genuine defects: learning-path generation
+  fails reproducibly, role-play scoring is inconsistent for low-effort
+  attempts (flattered a gibberish attempt with 82/100 on one run, correctly
+  refused to score it on another), and enrichment does not reliably localize
+  examples/collocations/CEFR level into the requested target language. Full
+  results, including the confirmed injection-resistance checks, in
+  [docs/ai-model-verification.md](docs/ai-model-verification.md).
 - The scheduler's job store is in-process, so running more than one backend
   instance delivers each reminder once per instance.
 - Desktop notifications have not been seen on a real desktop. The collect,
