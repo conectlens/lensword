@@ -14,7 +14,7 @@
 
 import { isDesktopShell } from './desktopNotifications'
 
-/** Mirrors `TrayAction` in `desktop/src-tauri/src/tray.rs`. */
+/** Mirrors `TrayAction` in `apps/desktop/src-tauri/src/tray.rs`. */
 export type TrayAction =
   | 'add_word'
   | 'quick_review'

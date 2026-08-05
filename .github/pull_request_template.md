@@ -17,10 +17,10 @@
 <!-- How was this verified? Check off what applies and add commands/output where useful. -->
 
 - [ ] `scripts/verify.sh` passes (runs all four gates below)
-- [ ] `cd backend && python -m pytest` passes
-- [ ] `cd frontend && npm run lint` passes
-- [ ] `cd frontend && npm run build` passes (type check + build)
-- [ ] `cd frontend && npm test` passes
+- [ ] `cd apps/backend && python -m pytest` passes
+- [ ] `cd apps/frontend && npm run lint` passes
+- [ ] `cd apps/frontend && npm run build` passes (type check + build)
+- [ ] `cd apps/frontend && npm test` passes
 - [ ] Manually verified in the browser / via API docs (describe below)
 
 ## Screenshots (if UI change)

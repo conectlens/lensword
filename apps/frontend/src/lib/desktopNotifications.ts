@@ -12,7 +12,7 @@
  * backend's ack is idempotent, so the duplicate costs nothing.
  *
  * This is the third typed adapter boundary ADR 0001 permits inside
- * `frontend/src`, alongside `runtimeConfig.ts` and `credentialStore.ts`: it is
+ * `apps/frontend/src`, alongside `runtimeConfig.ts` and `credentialStore.ts`: it is
  * feature-detected, so one build serves both the browser deployment and the
  * shell. In the browser every function here is a no-op — a web page raising
  * unsolicited desktop notifications is the behaviour the shell exists to

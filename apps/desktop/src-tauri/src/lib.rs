@@ -1,6 +1,6 @@
 //! LensWord desktop shell.
 //!
-//! The shell wraps the existing `frontend/` production build unchanged. Its
+//! The shell wraps the existing `apps/frontend/` production build unchanged. Its
 //! only responsibility beyond hosting that build is telling the frontend which
 //! API endpoint it is permitted to talk to — resolved and validated in
 //! `lensword-api-config`, in this process, never in the webview.

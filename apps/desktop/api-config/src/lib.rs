@@ -142,7 +142,7 @@ pub const DEFAULT_API_BASE: &str = "http://127.0.0.1:8000";
 
 /// What crosses the process boundary into the webview.
 ///
-/// The field names are a wire contract with `frontend/src/lib/runtimeConfig.ts`.
+/// The field names are a wire contract with `apps/frontend/src/lib/runtimeConfig.ts`.
 /// Renaming one breaks the frontend at runtime without breaking any Rust
 /// caller, so `serializes_with_the_field_names_the_frontend_reads` pins them.
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -435,7 +435,7 @@ mod tests {
 
     #[test]
     fn serializes_with_the_field_names_the_frontend_reads() {
-        // Wire contract with frontend/src/lib/runtimeConfig.ts. A serde rename
+        // Wire contract with apps/frontend/src/lib/runtimeConfig.ts. A serde rename
         // here would leave `config.base_url` undefined in the webview with no
         // Rust caller breaking.
         let json = serde_json::to_value(ApiConfig::from(Resolved {

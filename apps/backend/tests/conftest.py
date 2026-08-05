@@ -53,7 +53,7 @@ def isolate_ai_settings(monkeypatch):
     """Make every test hermetic with respect to AI configuration.
 
     Two things would otherwise leak in. The README tells operators to put
-    AI_PROVIDER=ollama in backend/.env, so a developer following the
+    AI_PROVIDER=ollama in apps/backend/.env, so a developer following the
     documentation would turn the suite red and — worse — have it place real
     HTTP calls against their running daemon. And because both the settings
     and the built provider are process-wide lru_caches, the first test that
@@ -66,7 +66,7 @@ def isolate_ai_settings(monkeypatch):
     for name in AI_ENV_VARS:
         monkeypatch.delenv(name, raising=False)
         monkeypatch.delenv(name.lower(), raising=False)
-    # Neutralise backend/.env as well: deleting environment variables does
+    # Neutralise apps/backend/.env as well: deleting environment variables does
     # not stop pydantic-settings reading the dotenv file.
     monkeypatch.setitem(Settings.model_config, "env_file", None)
 

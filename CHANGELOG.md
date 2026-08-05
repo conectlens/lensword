@@ -294,7 +294,7 @@ releases exist yet).
   Accepted. This closes the question ADR 0001 deliberately left open; it
   changes no code, since nothing in the shell foreclosed either mode.
 
-- Desktop shell scaffold (Tauri 2), under `desktop/`. The shell hosts the
+- Desktop shell scaffold (Tauri 2), under `apps/desktop/`. The shell hosts the
   existing frontend production build and resolves its API endpoint at runtime
   rather than at build time, so one build can address either a local backend or
   a remote server. The endpoint is validated in the host process and must be

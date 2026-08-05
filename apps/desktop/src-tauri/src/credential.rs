@@ -4,7 +4,7 @@
 //! credential store rather than in webview `localStorage`, behind a typed
 //! adapter exposing only get, set and clear. These three commands are that
 //! adapter's host side; the frontend reaches them through
-//! `frontend/src/lib/credentialStore.ts`.
+//! `apps/frontend/src/lib/credentialStore.ts`.
 //!
 //! The commands are thin delegations to the `keyring` crate — macOS Keychain,
 //! Windows Credential Manager, and the Linux Secret Service. There is no branch

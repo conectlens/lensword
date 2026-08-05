@@ -35,7 +35,7 @@ tighter budget when a Python sidecar is present (combined shell-and-sidecar
 memory ≤ 300 MiB, versus ≤ 150 MiB for the shell alone).
 
 The runtime endpoint contract that makes either mode possible already exists:
-`frontend/src/lib/runtimeConfig.ts` resolves the API base URL from the Tauri
+`apps/frontend/src/lib/runtimeConfig.ts` resolves the API base URL from the Tauri
 host at runtime, and the host validates that the endpoint is a loopback address
 or an explicit HTTPS origin. Nothing in the current shell forecloses either
 mode.

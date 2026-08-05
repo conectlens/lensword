@@ -5,10 +5,10 @@ the project, the conventions used, and how to submit changes.
 
 ## Project layout
 
-- `backend/` — FastAPI API on Postgres or SQLite, hexagonal/clean architecture
+- `apps/backend/` — FastAPI API on Postgres or SQLite, hexagonal/clean architecture
   (`domain/` → `application/` → `infrastructure/`/`api/`). See the
   "Architecture" section of the [README](README.md) for the dependency rules.
-- `frontend/` — Vite + React + TypeScript + Tailwind SPA, feature-sliced under
+- `apps/frontend/` — Vite + React + TypeScript + Tailwind SPA, feature-sliced under
   `src/features/`.
 
 ## Development setup
@@ -16,7 +16,7 @@ the project, the conventions used, and how to submit changes.
 ### Backend
 
 ```bash
-cd backend
+cd apps/backend
 python3.12 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 cp .env.example .env
@@ -47,7 +47,7 @@ API docs are served at `http://localhost:8000/docs` while running.
 ### Frontend
 
 ```bash
-cd frontend
+cd apps/frontend
 npm install
 cp .env.example .env   # VITE_API_URL=http://localhost:8000
 npm run dev
@@ -55,13 +55,13 @@ npm run dev
 
 ### Desktop shell
 
-Only needed if you are working on `desktop/`. Requires a Rust toolchain
+Only needed if you are working on `apps/desktop/`. Requires a Rust toolchain
 ([rustup](https://rustup.rs)); the shell itself additionally needs your
 platform's webview development packages, listed in the
 [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
 
 ```bash
-cd desktop
+cd apps/desktop
 cargo test -p lensword-api-config     # endpoint validation — no webview needed
 cargo fmt --check
 cargo clippy -p lensword-api-config -- -D warnings
@@ -75,11 +75,11 @@ embeds that output, and if it is missing the build fails inside a macro
 expansion rather than saying what is actually wrong:
 
 ```bash
-(cd frontend && npm ci && npm run build)
-(cd desktop && npx @tauri-apps/cli@2 build)
+(cd apps/frontend && npm ci && npm run build)
+(cd apps/desktop && npx @tauri-apps/cli@2 build)
 ```
 
-The artifact lands under `desktop/target/release/bundle/`. Locally built
+The artifact lands under `apps/desktop/target/release/bundle/`. Locally built
 installers are unsigned.
 
 On macOS, `.dmg` bundling ends with an AppleScript step that arranges the
@@ -89,7 +89,7 @@ process — after the `.app` has already been built successfully. Setting `CI=1`
 skips that cosmetic step and produces the same installer:
 
 ```bash
-(cd desktop && CI=1 npx @tauri-apps/cli@2 build)
+(cd apps/desktop && CI=1 npx @tauri-apps/cli@2 build)
 ```
 
 CI runners set `CI` themselves, so the release workflow is unaffected. CI produces the same artifacts for all three
@@ -128,11 +128,11 @@ To run a single check directly:
 
 ```bash
 # Backend
-cd backend
+cd apps/backend
 .venv/bin/pytest -v
 
 # Frontend
-cd frontend
+cd apps/frontend
 npm run lint
 npm run build   # tsc -b && vite build
 npm test        # vitest run
@@ -153,7 +153,7 @@ npm test        # vitest run
 
 ## Adding tests
 
-- Backend: add or extend a test in `backend/tests/` covering the use case,
+- Backend: add or extend a test in `apps/backend/tests/` covering the use case,
   domain service, or API route you touched. Domain logic
   (`app/domain/services/`) should be tested without going through the API
   where possible, since it has no framework dependencies.
