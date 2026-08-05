@@ -9,7 +9,11 @@ data-access ports).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from app.domain.services.conversation import TutorContext, Turn
+    from app.domain.services.scenarios import Scenario
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,3 +91,20 @@ class AIProvider(Protocol):
     async def generate_field(
         self, field: str, term: str, source_language: str | None, target_language: str, context: str | None = None
     ) -> str: ...
+
+    async def converse(self, context: "TutorContext", learner_text: str) -> dict:
+        """One reply in the conversation tutor (#135).
+
+        Returns a raw dict for the caller to validate — `{"reply": str,
+        "corrections": [...]}` — the same "provider proposes, caller cleans"
+        split as `generate_learning_path`.
+        """
+        ...
+
+    async def evaluate_scenario(self, scenario: "Scenario", transcript: list["Turn"]) -> dict:
+        """Score a finished role-play attempt (#136).
+
+        Returns a raw dict — `{"scores": {...}, "goals_met": [...], "summary":
+        str}` — for the caller to validate and clamp.
+        """
+        ...
