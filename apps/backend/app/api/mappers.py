@@ -51,6 +51,7 @@ def word_to_response(word: Word) -> WordResponse:
             fsrs_retrievability=FSRSScheduler.retrievability(word.review_state),
         ),
         created_at=word.created_at,
+        revision=word.revision,
     )
 
 

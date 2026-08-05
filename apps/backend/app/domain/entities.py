@@ -146,6 +146,10 @@ class Word:
     topics: list[str] = field(default_factory=list)
     review_state: ReviewState = field(default_factory=ReviewState.initial)
     created_at: datetime = field(default_factory=utcnow)
+    # Bumped on every update (issue #90). An offline edit names the revision
+    # it believed it was editing; a mismatch at reconciliation time is a
+    # conflict, not a guess resolved by arrival order.
+    revision: int = 1
 
     def add_translation(self, text: str) -> None:
         text = text.strip()

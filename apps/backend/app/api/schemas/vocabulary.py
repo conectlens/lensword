@@ -63,6 +63,9 @@ class WordResponse(BaseModel):
     topics: list[str]
     review_state: ReviewStateResponse
     created_at: datetime
+    # What an offline edit must name as base_revision to reconcile without a
+    # conflict later (issue #90).
+    revision: int
 
 
 class WordCreateRequest(BaseModel):
