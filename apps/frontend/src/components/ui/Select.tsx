@@ -25,7 +25,12 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
             </option>
           ))}
         </select>
-        <span className="msi pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-white/40">expand_more</span>
+        <span
+          className="msi pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-white/40"
+          aria-hidden="true"
+        >
+          expand_more
+        </span>
       </div>
     </label>
   )

@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { ProtectedRoute } from './components/layout/ProtectedRoute'
 import { LoginPage } from './features/auth/LoginPage'
 import { RegisterPage } from './features/auth/RegisterPage'
@@ -26,13 +26,16 @@ import { PracticePage } from './features/practice/PracticePage'
 import { WeeklyReportPage } from './features/reports/WeeklyReportPage'
 import { useAuth } from './context/AuthContext'
 import { useDesktopNotifications } from './lib/useDesktopNotifications'
+import { useTraySync } from './lib/useTraySync'
 
 export default function App() {
   // Only while signed in: the outbox endpoint is authenticated, and polling it
   // without a token would produce nothing but 401s. A no-op in the browser
   // build (ROADMAP 3.2).
   const { user } = useAuth()
+  const navigate = useNavigate()
   useDesktopNotifications(user !== null)
+  useTraySync({ enabled: user !== null, isAdmin: user?.role === 'admin', navigate })
 
   return (
     <Routes>
@@ -47,6 +50,10 @@ export default function App() {
 
       <Route path="/groups" element={<ProtectedRoute><GroupsPage /></ProtectedRoute>} />
       <Route path="/groups/:groupId" element={<ProtectedRoute><GroupDetailPage /></ProtectedRoute>} />
+      {/* No group in the URL: the tray's "Add word" quick action lands here
+          (issue #82), and WordFormPage picks a group itself rather than
+          needing one named up front. */}
+      <Route path="/words/new" element={<ProtectedRoute><WordFormPage /></ProtectedRoute>} />
       <Route path="/groups/:groupId/words/new" element={<ProtectedRoute><WordFormPage /></ProtectedRoute>} />
       <Route path="/groups/:groupId/words/:wordId" element={<ProtectedRoute><WordFormPage /></ProtectedRoute>} />
       <Route path="/groups/:groupId/extract" element={<ProtectedRoute><ExtractPage /></ProtectedRoute>} />
