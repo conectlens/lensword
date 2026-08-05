@@ -21,6 +21,10 @@ tauri-plugin-global-shortcut = "2"
 # OS-native notifications (ROADMAP 3.2). The plugin wraps each platform's own
 # notification service, so no per-OS code is needed here.
 tauri-plugin-notification = "2"
+# Launch-at-login (issue #82): a launch agent on macOS, a registry run key on
+# Windows, a .desktop file on Linux. Cross-platform, unlike the OCR capture
+# dependencies below, so it lives in the universal dependency set.
+tauri-plugin-autostart = "2"
 # Debug-tooling: RUST_LOG-controlled tracing to stdout. `env_logger` reads
 # RUST_LOG at init and is a no-op overhead-wise once configured, so it's safe
 # to leave compiled into release builds rather than feature-gating it out.

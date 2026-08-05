@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { aiVocabularyApi, groupsApi, wordsApi } from '../../lib/api'
 import { LANGUAGES, type Group, type SupportedLanguage } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
@@ -19,6 +19,11 @@ export function WordFormPage() {
   const isEditing = Boolean(wordId)
 
   const [group, setGroup] = useState<Group | null>(null)
+  // Only populated when the route named no group (the tray's "Add word"
+  // quick action, issue #82) — the picker below lets the user say which one,
+  // defaulting to their first once the list loads.
+  const [pickableGroups, setPickableGroups] = useState<Group[] | null>(null)
+  const [pickedGroupId, setPickedGroupId] = useState<number | null>(null)
   const [term, setTerm] = useState('')
   const [language, setLanguage] = useState<SupportedLanguage>('Spanish')
   const [translations, setTranslations] = useState<string[]>([])
@@ -39,6 +44,13 @@ export function WordFormPage() {
     }
     if (groupId) {
       groupsApi.list().then((all) => setGroup(all.find((g) => g.id === Number(groupId)) ?? null))
+    } else if (!isEditing) {
+      const hadPickedGroup = pickedGroupId !== null
+      groupsApi.list().then((all) => {
+        setPickableGroups(all)
+        setPickedGroupId((current) => current ?? all[0]?.id ?? null)
+        if (!hadPickedGroup && all[0]) setLanguage(all[0].target_language)
+      })
     }
     if (isEditing && wordId) {
       wordsApi.get(Number(wordId)).then((w) => {
@@ -56,6 +68,12 @@ export function WordFormPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupId, wordId, isEditing, searchParams])
+
+  function pickGroup(id: number) {
+    setPickedGroupId(id)
+    const picked = pickableGroups?.find((g) => g.id === id)
+    if (picked) setLanguage(picked.target_language)
+  }
 
   function addTranslation() {
     const value = translationDraft.trim()
@@ -82,13 +100,14 @@ export function WordFormPage() {
       category: category || null,
     }
     try {
+      const targetGroupId = groupId ? Number(groupId) : pickedGroupId
       if (isEditing && wordId) {
         await wordsApi.update(Number(wordId), payload)
         const w = await wordsApi.get(Number(wordId))
         navigate(`/groups/${w.group_id}`)
-      } else if (groupId) {
-        await groupsApi.addWord(Number(groupId), payload)
-        navigate(`/groups/${groupId}`)
+      } else if (targetGroupId) {
+        await groupsApi.addWord(targetGroupId, payload)
+        navigate(`/groups/${targetGroupId}`)
       }
     } finally {
       setLoading(false)
@@ -126,7 +145,21 @@ export function WordFormPage() {
             {group ? `In ${group.name}` : 'Enter the details for your new vocabulary word below.'}
           </p>
         </div>
+        {pickableGroups?.length === 0 && (
+          <p className="mb-6 rounded-lg border border-white/10 bg-white/5 p-3 text-sm text-white/70">
+            You don&apos;t have a group yet. <Link to="/groups" className="text-primary underline">Create one</Link> before adding a word.
+          </p>
+        )}
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+          {pickableGroups !== null && pickableGroups.length > 0 && (
+            <Select
+              label="Group"
+              name="group"
+              value={pickedGroupId?.toString() ?? ''}
+              onChange={(e) => pickGroup(Number(e.target.value))}
+              options={pickableGroups.map((g) => ({ value: g.id.toString(), label: g.name }))}
+            />
+          )}
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             <Input label="Word" required value={term} onChange={(e) => setTerm(e.target.value)} placeholder="Enter the word" />
             <Select
@@ -199,7 +232,7 @@ export function WordFormPage() {
             <Button type="button" variant="ghost" onClick={() => navigate(-1)}>
               Cancel
             </Button>
-            <Button type="submit" loading={loading} disabled={!term.trim()}>
+            <Button type="submit" loading={loading} disabled={!term.trim() || (!isEditing && !groupId && !pickedGroupId)}>
               Save word
             </Button>
           </div>

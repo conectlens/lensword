@@ -159,6 +159,7 @@ export interface RecallSettings {
   in_app_enabled: boolean
   quiet_hours_start: string | null
   quiet_hours_end: string | null
+  notifications_paused: boolean
   /** IANA identifier, e.g. 'Europe/Istanbul'. Reminder times and quiet
    *  hours are interpreted in this zone. */
   time_zone: string
