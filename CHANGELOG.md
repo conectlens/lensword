@@ -398,6 +398,15 @@ releases exist yet).
 
 ### Known limitations
 
+- AI output had never been checked against a real model before issue #166 —
+  every code path was tested against fakes only. A verification pass against
+  a real `llama3.2` daemon found genuine defects: learning-path generation
+  fails reproducibly, role-play scoring is inconsistent for low-effort
+  attempts (flattered a gibberish attempt with 82/100 on one run, correctly
+  refused to score it on another), and enrichment does not reliably localize
+  examples/collocations/CEFR level into the requested target language. Full
+  results, including the confirmed injection-resistance checks, in
+  [docs/ai-model-verification.md](docs/ai-model-verification.md).
 - The scheduler's job store is in-process, so running more than one backend
   instance delivers each reminder once per instance.
 - Desktop notifications have not been seen on a real desktop. The collect,
