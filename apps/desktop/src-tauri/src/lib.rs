@@ -9,6 +9,7 @@
 //! exercised without a webview toolchain. What remains in this file is the
 //! Tauri wiring.
 
+mod autostart;
 mod clipboard;
 mod credential;
 mod mcp;
@@ -78,6 +79,7 @@ pub fn run() {
         // ROADMAP 3.2. The plugin's JS API is reached through a typed frontend
         // adapter (desktopNotifications.ts), not called from UI code directly.
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(selection_capture::plugin())
         .manage(mcp::McpState::default())
         .manage(clipboard::ClipboardState::default())
@@ -120,6 +122,8 @@ pub fn run() {
             tray::tray_status,
             ocr_capture::screen_capture_status,
             ocr_capture::capture_screen_region_and_ocr,
+            autostart::autostart_status,
+            autostart::autostart_set_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start the LensWord desktop shell");

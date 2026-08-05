@@ -13,6 +13,7 @@ import { connectMcpServer, deleteMcpServer, disconnectMcpServer, isMcpDesktopAva
 import type { McpServer, McpServerSave } from '../../lib/mcpClient'
 import { captureClipboard, clipboardStatus, configureClipboard, isClipboardDesktopAvailable } from '../../lib/clipboardCapture'
 import type { ClipboardCapture, ClipboardConfig } from '../../lib/clipboardCapture'
+import { autostartStatus, isAutostartDesktopAvailable, setAutostartEnabled } from '../../lib/autostart'
 import { captureSelectedText, configureSelectionCapture, isSelectionCaptureDesktopAvailable, selectionCaptureStatus } from '../../lib/selectionCapture'
 import type { SelectionCapture, SelectionCaptureStatus } from '../../lib/selectionCapture'
 
@@ -86,6 +87,7 @@ export function SettingsPage() {
       <McpServersCard />
       <SelectedTextCaptureCard />
       <ClipboardCaptureCard />
+      <AutostartCard />
 
       <Card className="p-6">
         <div className="mb-4 flex items-center justify-between">
@@ -415,6 +417,18 @@ function ClipboardCaptureCard() {
   async function update(next: ClipboardConfig) { try { setError(null); await configureClipboard(next); setConfig(next); if (!next.enabled || next.paused) setCapture(null) } catch (err) { setError(err instanceof Error ? err.message : 'Could not update clipboard capture.') } }
   async function read() { try { setError(null); setCapture(await captureClipboard()) } catch (err) { setError(err instanceof Error ? err.message : 'Clipboard could not be read.') } }
   return <Card className="p-6"><h2 className="font-display text-lg font-bold text-white">Clipboard vocabulary capture</h2><p className="mt-1 text-sm text-white/50">Local-only processing. LensWord reads the clipboard only after you opt in; passwords, tokens, payment cards, duplicates, and blocked apps are discarded before preview.</p><div className="mt-4 flex flex-wrap gap-3"><Button onClick={() => update({ ...config, enabled: !config.enabled })}>{config.enabled ? 'Disable capture' : 'Enable capture'}</Button><Button disabled={!config.enabled} onClick={() => update({ ...config, paused: !config.paused })}>{config.paused ? 'Resume' : 'Pause'}</Button><Button disabled={!config.enabled || config.paused} onClick={read}>Check clipboard</Button></div><p className="mt-3 text-xs text-white/50">Processing: local native adapter · status: {capture?.status ?? (config.paused ? 'paused' : config.enabled ? 'ready' : 'disabled')}</p>{capture?.text && <div className="mt-4 rounded-lg border border-white/10 p-3"><p className="text-sm text-white/70">{capture.kind === 'word' ? 'Word candidate' : 'Text candidate'} — not saved</p><p className="mt-2 whitespace-pre-wrap text-white">{capture.text}</p><div className="mt-3 flex gap-2"><Button onClick={() => setCapture(null)}>Discard</Button><Button onClick={() => { navigator.clipboard.writeText(capture.text ?? ''); setCapture(null) }}>Copy for review</Button></div></div>}{error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}</Card>
+}
+
+function AutostartCard() {
+  const desktop = isAutostartDesktopAvailable()
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => { if (desktop) void autostartStatus().then(setEnabled).catch((err) => setError(err instanceof Error ? err.message : 'Launch-at-login status is unavailable.')) }, [desktop])
+  if (!desktop || enabled === null) return null
+  async function toggle(next: boolean) {
+    try { setError(null); await setAutostartEnabled(next); setEnabled(next) } catch (err) { setError(err instanceof Error ? err.message : 'Could not update launch at login.') }
+  }
+  return <Card className="p-6"><div className="flex items-center justify-between"><div><h2 className="font-display text-lg font-bold text-white">Launch at login</h2><p className="mt-1 text-sm text-white/50">Starts LensWord in the background when you sign in to this computer, so reminders and the tray keep working without opening it by hand.</p></div><Toggle checked={enabled} onChange={toggle} /></div>{error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}</Card>
 }
 
 const EMPTY_MCP_SERVER: McpServerSave = {
