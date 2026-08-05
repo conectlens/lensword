@@ -28,6 +28,13 @@ from app.domain.entities import (
     User,
     Word,
 )
+from app.domain.services.diagnosis_contracts import (
+    AcquisitionState,
+    Diagnosis,
+    InterventionOutcome,
+    InterventionPlan,
+    LearningObservation,
+)
 
 
 class UserRepository(Protocol):
@@ -140,3 +147,37 @@ class DesktopNotificationRepository(Protocol):
     def add(self, notification: DesktopNotification) -> DesktopNotification: ...
     def mark_delivered(self, user_id: int, notification_ids: list[int]) -> int: ...
     def purge_delivered_before(self, cutoff: datetime) -> int: ...
+
+
+# AI Learning Diagnosis ports (#180, ADR 0007, issue #181 TODO 2). No
+# implementation exists yet — these name the contract #182's persistence
+# work and #183/#184's engines are written against, so those phases depend
+# on a port rather than deciding their own storage shape ad hoc.
+
+
+class LearningObservationRepository(Protocol):
+    """Append-only: nothing here updates or deletes a recorded observation.
+    A wrong observation is corrected by a later, separate one, the same way
+    `mistake_memory.py` treats mistake history."""
+
+    def add(self, observation: LearningObservation) -> LearningObservation: ...
+    def list_for_word(self, user_id: int, word_id: int, limit: int = 500) -> list[LearningObservation]: ...
+    def get_by_id(self, user_id: int, observation_id: str) -> LearningObservation | None: ...
+
+
+class DiagnosisRepository(Protocol):
+    def add(self, diagnosis: Diagnosis) -> Diagnosis: ...
+    def latest_for_word(self, user_id: int, word_id: int) -> Diagnosis | None: ...
+    def list_for_word(self, user_id: int, word_id: int, limit: int = 50) -> list[Diagnosis]: ...
+
+
+class InterventionRepository(Protocol):
+    def add_plan(self, plan: InterventionPlan) -> InterventionPlan: ...
+    def add_outcome(self, outcome: InterventionOutcome) -> InterventionOutcome: ...
+    def list_plans_for_word(self, user_id: int, word_id: int) -> list[InterventionPlan]: ...
+
+
+class AcquisitionStateRepository(Protocol):
+    def get_for_word(self, user_id: int, word_id: int) -> AcquisitionState | None: ...
+    def upsert(self, state: AcquisitionState) -> AcquisitionState: ...
+    def delete_for_word(self, user_id: int, word_id: int) -> None: ...

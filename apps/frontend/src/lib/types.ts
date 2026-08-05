@@ -163,6 +163,11 @@ export interface RecallSettings {
   /** Off by default (ADR 0006). Gates every user-visible behavior added by
    *  the Semantic Relatedness phases; no UI reads it yet. */
   semantic_relatedness_enabled: boolean
+  /** Off by default (ADR 0007). Independently controllable: deterministic
+   *  diagnosis must not require the AI coach. No UI reads these yet. */
+  learning_diagnosis_enabled: boolean
+  acquisition_loop_enabled: boolean
+  ai_coach_enabled: boolean
   /** IANA identifier, e.g. 'Europe/Istanbul'. Reminder times and quiet
    *  hours are interpreted in this zone. */
   time_zone: string

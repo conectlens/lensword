@@ -144,3 +144,10 @@ depends on this.
   queue. See [ADR 0006](docs/adr/0006-semantic-relatedness-in-review.md)
   for why semantic priming and queue reordering are explicitly out of
   scope, and the evidence on both sides.
+- The AI Learning Diagnosis epic (#180) splits deterministic diagnosis,
+  intervention selection, AI explanation, same-day acquisition scheduling,
+  and FSRS long-term scheduling across five separate owners, and an LLM
+  never determines a retention value, evidence count, or diagnosis
+  confidence. See
+  [ADR 0007](docs/adr/0007-ai-learning-diagnosis-architecture.md) for the
+  boundary and the opt-in flags that gate all of it.
