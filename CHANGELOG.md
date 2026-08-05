@@ -73,6 +73,19 @@ releases exist yet).
 
 ### Changed
 
+- `Backend on Postgres` is now a required status check on `development` and
+  `main`, alongside the existing SQLite-based `Backend` check. Before this,
+  Postgres — the supported deployment target, and what `docker compose`
+  starts — ran on every PR but could not block a merge, so the dialect
+  production actually runs on was the one that couldn't gate one. The same
+  class of bug (a new table's foreign key not cleared on delete: silently
+  orphaned on SQLite, a `ForeignKeyViolation` 500 on Postgres) reached
+  `development` three times (#19, #134, #136) before this, caught only by
+  luck or a later full-suite run. Verified by deliberately pushing a
+  Postgres-only failure on a scratch branch and confirming GitHub reported
+  it `BLOCKED` rather than mergeable, then closing that branch without
+  merging (issue #164). Repository setting, applied directly — not
+  expressible as a diff in this repo.
 - The README no longer says scheduled notification delivery is unimplemented.
   It is: a durable job dispatches due reminders, claims each occurrence so two
   instances cannot deliver it twice, and writes a desktop notification the
