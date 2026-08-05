@@ -131,8 +131,18 @@ jobs:
         run: npm test
 
   desktop:
-    name: Desktop shell (Rust)
-    runs-on: ubuntu-latest
+    name: Desktop shell (Rust, ${{ matrix.platform }})
+    # macOS added alongside Linux for issue #84: the screen-capture/OCR code
+    # is macOS-only (`cfg(target_os = "macos")`), so the Linux leg alone
+    # never compiles a line of it — this job would stay green while that
+    # code silently bit-rotted. Windows is not added here: nothing in this
+    # crate is Windows-specific yet, so a second runner would only repeat
+    # what the Linux leg already checks.
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.platform }}
     # Bounded so a package manager waiting on a lock fails the job instead of
     # occupying a runner until the six-hour default expires.
     timeout-minutes: 25
@@ -168,13 +178,15 @@ jobs:
           npm ci
           npm run build
 
-      # Tauri links against the system webview on Linux.
+      # Tauri links against the system webview on Linux; macOS's WebKit is
+      # already part of the OS, so this step is Linux-only.
       #
       # `noninteractive` and `--no-install-recommends` are both load-bearing:
       # without the first, a package that wants to prompt blocks until the job
       # times out, and without the second this pulls in a large recommended set
       # that is useless for compiling against the headers.
       - name: Install webview build dependencies
+        if: matrix.platform == 'ubuntu-latest'
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |

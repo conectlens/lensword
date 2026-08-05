@@ -12,6 +12,7 @@
 mod clipboard;
 mod credential;
 mod mcp;
+mod ocr_capture;
 mod selection_capture;
 mod tray;
 
@@ -117,6 +118,8 @@ pub fn run() {
             mcp::mcp_server_invoke,
             tray::tray_set_status,
             tray::tray_status,
+            ocr_capture::screen_capture_status,
+            ocr_capture::capture_screen_region_and_ocr,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start the LensWord desktop shell");
