@@ -139,3 +139,8 @@ depends on this.
   [ADR 0004](docs/adr/0004-memory-scheduling-model.md) for the fix, why
   stability is now persisted rather than derived, and the remediation for
   accounts affected before the fix.
+- The Semantic Relatedness track's knowledge graph (#200) is for querying
+  relatedness on demand, not for reordering or pre-exposing the review
+  queue. See [ADR 0006](docs/adr/0006-semantic-relatedness-in-review.md)
+  for why semantic priming and queue reordering are explicitly out of
+  scope, and the evidence on both sides.

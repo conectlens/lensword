@@ -311,6 +311,7 @@ def _settings_to_domain(m: RecallSettingsModel) -> RecallSettings:
         hide_notification_details=m.hide_notification_details,
         notifications_paused=m.notifications_paused,
         scheduler=m.scheduler,
+        semantic_relatedness_enabled=m.semantic_relatedness_enabled,
     )
 
 
@@ -888,6 +889,7 @@ class SqlAlchemyRecallSettingsRepository:
         m.hide_notification_details = settings.hide_notification_details
         m.notifications_paused = settings.notifications_paused
         m.scheduler = settings.scheduler
+        m.semantic_relatedness_enabled = settings.semantic_relatedness_enabled
         self.db.flush()
         return _settings_to_domain(m)
 
