@@ -1,9 +1,11 @@
 import ast
 import asyncio
 import inspect
+import re
 from pathlib import Path
 
 from app.domain.services.ai_provider import AIProvider, ExtractedVocabulary
+from app.infrastructure.ai import OllamaProvider
 
 _ALLOWED_MODULES = ("app.domain", "dataclasses", "typing", "__future__")
 
@@ -76,3 +78,50 @@ def test_the_port_is_awaitable():
     stall under load — so 'awaitable' is part of the contract, not an
     implementation detail of one adapter."""
     assert inspect.iscoroutinefunction(AIProvider.suggest_mnemonic)
+
+
+def _protocol_method_names() -> set[str]:
+    return {name for name, value in vars(AIProvider).items() if not name.startswith("_") and callable(value)}
+
+
+def test_every_protocol_method_is_implemented_by_ollama_provider():
+    """Issue #169: nothing previously checked that the only real provider
+    actually implements every AIProvider method. `converse` and
+    `evaluate_scenario` were called directly with no existence check and no
+    Protocol declaration either — every real call raised AttributeError, and
+    it stayed invisible because the test suite's fake provider happened to
+    implement both. A provider missing a method now fails here instead of at
+    request time."""
+    missing = [name for name in _protocol_method_names() if not callable(getattr(OllamaProvider, name, None))]
+    assert not missing, f"OllamaProvider is missing protocol methods: {missing}"
+
+
+def test_every_implemented_method_matches_its_protocol_parameter_names():
+    for name in _protocol_method_names():
+        protocol_params = list(inspect.signature(getattr(AIProvider, name)).parameters)
+        provider_params = list(inspect.signature(getattr(OllamaProvider, name)).parameters)
+        assert provider_params == protocol_params, name
+
+
+_PROVIDER_CALL = re.compile(r"\bprovider\.(\w+)\(")
+
+
+def test_every_provider_method_called_by_a_router_is_declared_on_the_protocol():
+    """The actual failure mode in issue #169, and what the two checks above
+    would *not* have caught on their own: `converse` and `evaluate_scenario`
+    were called directly on the injected provider from two routers with no
+    Protocol declaration at all, so a cross-check against the Protocol's own
+    (incomplete) member list stayed green throughout. This scans the routers
+    for `provider.<name>(` call sites instead, and asserts every one is part
+    of the Protocol contract — so a router calling an undeclared method fails
+    here rather than at request time."""
+    routers_dir = Path(__file__).resolve().parents[1] / "app" / "api" / "routers"
+    protocol_methods = _protocol_method_names()
+
+    called: set[str] = set()
+    for path in routers_dir.glob("*.py"):
+        called.update(_PROVIDER_CALL.findall(path.read_text()))
+
+    assert called, "expected at least one provider.<method>() call site to check"
+    missing = called - protocol_methods
+    assert not missing, f"routers call provider methods not declared on AIProvider: {missing}"

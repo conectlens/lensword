@@ -16,7 +16,9 @@ import httpx
 import pytest
 
 from app.domain.exceptions import AIProviderUnavailableError
-from app.infrastructure.ai import OllamaProvider
+from app.domain.services.conversation import Difficulty, Speaker, Turn, build_context
+from app.domain.services.scenarios import CATALOG
+from app.infrastructure.ai import DATA_BLOCK_BEGIN, DATA_BLOCK_END, OllamaProvider
 
 
 def _provider(handler, **kwargs) -> OllamaProvider:
@@ -35,6 +37,26 @@ def _suggest(provider: OllamaProvider, word: str = "word", context: str = "conte
 
 def _extract(provider: OllamaProvider):
     return asyncio.run(provider.extract_vocabulary("A useful passage.", "English", "Spanish", 2))
+
+
+def _converse(provider: OllamaProvider, learner_text: str = "Como estas?"):
+    context = build_context(
+        target_language="Spanish",
+        difficulty=Difficulty.STEADY,
+        vocabulary=["perro", "gato"],
+        recent_mistakes=["ser vs estar"],
+        history=[Turn(speaker=Speaker.LEARNER, text="Hola")],
+    )
+    return asyncio.run(provider.converse(context, learner_text))
+
+
+def _evaluate(provider: OllamaProvider):
+    scenario = CATALOG[0]
+    transcript = [
+        Turn(speaker=Speaker.LEARNER, text="Hello, I am here for the interview."),
+        Turn(speaker=Speaker.TUTOR, text="Great, tell me about yourself."),
+    ]
+    return asyncio.run(provider.evaluate_scenario(scenario, transcript))
 
 
 def test_suggest_mnemonic_returns_generated_text():
@@ -237,6 +259,116 @@ def test_transport_failure_message_does_not_echo_the_raw_exception():
     assert "10.0.0.5" not in str(excinfo.value)
 
 
+def test_converse_returns_reply_and_corrections():
+    """Issue #169: this call raised AttributeError against a real provider —
+    `converse` did not exist. Guards the actual implementation, not just the
+    Protocol/interface checks in test_ai_provider.py."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.read())
+        assert payload["format"] == "json"
+        return httpx.Response(
+            200,
+            json={
+                "response": json.dumps(
+                    {
+                        "reply": "Estoy bien, gracias!",
+                        "corrections": [
+                            {
+                                "original": "Como estas",
+                                "corrected": "¿Cómo estás?",
+                                "explanation": "Missing question marks and accents.",
+                            }
+                        ],
+                    }
+                )
+            },
+        )
+
+    result = _converse(_provider(handler))
+
+    assert result["reply"] == "Estoy bien, gracias!"
+    assert result["corrections"][0]["corrected"] == "¿Cómo estás?"
+
+
+def test_converse_places_the_learner_message_and_history_inside_the_data_block():
+    """Same data-separation rule as the mnemonic prompt (issue #45): the
+    learner's message and prior turns are the untrusted part of this request
+    and must not appear outside the delimited block."""
+    captured: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["prompt"] = json.loads(request.read())["prompt"]
+        return httpx.Response(200, json={"response": json.dumps({"reply": "ok"})})
+
+    _converse(_provider(handler), learner_text="Como estas?")
+
+    prompt = captured["prompt"]
+    body = prompt[prompt.index(DATA_BLOCK_BEGIN) + len(DATA_BLOCK_BEGIN) : prompt.index(DATA_BLOCK_END)]
+    assert "Como estas?" in body
+    assert "Hola" in body
+    assert "Como estas?" not in prompt[: prompt.index(DATA_BLOCK_BEGIN)]
+
+
+def test_converse_raises_clear_error_when_daemon_unreachable():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused", request=request)
+
+    with pytest.raises(AIProviderUnavailableError):
+        _converse(_provider(handler))
+
+
+def test_evaluate_scenario_returns_scores_and_goals_met():
+    """Issue #169: this call raised AttributeError against a real provider —
+    `evaluate_scenario` did not exist."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.read())
+        assert payload["format"] == "json"
+        return httpx.Response(
+            200,
+            json={
+                "response": json.dumps(
+                    {
+                        "scores": {
+                            "vocabulary": {"score": 80, "comment": "Good range."},
+                            "task_completion": {"score": 90, "comment": "Covered the goals."},
+                        },
+                        "goals_met": ["Introduce yourself"],
+                        "summary": "Confident opening, could expand on experience.",
+                    }
+                )
+            },
+        )
+
+    result = _evaluate(_provider(handler))
+
+    assert result["scores"]["vocabulary"]["score"] == 80
+    assert result["goals_met"] == ["Introduce yourself"]
+
+
+def test_evaluate_scenario_places_the_transcript_inside_the_data_block():
+    captured: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["prompt"] = json.loads(request.read())["prompt"]
+        return httpx.Response(200, json={"response": json.dumps({"scores": {}})})
+
+    _evaluate(_provider(handler))
+
+    prompt = captured["prompt"]
+    body = prompt[prompt.index(DATA_BLOCK_BEGIN) + len(DATA_BLOCK_BEGIN) : prompt.index(DATA_BLOCK_END)]
+    assert "Hello, I am here for the interview." in body
+
+
+def test_evaluate_scenario_raises_clear_error_when_daemon_unreachable():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused", request=request)
+
+    with pytest.raises(AIProviderUnavailableError):
+        _evaluate(_provider(handler))
+
+
 def _ollama_model_available(model: str, base_url: str = "http://localhost:11434") -> bool:
     """True only if the daemon responds AND the target model is actually pulled.
 
@@ -265,3 +397,32 @@ def test_suggest_mnemonic_integration_against_real_ollama():
 
     assert isinstance(result, str)
     assert result.strip() != ""
+
+
+@pytest.mark.skipif(
+    not _ollama_model_available("llama3.2"),
+    reason="Ollama isn't running locally on :11434, or the 'llama3.2' model isn't pulled",
+)
+def test_converse_integration_against_real_ollama():
+    """Issue #169's actual verify step: this endpoint 500'd against a real
+    provider before converse() existed. No mocked transport here."""
+    provider = OllamaProvider()
+
+    result = _converse(provider, learner_text="Hello, how are you today?")
+
+    assert isinstance(result, dict)
+    assert isinstance(result.get("reply"), str)
+    assert result["reply"].strip() != ""
+
+
+@pytest.mark.skipif(
+    not _ollama_model_available("llama3.2"),
+    reason="Ollama isn't running locally on :11434, or the 'llama3.2' model isn't pulled",
+)
+def test_evaluate_scenario_integration_against_real_ollama():
+    provider = OllamaProvider()
+
+    result = _evaluate(provider)
+
+    assert isinstance(result, dict)
+    assert isinstance(result.get("scores"), dict)
