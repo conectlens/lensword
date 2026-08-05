@@ -232,6 +232,39 @@ def test_recall_settings_roundtrip(client, auth_headers):
     assert again["scheduler"] == "fsrs"
 
 
+def test_recall_settings_fields_survive_an_unrelated_put(client, auth_headers):
+    """Issue #173 TODO 4: PUT rebuilt RecallSettings from schema defaults on
+    every save, so quiet_hours_start, quiet_hours_end, notifications_paused
+    and hide_notification_details were silently reset to None/False by any
+    save that did not explicitly re-send them. This test fails on `main`
+    today."""
+    headers = auth_headers()
+
+    resp = client.put(
+        "/api/v1/recall-settings",
+        json={
+            "quiet_hours_start": "22:00",
+            "quiet_hours_end": "07:00",
+            "notifications_paused": True,
+            "hide_notification_details": True,
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["quiet_hours_start"] == "22:00"
+    assert resp.json()["notifications_paused"] is True
+
+    # An unrelated save that never mentions any of the four fields above.
+    unrelated = client.put("/api/v1/recall-settings", json={"intensity": 4}, headers=headers)
+
+    assert unrelated.status_code == 200
+    assert unrelated.json()["quiet_hours_start"] == "22:00"
+    assert unrelated.json()["quiet_hours_end"] == "07:00"
+    assert unrelated.json()["notifications_paused"] is True
+    assert unrelated.json()["hide_notification_details"] is True
+    assert unrelated.json()["intensity"] == 4
+
+
 def test_adaptive_practice_exercise_daily_preferences_and_pronunciation(client, auth_headers):
     headers = auth_headers()
     _group, word = _setup_group_with_word(client, headers, term="hola", translation="hello")

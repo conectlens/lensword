@@ -41,6 +41,8 @@ def _settings_to_response(s: RecallSettings, time_zone: str) -> RecallSettingsRe
         in_app_enabled=s.in_app_enabled,
         quiet_hours_start=s.quiet_hours_start,
         quiet_hours_end=s.quiet_hours_end,
+        hide_notification_details=s.hide_notification_details,
+        notifications_paused=s.notifications_paused,
         scheduler=s.scheduler,
     )
 
@@ -60,13 +62,19 @@ def update_recall_settings(
     user_repo: UserRepo,
     reminder_repo: ReminderRepo,
 ) -> RecallSettingsResponse:
-    fields = payload.model_dump()
+    # Only fields the request body actually named — not every field's schema
+    # default — so a save from a screen that does not manage e.g. quiet hours
+    # or the notification-pause flag leaves those alone instead of resetting
+    # them to None/False underneath whatever set them (issue #173).
+    fields = payload.model_dump(exclude_unset=True)
     # The zone lives on the user, not on RecallSettings, so it is split off
     # before the rest is used to build the settings record.
     requested_zone = fields.pop("time_zone", None)
 
-    updated = RecallSettings(user_id=current_user.id, **fields)
-    saved = UpdateRecallSettingsUseCase(settings_repo).execute(current_user.id, updated)
+    current = GetRecallSettingsUseCase(settings_repo).execute(current_user.id)
+    for name, value in fields.items():
+        setattr(current, name, value)
+    saved = UpdateRecallSettingsUseCase(settings_repo).execute(current_user.id, current)
 
     # Absent outside a running application (unit tests, any caller that
     # starts no scheduler), in which case there are no registered jobs to move.

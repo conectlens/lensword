@@ -151,6 +151,7 @@ def _word_to_domain(m: WordModel) -> Word:
             repetitions=m.repetitions,
             due_at=m.due_at,
             last_reviewed_at=m.last_reviewed_at,
+            stability=m.stability,
         ),
         created_at=m.created_at,
     )
@@ -183,6 +184,7 @@ def _apply_word(m: WordModel, e: Word) -> None:
     m.repetitions = e.review_state.repetitions
     m.due_at = e.review_state.due_at
     m.last_reviewed_at = e.review_state.last_reviewed_at
+    m.stability = e.review_state.stability
     m.created_at = e.created_at
 
 

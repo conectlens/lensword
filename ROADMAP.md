@@ -133,3 +133,9 @@ depends on this.
 - Phase 4 is a data-architecture change, not a feature add. It should be
   scoped and started independently of the others, not bundled into the
   same release cycle.
+- The spaced-repetition scheduler (not the Phase 0 background job scheduler)
+  had its own defect, independent of this roadmap's phases: FSRS intervals
+  never grew past 1.00 day. See
+  [ADR 0004](docs/adr/0004-memory-scheduling-model.md) for the fix, why
+  stability is now persisted rather than derived, and the remediation for
+  accounts affected before the fix.

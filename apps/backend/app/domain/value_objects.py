@@ -287,6 +287,10 @@ class ReviewState:
     repetitions: int
     due_at: datetime
     last_reviewed_at: datetime | None
+    # FSRS memory stability in days, persisted so FSRSScheduler can compound it
+    # across reviews instead of re-deriving it from the (clamped) interval each
+    # time. None until the word's first FSRS review; unused by SM-2.
+    stability: float | None = None
 
     @staticmethod
     def initial() -> "ReviewState":
@@ -297,6 +301,7 @@ class ReviewState:
             repetitions=0,
             due_at=utcnow(),
             last_reviewed_at=None,
+            stability=None,
         )
 
     @property
