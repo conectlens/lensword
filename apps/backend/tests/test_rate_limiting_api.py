@@ -5,7 +5,7 @@ test_rate_limiter.py. This file is about the wiring: which endpoints enforce
 which budget, that a 429 carries Retry-After, and that one caller running out
 of budget does not affect another.
 
-Defaults come from Settings (backend/app/config.py) — auth: 10 attempts /
+Defaults come from Settings (apps/backend/app/config.py) — auth: 10 attempts /
 300s per IP; AI generation: 15 / 60s per account; import URL-fetch and
 upload: 20 / 60s each per account. Tests exhaust the real default rather than
 overriding it, so a change to the default is what it looks like to break one

@@ -13,7 +13,7 @@
  * `Authorization` header from it — but the native store is asynchronous. So the
  * token is hydrated once at startup into an in-memory cache; reads come from the
  * cache, writes update it immediately and persist in the background. This is the
- * second typed adapter boundary ADR 0001 permits inside `frontend/src`,
+ * second typed adapter boundary ADR 0001 permits inside `apps/frontend/src`,
  * alongside `runtimeConfig.ts`: it is feature-detected, so one build serves both
  * the browser deployment and the desktop shell.
  */

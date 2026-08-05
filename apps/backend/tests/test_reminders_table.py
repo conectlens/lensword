@@ -80,7 +80,7 @@ def test_migration_adds_the_reminders_table_to_an_existing_database(tmp_path):
     create_all defaults to checkfirst=True, skips tables already present.
 
     The database under test is built here rather than copied from
-    backend/data/, so this runs on a clean checkout and on continuous
+    apps/backend/data/, so this runs on a clean checkout and on continuous
     integration. It previously copied the developer's real database and skipped
     when there was none, which meant it only ever ran because an unrelated test
     created that file as a side effect.

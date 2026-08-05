@@ -7,7 +7,7 @@
  * explicit HTTPS origin, so that rule cannot be skipped from here.
  *
  * This module is the one adapter boundary ADR 0001 permits inside
- * `frontend/src`: it is typed, and it works unchanged in the browser build.
+ * `apps/frontend/src`: it is typed, and it works unchanged in the browser build.
  */
 
 const BROWSER_FALLBACK: string = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'

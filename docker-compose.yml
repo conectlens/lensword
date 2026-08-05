@@ -22,7 +22,7 @@ services:
       retries: 5
 
   backend:
-    build: ./backend
+    build: ./apps/backend
     ports:
       - "18420:8000"
     environment:
@@ -49,7 +49,7 @@ services:
 
   frontend:
     build:
-      context: ./frontend
+      context: ./apps/frontend
       args:
         VITE_API_URL: http://localhost:18420
     ports:

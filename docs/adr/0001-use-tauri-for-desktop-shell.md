@@ -28,8 +28,8 @@ explicit capabilities for access to native commands and plugins.
 
 Use **Tauri 2** for the LensWord desktop shell.
 
-Phase 3.1 will wrap the unmodified `frontend` production build in a Tauri
-project. Desktop-only integration will live outside `frontend/src` except for
+Phase 3.1 will wrap the unmodified `apps/frontend` production build in a Tauri
+project. Desktop-only integration will live outside `apps/frontend/src` except for
 small, typed adapter boundaries that are also usable in the browser build.
 
 This decision does not choose between a bundled local backend and a remote-only
@@ -109,7 +109,7 @@ process tree, including operating-system webview helpers. The shell is
 acceptable when:
 
 - the existing `npm run build` output loads without changes required solely for
-  Tauri inside `frontend/src`;
+  Tauri inside `apps/frontend/src`;
 - five cold and twenty warm launches per platform show warm median startup at
   or below 2 seconds and p95 at or below 3 seconds;
 - idle shell memory is at or below 150 MiB after 60 seconds, or combined shell

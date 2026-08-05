@@ -37,7 +37,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: apps/frontend/package-lock.json
 
       # Rust ships preinstalled on the GitHub-hosted runners, so rustup is used
       # directly rather than adding a third-party toolchain action — the same
@@ -51,10 +51,10 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            desktop/target
+            apps/desktop/target
           # A separate key prefix from ci.yml's: that cache holds debug
           # artifacts from `cargo check`, which a release build cannot reuse.
-          key: cargo-release-${{ runner.os }}-${{ hashFiles('desktop/Cargo.lock') }}
+          key: cargo-release-${{ runner.os }}-${{ hashFiles('apps/desktop/Cargo.lock') }}
           restore-keys: cargo-release-${{ runner.os }}-
 
       # Tauri links against the system webview on Linux. Same packages and same
@@ -82,7 +82,7 @@ jobs:
       # working directory unambiguous, which a relative `npm --prefix
       # ../../frontend` inside the Tauri config does not.
       - name: Build the frontend the shell embeds
-        working-directory: frontend
+        working-directory: apps/frontend
         run: |
           npm ci
           npm run build
@@ -117,7 +117,11 @@ jobs:
           $pfx = Join-Path $env:RUNNER_TEMP "windows-signing.pfx"
           [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
 
-          $configPath = "desktop/src-tauri/tauri.conf.json"
+          $configPath = "apps/desktop/src-tauri/tauri.conf.json"
+          if (-not (Test-Path $configPath)) {
+            Write-Error "Signing config path not found: $configPath"
+            exit 1
+          }
           $config = Get-Content $configPath -Raw | ConvertFrom-Json
           # A timestamp server is not optional: without one the signature stops
           # validating the day the certificate expires, including on installers
@@ -156,7 +160,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          projectPath: desktop
+          projectPath: apps/desktop
           tagName: ${{ github.ref_name }}
           releaseName: "LensWord Desktop ${{ github.ref_name }}"
           releaseBody: |

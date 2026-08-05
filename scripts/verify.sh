@@ -18,8 +18,9 @@ set -uo pipefail
 
 # Resolved to an absolute path before the `cd` below. ${BASH_SOURCE[0]} holds
 # the path as invoked, so a relative invocation from another directory
-# (`cd backend && ../scripts/verify.sh`) stops resolving the moment the working
-# directory changes — and --help, which re-reads this file, would find nothing.
+# (`cd apps/backend && ../../scripts/verify.sh`) stops resolving the moment the
+# working directory changes — and --help, which re-reads this file, would find
+# nothing.
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 REPO_ROOT="$(cd "$(dirname "$SELF")/.." && pwd)"
 cd "$REPO_ROOT"
@@ -56,21 +57,21 @@ fail() { printf '%s\n' "${RED}error:${RESET} $*" >&2; exit 2; }
 # the command to run, rather than being reported as a red gate — a red gate here
 # would say the code is broken when nothing has been checked at all.
 
-PYTHON="backend/.venv/bin/python"
+PYTHON="apps/backend/.venv/bin/python"
 
 if [ ! -x "$PYTHON" ]; then
   fail "no backend virtualenv. Create one with:
-    python${CI_PYTHON_VERSION} -m venv backend/.venv
-    backend/.venv/bin/pip install -r backend/requirements.txt"
+    python${CI_PYTHON_VERSION} -m venv apps/backend/.venv
+    apps/backend/.venv/bin/pip install -r apps/backend/requirements.txt"
 fi
 
 # `npm ci` clears node_modules before repopulating it, and writes this hidden
 # lockfile once the tree is complete. Testing for the directory alone would let
 # an interrupted install through, and its three gates would then fail as though
 # the code were broken.
-if [ ! -f "frontend/node_modules/.package-lock.json" ]; then
+if [ ! -f "apps/frontend/node_modules/.package-lock.json" ]; then
   fail "frontend dependencies are missing or only partly installed. Install them with:
-    (cd frontend && npm ci)"
+    (cd apps/frontend && npm ci)"
 fi
 
 # Docker is only a dependency when it is going to be used, so it is checked
@@ -84,7 +85,7 @@ fi
 local_python="$("$PYTHON" -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
 if [ "$local_python" != "$CI_PYTHON_VERSION" ]; then
   note "backend virtualenv runs Python $local_python, CI runs $CI_PYTHON_VERSION."
-  note "a pass here does not guarantee a pass in CI. Rebuild backend/.venv with python$CI_PYTHON_VERSION."
+  note "a pass here does not guarantee a pass in CI. Rebuild apps/backend/.venv with python$CI_PYTHON_VERSION."
 fi
 
 local_node="$(node --version 2>/dev/null | sed 's/^v\([0-9]*\).*/\1/')"
@@ -130,14 +131,14 @@ run_gate() {
   fi
 }
 
-run_gate "backend  · pytest"     backend  ".venv/bin/python" -m pytest -v
-run_gate "frontend · lint"       frontend npm run lint
-run_gate "frontend · typecheck+build" frontend npm run build
-run_gate "frontend · vitest"     frontend npm test
+run_gate "backend  · pytest"     apps/backend  ".venv/bin/python" -m pytest -v
+run_gate "frontend · lint"       apps/frontend npm run lint
+run_gate "frontend · typecheck+build" apps/frontend npm run build
+run_gate "frontend · vitest"     apps/frontend npm test
 
 if [ "$RUN_DOCKER" -eq 1 ]; then
-  run_gate "docker   · backend image"  . docker build -q -t lensword-backend-verify backend
-  run_gate "docker   · frontend image" . docker build -q -t lensword-frontend-verify frontend
+  run_gate "docker   · backend image"  . docker build -q -t lensword-backend-verify apps/backend
+  run_gate "docker   · frontend image" . docker build -q -t lensword-frontend-verify apps/frontend
 fi
 
 # --- Summary ---------------------------------------------------------------
