@@ -87,7 +87,11 @@ const fn capability() -> (&'static str, bool) {
 #[tauri::command]
 pub fn screen_capture_status() -> ScreenCaptureStatus {
     let (capability, permission_required) = capability();
-    ScreenCaptureStatus { platform: platform(), capability, permission_required }
+    ScreenCaptureStatus {
+        platform: platform(),
+        capability,
+        permission_required,
+    }
 }
 
 #[tauri::command]
@@ -100,7 +104,10 @@ pub fn capture_screen_region_and_ocr(app: AppHandle) -> Result<OcrCaptureResult,
         return Ok(OcrCaptureResult {
             status: "unsupported".into(),
             lines: vec![],
-            detail: Some(format!("screen capture is not yet implemented on {}", platform())),
+            detail: Some(format!(
+                "screen capture is not yet implemented on {}",
+                platform()
+            )),
         });
     }
 
@@ -139,7 +146,11 @@ mod macos {
         match capture_region_to(&path) {
             Ok(true) => {}
             Ok(false) => {
-                return OcrCaptureResult { status: "cancelled".into(), lines: vec![], detail: None };
+                return OcrCaptureResult {
+                    status: "cancelled".into(),
+                    lines: vec![],
+                    detail: None,
+                };
             }
             Err(detail) => {
                 return OcrCaptureResult {
@@ -151,10 +162,16 @@ mod macos {
         }
 
         let outcome = match ocr_image_file(app, &path) {
-            Ok(lines) if lines.is_empty() => {
-                OcrCaptureResult { status: "empty".into(), lines, detail: None }
-            }
-            Ok(lines) => OcrCaptureResult { status: "ok".into(), lines, detail: None },
+            Ok(lines) if lines.is_empty() => OcrCaptureResult {
+                status: "empty".into(),
+                lines,
+                detail: None,
+            },
+            Ok(lines) => OcrCaptureResult {
+                status: "ok".into(),
+                lines,
+                detail: None,
+            },
             Err(detail) => OcrCaptureResult {
                 status: "engine_unavailable".into(),
                 lines: vec![],
@@ -182,7 +199,10 @@ mod macos {
     static OCR_ENGINE: OnceLock<Result<Engine, String>> = OnceLock::new();
 
     fn ocr_engine(app: &AppHandle) -> Result<&Engine, String> {
-        OCR_ENGINE.get_or_init(|| load_engine(app)).as_ref().map_err(Clone::clone)
+        OCR_ENGINE
+            .get_or_init(|| load_engine(app))
+            .as_ref()
+            .map_err(Clone::clone)
     }
 
     fn load_engine(app: &AppHandle) -> Result<Engine, String> {
@@ -222,8 +242,9 @@ mod macos {
             .prepare_input(source)
             .map_err(|e| format!("could not prepare OCR input: {e}"))?;
 
-        let word_rects =
-            engine.detect_words(&input).map_err(|e| format!("text detection failed: {e}"))?;
+        let word_rects = engine
+            .detect_words(&input)
+            .map_err(|e| format!("text detection failed: {e}"))?;
         let line_rects = engine.find_text_lines(&input, &word_rects);
         let line_texts = engine
             .recognize_text(&input, &line_rects)
@@ -238,7 +259,11 @@ mod macos {
                 if text_str.trim().is_empty() {
                     return None;
                 }
-                Some(OcrLine { text: text_str, bounding_box: bounding_box(rect), confidence: None })
+                Some(OcrLine {
+                    text: text_str,
+                    bounding_box: bounding_box(rect),
+                    confidence: None,
+                })
             })
             .collect())
     }
