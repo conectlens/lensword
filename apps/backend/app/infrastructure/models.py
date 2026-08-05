@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.db import Base
@@ -222,6 +222,15 @@ class RecallSettingsModel(Base):
     hide_notification_details: Mapped[bool] = mapped_column(Boolean, default=False)
     notifications_paused: Mapped[bool] = mapped_column(Boolean, default=False)
     scheduler: Mapped[str] = mapped_column(String(16), default="sm2")
+    # server_default matters as much as default here, the same way it does for
+    # time_zone above: a fresh database bootstraps this table from these
+    # models directly (20260730_01), so this column already exists with no
+    # value supplied by the time migration 20260730_14's raw backfill INSERT
+    # runs — that migration's column list predates this field and cannot
+    # name it. Only a real server-side default lets that INSERT succeed.
+    semantic_relatedness_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
 
 
 class PracticeExerciseModel(Base):

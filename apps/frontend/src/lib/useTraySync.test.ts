@@ -55,6 +55,7 @@ const recall = (over: Partial<RecallSettings> = {}): RecallSettings => ({
   quiet_hours_start: null,
   quiet_hours_end: null,
   notifications_paused: false,
+  semantic_relatedness_enabled: false,
   time_zone: 'UTC',
   ...over,
 })

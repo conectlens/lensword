@@ -424,6 +424,12 @@ class RecallSettings:
     # default cannot silently move someone who never opened the settings
     # screen onto a different algorithm mid-deck.
     scheduler: str = "fsrs"
+    # Gates every user-visible behavior added by the Semantic Relatedness
+    # phases (#202-#206). Off by default: ADR 0006 rejects priming outright,
+    # but the knowledge-graph and related-word surfaces those later phases add
+    # are a real scope increase that a user should opt into, not inherit
+    # silently on upgrade.
+    semantic_relatedness_enabled: bool = False
 
     def set_intensity(self, level: int) -> None:
         if not (1 <= level <= 5):
