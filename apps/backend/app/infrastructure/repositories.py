@@ -154,6 +154,7 @@ def _word_to_domain(m: WordModel) -> Word:
             stability=m.stability,
         ),
         created_at=m.created_at,
+        revision=m.revision,
     )
 
 
@@ -566,6 +567,10 @@ class SqlAlchemyWordRepository:
         if m is None:
             raise ValueError(f"Word {word.id} not found")
         _apply_word(m, word)
+        # Bumped here rather than taken from the caller (issue #90), so the
+        # number a sync conflict decision rests on cannot be chosen by
+        # whoever is asking — same reasoning as ReminderRepository.update().
+        m.revision = (m.revision or 1) + 1
         self.db.flush()
         return _word_to_domain(m)
 

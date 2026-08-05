@@ -10,16 +10,35 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query
 
-from app.api.deps import CurrentUser, SyncOperationRepo
+from app.api.deps import (
+    CurrentUser,
+    GroupRepo,
+    MistakeEventRepo,
+    RecallSettingsRepo,
+    ReviewSessionRepo,
+    SyncOperationRepo,
+    WordRepo,
+)
 from app.api.schemas.sync import (
+    ConflictResponse,
+    ConflictsResponse,
     DiagnosticBundleResponse,
     DiagnosticEntry,
+    SubmitSyncOperationsRequest,
+    SubmitSyncOperationsResponse,
     SyncHealthResponse,
+    SyncOperationResultResponse,
     UnsyncedExportResponse,
     UnsyncedOperationExport,
 )
+from app.application.use_cases.review import SubmitAnswerUseCase
+from app.application.use_cases.sync import SubmitSyncOperationsUseCase, SyncOperationInput
+from app.domain.services.spaced_repetition import FSRSScheduler, SpacedRepetitionScheduler
 from app.domain.services.sync_health import ConnectivityMode, SyncHealth, redact
 from app.domain.value_objects import utcnow
+
+_scheduler = SpacedRepetitionScheduler()
+_fsrs_scheduler = FSRSScheduler()
 
 router = APIRouter(prefix="/api/v1/sync", tags=["sync"])
 
@@ -128,4 +147,78 @@ def diagnostic_bundle(
             for o in entries
         ],
         redaction_note=REDACTION_NOTE,
+    )
+
+
+@router.post("/operations", response_model=SubmitSyncOperationsResponse)
+def submit_operations(
+    payload: SubmitSyncOperationsRequest,
+    current_user: CurrentUser,
+    sync_repo: SyncOperationRepo,
+    word_repo: WordRepo,
+    group_repo: GroupRepo,
+    session_repo: ReviewSessionRepo,
+    settings_repo: RecallSettingsRepo,
+    mistake_repo: MistakeEventRepo,
+) -> SubmitSyncOperationsResponse:
+    """Reconcile a batch of offline mutations (issue #90).
+
+    Always 200: an individual operation's outcome is `applied` or
+    `conflict`, not an HTTP error, because a stale edit is an expected
+    outcome of working offline, not a fault. Every operation submitted gets
+    an outcome — none are silently dropped, including ones this account
+    does not own, which come back as a conflict for that operation rather
+    than a fault that discards the rest of the batch.
+    """
+    settings = settings_repo.get_by_user(current_user.id)
+    selected_scheduler = _fsrs_scheduler if settings and settings.scheduler == "fsrs" else _scheduler
+    review_use_case = SubmitAnswerUseCase(session_repo, word_repo, selected_scheduler, mistake_repo)
+
+    use_case = SubmitSyncOperationsUseCase(sync_repo, word_repo, group_repo, review_use_case)
+    outcomes = use_case.execute(
+        current_user.id,
+        [
+            SyncOperationInput(
+                operation_id=op.operation_id,
+                entity_type=op.entity_type,
+                entity_id=op.entity_id,
+                operation=op.operation,
+                payload=op.payload,
+                base_revision=op.base_revision,
+            )
+            for op in payload.operations
+        ],
+    )
+    return SubmitSyncOperationsResponse(
+        results=[
+            SyncOperationResultResponse(
+                operation_id=o.operation_id,
+                status=o.status,
+                conflict_reason=o.conflict_reason,
+                entity_id=o.entity_id,
+            )
+            for o in outcomes
+        ]
+    )
+
+
+@router.get("/conflicts", response_model=ConflictsResponse)
+def list_conflicts(current_user: CurrentUser, repo: SyncOperationRepo) -> ConflictsResponse:
+    """Operations that could not be reconciled, surfaced for a person to
+    resolve — never silently discarded (issue #90)."""
+    conflicts = repo.list_conflicts(current_user.id)
+    return ConflictsResponse(
+        conflicts=[
+            ConflictResponse(
+                operation_id=c.operation_id,
+                entity_type=c.entity_type,
+                entity_id=c.entity_id,
+                operation=c.operation,
+                payload=c.payload,
+                base_revision=c.base_revision,
+                conflict_reason=c.conflict_reason,
+                created_at=c.created_at,
+            )
+            for c in conflicts
+        ]
     )
