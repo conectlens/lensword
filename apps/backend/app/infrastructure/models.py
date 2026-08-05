@@ -93,6 +93,9 @@ class WordModel(Base):
     repetitions: Mapped[int] = mapped_column(Integer, default=0)
     due_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     last_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # FSRS memory stability in days (issue #173). Null for words never reviewed
+    # under FSRS, including every SM-2 word — SM-2 does not use this field.
+    stability: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime)
     # Bumped on every write. A client that edited revision 3 while offline is

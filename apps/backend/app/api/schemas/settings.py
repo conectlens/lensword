@@ -21,6 +21,8 @@ class RecallSettingsResponse(BaseModel):
     in_app_enabled: bool
     quiet_hours_start: str | None
     quiet_hours_end: str | None
+    hide_notification_details: bool
+    notifications_paused: bool
     scheduler: str
     # Stored on the user rather than on these settings, but surfaced here:
     # quiet hours are meaningless without the zone they are read in, and this
@@ -46,6 +48,8 @@ class RecallSettingsUpdateRequest(BaseModel):
     in_app_enabled: bool = True
     quiet_hours_start: str | None = None
     quiet_hours_end: str | None = None
+    hide_notification_details: bool = False
+    notifications_paused: bool = False
     scheduler: str = Field(default="sm2", pattern="^(sm2|fsrs)$")
     # Omitted by a client that does not manage zones, which then leaves the
     # stored value untouched rather than resetting it to UTC.

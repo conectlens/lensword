@@ -67,6 +67,7 @@ class SpacedRepetitionScheduler:
             repetitions=repetitions,
             due_at=now + timedelta(days=interval_days),
             last_reviewed_at=now,
+            stability=state.stability,
         )
 
     @staticmethod
@@ -84,11 +85,25 @@ class FSRSScheduler:
 
     It keeps the existing embedded review state compatible while scheduling
     from a target retrievability rather than SM-2's fixed first intervals.
+
+    Stability — the interval at which retrievability decays to
+    `target_retrievability` — is persisted on `ReviewState.stability` and
+    compounded across reviews. It is deliberately not re-derived from
+    `interval_days`: `interval_days = stability * -log(target_retrievability)`
+    is a fraction of stability (~0.105x at the default 0.9 target), so reading
+    it back as the next stability collapses growth to a fixed point after a
+    couple of reviews. See ADR 0004.
     """
     target_retrievability = 0.9
+    # Floor on stability itself, not on the derived interval: a new word's
+    # first stability estimate starts here, and no review may push stability
+    # below it. Intervals are allowed to be sub-day early on — that is a
+    # correct reflection of low confidence, not a bug — so nothing clamps
+    # interval_days directly.
+    _STABILITY_MIN = 1.0
 
     def schedule_next(self, state: ReviewState, outcome: ReviewOutcome) -> ReviewState:
-        stability = max(1.0, state.interval_days or 1.0)
+        stability = state.stability if state.stability is not None else self._STABILITY_MIN
         if outcome == ReviewOutcome.CORRECT:
             stability *= 1.8 + min(state.repetitions, 10) * 0.08
             repetitions = state.repetitions + 1
@@ -96,11 +111,11 @@ class FSRSScheduler:
             stability *= 0.7
             repetitions = max(0, state.repetitions - 1)
         else:
-            stability = max(1.0, stability * 0.45)
+            stability *= 0.45
             repetitions = 0
+        stability = max(self._STABILITY_MIN, stability)
         interval_days = round(min(_MAX_INTERVAL_DAYS, stability * -log(self.target_retrievability)), 2)
         now = utcnow()
-        interval_days = max(1.0, interval_days)
         return ReviewState(
             strength=SpacedRepetitionScheduler._clamp(state.strength + _STRENGTH_DELTA[outcome], 0, 100),
             ease_factor=state.ease_factor,
@@ -108,11 +123,13 @@ class FSRSScheduler:
             repetitions=repetitions,
             due_at=now + timedelta(days=interval_days),
             last_reviewed_at=now,
+            stability=stability,
         )
 
-    @staticmethod
-    def retrievability(state: ReviewState) -> float:
+    @classmethod
+    def retrievability(cls, state: ReviewState) -> float:
         if state.last_reviewed_at is None:
             return 0.0
         elapsed = max(0.0, (utcnow() - state.last_reviewed_at).total_seconds() / 86400)
-        return round(exp(-elapsed / max(1.0, state.interval_days)), 4)
+        stability = state.stability if state.stability is not None else cls._STABILITY_MIN
+        return round(exp(-elapsed / max(cls._STABILITY_MIN, stability)), 4)
