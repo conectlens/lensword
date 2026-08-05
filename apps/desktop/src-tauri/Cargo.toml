@@ -35,3 +35,20 @@ arboard = "3"
 serde_json = "1"
 sha2 = "0.10"
 tokio = { version = "1", features = ["io-util", "macros", "process", "rt", "sync", "time"] }
+
+# Screen-region capture and OCR (issue #84), macOS-only today: capture uses
+# the system `screencapture` tool, which Windows and Linux have no equivalent
+# built-in for (see ocr_capture.rs's module docs). Scoped as a target-specific
+# dependency rather than a universal one so Linux and Windows builds never
+# compile an OCR engine they cannot reach — the alternative, compiling it
+# everywhere but calling it from nowhere outside `cfg(target_os = "macos")`,
+# is dead code on every other platform and `-D warnings` denies that.
+[target.'cfg(target_os = "macos")'.dependencies]
+# Pure Rust with no system library dependency, unlike a Tesseract binding —
+# relevant even though this is macOS-only, since a system Tesseract install
+# is not guaranteed there either. Does not report per-line confidence; see
+# ocr_capture.rs.
+ocrs = "0.12"
+rten = "0.24"
+rten-imageproc = "0.24"
+image = { version = "0.25", default-features = false, features = ["png"] }
