@@ -26,6 +26,7 @@ from app.infrastructure.models import (
     LearningObservationModel,
     LearningPathModel,
     MnemonicNoteModel,
+    ObservationCorrectionModel,
     PathMilestoneModel,
     PracticeExerciseModel,
     RecallSettingsModel,
@@ -230,6 +231,43 @@ def test_deleting_a_word_with_an_acquisition_ladder_succeeds_and_leaves_no_refer
 
     assert response.status_code == 204, response.text
     assert db_session.query(AcquisitionEventModel).filter_by(word_id=word["id"]).count() == 0
+
+
+def test_deleting_a_word_with_a_corrected_observation_succeeds_and_leaves_no_references(
+    client, auth_headers, db_session
+):
+    """#229: observation_corrections references learning_observations by
+    its (unique, non-primary-key) observation_id — a foreign key
+    _delete_word_dependents has to resolve before deleting the observation
+    itself, the same ordering problem #234 hit for learning_paths/
+    conversation_sessions's nullable group_id, one join further out here."""
+    headers = auth_headers()
+    client.put("/api/v1/recall-settings", json={"learning_diagnosis_enabled": True}, headers=headers)
+    group = client.post(
+        "/api/v1/groups", json={"name": "G", "target_language": "Spanish"}, headers=headers
+    ).json()
+    word = client.post(
+        f"/api/v1/groups/{group['id']}/words",
+        json={"term": "Correr", "target_language": "Spanish", "translations": ["to run"]},
+        headers=headers,
+    ).json()
+    start = client.post("/api/v1/review/sessions", json={"mode": "standard", "limit": 20}, headers=headers)
+    client.post(
+        f"/api/v1/review/sessions/{start.json()['session_id']}/answers",
+        json={"word_id": word["id"], "outcome": "incorrect"},
+        headers=headers,
+    )
+    observation_id = client.get("/api/v1/me/observations", headers=headers).json()["items"][0]["observation_id"]
+    resp = client.post(
+        f"/api/v1/me/observations/{observation_id}/correct", json={"reason": "misgraded"}, headers=headers
+    )
+    assert resp.status_code == 201
+
+    response = client.delete(f"/api/v1/words/{word['id']}", headers=headers)
+
+    assert response.status_code == 204, response.text
+    assert db_session.query(LearningObservationModel).filter_by(word_id=word["id"]).count() == 0
+    assert db_session.query(ObservationCorrectionModel).filter_by(observation_id=observation_id).count() == 0
 
 
 def test_deleting_an_unplaced_word_still_works(client, auth_headers):

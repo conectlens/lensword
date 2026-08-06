@@ -10,7 +10,7 @@ import logging
 import uuid
 from datetime import datetime
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, exists, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.domain.entities import (
@@ -31,7 +31,14 @@ from app.domain.entities import (
 )
 from app.domain.services.cefr_progress import MASTERY_STRENGTH
 from app.domain.services.acquisition import AcquisitionScheduler
-from app.domain.services.diagnosis_contracts import AcquisitionState, Diagnosis, DiagnosisEvidence, LearningObservation
+from app.domain.services.diagnosis_contracts import (
+    AcquisitionState,
+    Diagnosis,
+    DiagnosisEvidence,
+    LearningObservation,
+    ObservationCorrection,
+    ObservationCorrectionReason,
+)
 from app.domain.services.knowledge_graph import KnowledgeEdge, Relation
 from app.domain.value_objects import (
     DEFAULT_TIME_ZONE,
@@ -67,6 +74,7 @@ from app.infrastructure.models import (
     UserModel,
     WordModel,
     LearningObservationModel,
+    ObservationCorrectionModel,
     KnowledgeEdgeModel,
     DiagnosisModel,
     AcquisitionEventModel,
@@ -378,6 +386,22 @@ def _delete_word_dependents(db: Session, word_ids: list[int]) -> None:
     """
     if not word_ids:
         return
+    # An observation correction (#229) references its observation's
+    # observation_id, not a word_id, so it cannot be swept up by the
+    # word_id-keyed loop below — it has to go first, or deleting the
+    # observation it points at would be the same dangling-FK bug this
+    # whole function exists to close off, one join further out.
+    observation_ids = list(
+        db.scalars(
+            select(LearningObservationModel.observation_id).where(LearningObservationModel.word_id.in_(word_ids))
+        )
+    )
+    if observation_ids:
+        for row in db.scalars(
+            select(ObservationCorrectionModel).where(ObservationCorrectionModel.observation_id.in_(observation_ids))
+        ):
+            db.delete(row)
+
     for model in (
         RoomPlacementModel,
         ReviewAttemptModel,
@@ -1737,6 +1761,25 @@ def _learning_observation_to_domain(m: LearningObservationModel) -> LearningObse
     )
 
 
+def _observation_correction_to_domain(m: ObservationCorrectionModel) -> ObservationCorrection:
+    return ObservationCorrection(
+        correction_id=m.correction_id,
+        observation_id=m.observation_id,
+        user_id=m.user_id,
+        reason=ObservationCorrectionReason(m.reason),
+        note=m.note,
+        created_at=m.created_at,
+    )
+
+
+def _not_corrected():
+    """A correlated NOT EXISTS clause, added to every diagnosis-facing
+    query below so a flagged observation (issue #229 TODO 5) stops being
+    evidence without its row ever being touched — the query-time half of
+    "corrections are new records, not edits"."""
+    return ~exists().where(ObservationCorrectionModel.observation_id == LearningObservationModel.observation_id)
+
+
 class SqlAlchemyLearningObservationRepository:
     """Append-only store of learning observations (issue #182).
 
@@ -1795,7 +1838,11 @@ class SqlAlchemyLearningObservationRepository:
     def list_for_word(self, user_id: int, word_id: int, limit: int = 500) -> list[LearningObservation]:
         stmt = (
             select(LearningObservationModel)
-            .where(LearningObservationModel.user_id == user_id, LearningObservationModel.word_id == word_id)
+            .where(
+                LearningObservationModel.user_id == user_id,
+                LearningObservationModel.word_id == word_id,
+                _not_corrected(),
+            )
             .order_by(LearningObservationModel.observed_at.desc())
             .limit(limit)
         )
@@ -1809,6 +1856,7 @@ class SqlAlchemyLearningObservationRepository:
             .where(
                 LearningObservationModel.user_id == user_id,
                 LearningObservationModel.word_id.in_((word_id_a, word_id_b)),
+                _not_corrected(),
             )
             .order_by(LearningObservationModel.observed_at.desc())
             .limit(limit)
@@ -1824,6 +1872,7 @@ class SqlAlchemyLearningObservationRepository:
                 LearningObservationModel.user_id == user_id,
                 LearningObservationModel.observed_at >= since,
                 LearningObservationModel.observed_at <= until,
+                _not_corrected(),
             )
             .order_by(LearningObservationModel.observed_at.desc())
             .limit(limit)
@@ -1833,7 +1882,11 @@ class SqlAlchemyLearningObservationRepository:
     def list_by_modality(self, user_id: int, modality: str, limit: int = 500) -> list[LearningObservation]:
         stmt = (
             select(LearningObservationModel)
-            .where(LearningObservationModel.user_id == user_id, LearningObservationModel.modality == modality)
+            .where(
+                LearningObservationModel.user_id == user_id,
+                LearningObservationModel.modality == modality,
+                _not_corrected(),
+            )
             .order_by(LearningObservationModel.observed_at.desc())
             .limit(limit)
         )
@@ -1847,11 +1900,55 @@ class SqlAlchemyLearningObservationRepository:
             .where(
                 LearningObservationModel.user_id == user_id,
                 LearningObservationModel.intervention_plan_ref == intervention_plan_ref,
+                _not_corrected(),
             )
             .order_by(LearningObservationModel.observed_at.desc())
             .limit(limit)
         )
         return [_learning_observation_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def list_for_user(self, user_id: int, limit: int = 50, offset: int = 0) -> list[LearningObservation]:
+        # Deliberately no _not_corrected() filter — see the protocol
+        # docstring: a learner's own history view must still show what
+        # they already flagged.
+        stmt = (
+            select(LearningObservationModel)
+            .where(LearningObservationModel.user_id == user_id)
+            .order_by(LearningObservationModel.observed_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return [_learning_observation_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def add_correction(self, correction: ObservationCorrection) -> ObservationCorrection:
+        model = ObservationCorrectionModel(
+            correction_id=correction.correction_id or uuid.uuid4().hex,
+            user_id=correction.user_id,
+            observation_id=correction.observation_id,
+            reason=correction.reason.value,
+            note=correction.note,
+            created_at=correction.created_at,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _observation_correction_to_domain(model)
+
+    def correction_for(self, user_id: int, observation_id: str) -> ObservationCorrection | None:
+        stmt = select(ObservationCorrectionModel).where(
+            ObservationCorrectionModel.user_id == user_id,
+            ObservationCorrectionModel.observation_id == observation_id,
+        )
+        model = self.db.scalars(stmt).first()
+        return _observation_correction_to_domain(model) if model else None
+
+    def corrections_for(self, user_id: int, observation_ids: list[str]) -> dict[str, ObservationCorrection]:
+        if not observation_ids:
+            return {}
+        stmt = select(ObservationCorrectionModel).where(
+            ObservationCorrectionModel.user_id == user_id,
+            ObservationCorrectionModel.observation_id.in_(observation_ids),
+        )
+        return {m.observation_id: _observation_correction_to_domain(m) for m in self.db.scalars(stmt)}
 
 
 def _knowledge_edge_to_domain(m: KnowledgeEdgeModel) -> KnowledgeEdge:

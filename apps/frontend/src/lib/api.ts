@@ -1,6 +1,6 @@
 import type {
   AdminStats, AcquisitionState, Group, MnemonicNote, ProfileOverview, RecallSettings, Room,
-  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile, CefrProgress, Prerequisites, RelatedWord, WordRevision, AiState, OllamaProbe, LearningPath, GeneratePathResult, Conversation, ConversationMessage, SendMessageResult, Difficulty, Scenario, ScenarioAttempt, ScenarioVocabulary,
+  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile, CefrProgress, Prerequisites, RelatedWord, WordRevision, AiState, OllamaProbe, LearningPath, GeneratePathResult, Conversation, ConversationMessage, SendMessageResult, Difficulty, Scenario, ScenarioAttempt, ScenarioVocabulary, ObservationHistoryResponse, ObservationCorrection, ObservationCorrectionReason,
 } from './types'
 import { resolveApiBase } from './runtimeConfig'
 
@@ -291,6 +291,16 @@ export const settingsApi = {
   profile: () => request<ProfileOverview>('/api/v1/profile'),
   weaknesses: () => request<WeaknessProfile>('/api/v1/me/weaknesses'),
   cefrProgress: () => request<CefrProgress>('/api/v1/me/cefr-progress'),
+}
+
+export const observationsApi = {
+  history: (limit = 20, offset = 0) =>
+    request<ObservationHistoryResponse>(`/api/v1/me/observations?limit=${limit}&offset=${offset}`),
+  correct: (observationId: string, reason: ObservationCorrectionReason, note?: string) =>
+    request<ObservationCorrection>(`/api/v1/me/observations/${observationId}/correct`, {
+      method: 'POST',
+      body: JSON.stringify({ reason, note: note || undefined }),
+    }),
 }
 
 export const graphApi = {

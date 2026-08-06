@@ -34,6 +34,7 @@ from app.domain.services.diagnosis_contracts import (
     InterventionOutcome,
     InterventionPlan,
     LearningObservation,
+    ObservationCorrection,
 )
 from app.domain.services.knowledge_graph import KnowledgeEdge
 
@@ -164,7 +165,11 @@ class LearningObservationRepository(Protocol):
     Query methods below cover the five axes issue #182 TODO 4 names: word,
     pair, time window, modality, and intervention — each account-scoped and
     limit-bounded, so a diagnosis query can never become an unbounded scan
-    of one user's entire history.
+    of one user's entire history. All five exclude an observation once it
+    has a correction (issue #229 TODO 5) — the diagnosis engine these feed
+    must stop treating a flagged observation as evidence, which is the
+    other half of "corrections are new records, not edits": the original
+    row survives for audit, but a rebuilt diagnosis no longer sees it.
     """
 
     def add(self, observation: LearningObservation) -> LearningObservation: ...
@@ -184,6 +189,18 @@ class LearningObservationRepository(Protocol):
     def list_by_intervention(
         self, user_id: int, intervention_plan_ref: str, limit: int = 500
     ) -> list[LearningObservation]: ...
+    # Issue #229 TODO 5: the private history view. Unlike the five axes
+    # above, this deliberately does NOT exclude corrected observations —
+    # a learner reviewing their own history needs to see what they already
+    # flagged, not have it disappear from view the way it disappears from
+    # a diagnosis rebuild's evidence.
+    def list_for_user(self, user_id: int, limit: int = 50, offset: int = 0) -> list[LearningObservation]: ...
+    # At most one correction per observation (enforced at the storage
+    # layer) — flagging is a yes/no fact about a recorded row, not itself
+    # a thing worth a history of.
+    def add_correction(self, correction: ObservationCorrection) -> ObservationCorrection: ...
+    def correction_for(self, user_id: int, observation_id: str) -> ObservationCorrection | None: ...
+    def corrections_for(self, user_id: int, observation_ids: list[str]) -> dict[str, ObservationCorrection]: ...
 
 
 class DiagnosisRepository(Protocol):
