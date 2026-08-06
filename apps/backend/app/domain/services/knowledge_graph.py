@@ -270,6 +270,19 @@ class KnowledgeGraph:
         return [e for e in self.related(word_id, limit=len(self.edges) or 1)
                 if e.relation is Relation.CONFUSED_WITH]
 
+    def relations_between(self, a_id: int, b_id: int) -> frozenset[Relation]:
+        """Every relation that holds directly between these two words.
+
+        A set, not a single relation: two words can be joined more than one
+        way at once (a shared topic *and* a synonym pair), and callers that
+        need to know "are these related, and how" — issue #207's
+        cross-association reporting, for one — need all of it, not whichever
+        edge happened to sort first.
+        """
+        return frozenset(
+            e.relation for e in self.edges if {e.source_id, e.target_id} == {a_id, b_id}
+        )
+
     def topic_words(self, topic: str) -> list[int]:
         wanted = topic.strip().casefold()
         return sorted(

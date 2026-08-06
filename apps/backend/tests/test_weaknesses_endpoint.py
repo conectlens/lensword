@@ -22,10 +22,10 @@ def _group(client, headers) -> int:
     return resp.json()["id"]
 
 
-def _word(client, headers, group_id: int, term: str) -> int:
+def _word(client, headers, group_id: int, term: str, **fields) -> int:
     resp = client.post(
         f"/api/v1/groups/{group_id}/words",
-        json={"term": term, "target_language": "Spanish", "translations": ["x"]},
+        json={"term": term, "target_language": "Spanish", "translations": ["x"], **fields},
         headers=headers,
     )
     assert resp.status_code == 201, resp.text
@@ -163,6 +163,62 @@ def test_shares_are_reported_alongside_counts(client, headers):
     category = client.get("/api/v1/me/weaknesses", headers=headers).json()["categories"][0]
     assert category["occurrences"] == 3
     assert category["share"] == pytest.approx(1.0)
+
+
+# --- Cross-association error rate (issue #207 TODO 0) ----------------------
+
+
+def test_a_learner_with_no_mistakes_gets_no_cross_association_rate(client, headers):
+    body = client.get("/api/v1/me/weaknesses", headers=headers).json()
+
+    assert body["cross_association"]["insufficient_data"] is True
+    assert body["cross_association"]["resolved_errors"] == 0
+
+
+def test_a_few_confusions_are_too_few_to_report_a_rate(client, headers):
+    group_id = _group(client, headers)
+    borrow = _word(client, headers, group_id, "borrow", synonyms=["lend"])
+    _word(client, headers, group_id, "lend")
+    session_id = _session(client, headers, group_id)
+    for _ in range(2):
+        _answer(client, headers, session_id, borrow, "incorrect", "lend")
+
+    cross_association = client.get("/api/v1/me/weaknesses", headers=headers).json()["cross_association"]
+
+    assert cross_association["insufficient_data"] is True
+
+
+def test_confusing_a_word_with_its_synonym_is_reported_as_a_related_error(client, headers):
+    group_id = _group(client, headers)
+    borrow = _word(client, headers, group_id, "borrow", synonyms=["lend"])
+    _word(client, headers, group_id, "lend")
+    session_id = _session(client, headers, group_id)
+    for _ in range(5):
+        _answer(client, headers, session_id, borrow, "incorrect", "lend")
+
+    cross_association = client.get("/api/v1/me/weaknesses", headers=headers).json()["cross_association"]
+
+    assert cross_association["insufficient_data"] is False
+    assert cross_association["resolved_errors"] == 5
+    assert cross_association["related_errors"] == 5
+    assert cross_association["error_rate"] == pytest.approx(1.0)
+    assert {r["relation"] for r in cross_association["by_relation"]} == {"synonym"}
+
+
+def test_confusing_two_unrelated_words_is_not_reported_as_a_related_error(client, headers):
+    group_id = _group(client, headers)
+    borrow = _word(client, headers, group_id, "borrow")
+    _word(client, headers, group_id, "table")
+    session_id = _session(client, headers, group_id)
+    for _ in range(5):
+        _answer(client, headers, session_id, borrow, "incorrect", "table")
+
+    cross_association = client.get("/api/v1/me/weaknesses", headers=headers).json()["cross_association"]
+
+    assert cross_association["insufficient_data"] is False
+    assert cross_association["related_errors"] == 0
+    assert cross_association["error_rate"] == pytest.approx(0.0)
+    assert cross_association["by_relation"] == []
 
 
 # --- Isolation -------------------------------------------------------------

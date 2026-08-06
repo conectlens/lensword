@@ -17,6 +17,9 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from typing import Iterable
+
+from app.domain.services.knowledge_graph import KnowledgeGraph, Relation
 
 # A category needs this many occurrences before it is named. Below it, the
 # honest answer is that there is not enough evidence — a learner told they are
@@ -31,6 +34,20 @@ MIN_CONFUSIONS_FOR_PAIR = 2
 # Most-frequent categories reported. A profile listing everything is a list
 # nobody reads and gives no sense of priority.
 TOP_CATEGORIES = 5
+
+# Resolved errors needed before a cross-association rate is reported, for the
+# same reason MIN_OCCURRENCES_FOR_CATEGORY exists: a rate computed from two
+# or three answers is noise dressed up as a finding.
+MIN_RESOLVED_ERRORS_FOR_CROSS_ASSOCIATION_RATE = 5
+
+# Relations checked when deciding whether a wrong answer was semantically
+# related to the target. Deliberately excludes CONFUSED_WITH: that edge is
+# itself derived from this same mistake log (RecomputeKnowledgeEdgesForWordUseCase),
+# so including it would make the rate trivially ~100% instead of testing
+# whether *pre-existing* relatedness (synonym, antonym, shared topic,
+# collocation) predicts which wrong answer gets chosen — issue #207's actual
+# question.
+CROSS_ASSOCIATION_RELATIONS = (Relation.SYNONYM, Relation.ANTONYM, Relation.TOPIC, Relation.COLLOCATION)
 
 
 class ErrorCategory(str, Enum):
@@ -142,24 +159,100 @@ class WeaknessProfileService:
         return profile
 
 
-def _confused_pairs(events: list[MistakeEvent], minimum: int) -> list[ConfusedPair]:
+def confusion_pair_counts(observations: Iterable[tuple[int, int | None, int]]) -> dict[tuple[int, int], int]:
+    """Group raw (word_id, confused_with_word_id, weight) observations into
+    unordered-pair counts.
+
+    The one derivation both `ConfusedPair` here and the knowledge graph's
+    `CONFUSED_WITH` edges (`app/application/use_cases/knowledge_graph.py`)
+    are built from — previously computed twice, independently, from the same
+    mistake log (issue #207). A word "confused with itself" is a recording
+    bug, not a pattern, so it's dropped here rather than in each caller.
+    """
     pairs: dict[tuple[int, int], int] = defaultdict(int)
-    for event in events:
-        if event.confused_with_word_id is None:
+    for word_id, confused_with_word_id, weight in observations:
+        if confused_with_word_id is None or confused_with_word_id == word_id:
             continue
-        if event.confused_with_word_id == event.word_id:
-            # A word "confused with itself" is a recording bug, not a pattern.
-            # Dropped rather than surfaced as a nonsensical pair.
-            continue
-        key = (
-            min(event.word_id, event.confused_with_word_id),
-            max(event.word_id, event.confused_with_word_id),
-        )
-        pairs[key] += 1
+        key = (min(word_id, confused_with_word_id), max(word_id, confused_with_word_id))
+        pairs[key] += weight
+    return dict(pairs)
+
+
+@dataclass(frozen=True)
+class RelationErrorCount:
+    relation: Relation
+    occurrences: int
+
+
+@dataclass(frozen=True)
+class CrossAssociationReport:
+    """How often a wrong answer was, independent of the mistake log itself, a
+    word already known to be semantically related to the target.
+
+    This is the one dependent measure that survives well-controlled studies
+    in the literature behind the Semantic Relatedness track (issue #207):
+    within-set confusion rate, not immediate recall score. `resolved_errors`
+    is the denominator — wrong answers that named another word this learner
+    actually studies, per `MistakeEvent.confused_with_word_id` — not every
+    mistake, since an unresolved wrong answer (a typo, a blank) cannot be
+    checked against the graph at all.
+    """
+
+    resolved_errors: int
+    related_errors: int
+    error_rate: float
+    by_relation: list[RelationErrorCount] = field(default_factory=list)
+    insufficient_data: bool = False
+
+
+def cross_association_report(
+    events: list[MistakeEvent],
+    graph: KnowledgeGraph,
+    minimum: int = MIN_RESOLVED_ERRORS_FOR_CROSS_ASSOCIATION_RATE,
+) -> CrossAssociationReport:
+    """Segment resolved wrong answers by whether the chosen word was already
+    semantically related to the target, and by which relation (issue #207
+    TODO 0). A pair can hold more than one relation at once (a shared topic
+    *and* a synonym), so one error can contribute to more than one bucket in
+    `by_relation` — `related_errors` still counts it once.
+    """
+    resolved = [
+        event
+        for event in events
+        if event.confused_with_word_id is not None and event.confused_with_word_id != event.word_id
+    ]
+    if len(resolved) < minimum:
+        return CrossAssociationReport(resolved_errors=len(resolved), related_errors=0, error_rate=0.0, insufficient_data=True)
+
+    relation_counts: Counter[Relation] = Counter()
+    related_errors = 0
+    checked_relations = set(CROSS_ASSOCIATION_RELATIONS)
+    for event in resolved:
+        relations = graph.relations_between(event.word_id, event.confused_with_word_id) & checked_relations
+        if relations:
+            related_errors += 1
+            relation_counts.update(relations)
+
+    by_relation = [
+        RelationErrorCount(relation=relation, occurrences=count) for relation, count in relation_counts.items()
+    ]
+    by_relation.sort(key=lambda r: (-r.occurrences, r.relation.value))
+
+    return CrossAssociationReport(
+        resolved_errors=len(resolved),
+        related_errors=related_errors,
+        error_rate=related_errors / len(resolved),
+        by_relation=by_relation,
+        insufficient_data=False,
+    )
+
+
+def _confused_pairs(events: list[MistakeEvent], minimum: int) -> list[ConfusedPair]:
+    counts = confusion_pair_counts((event.word_id, event.confused_with_word_id, 1) for event in events)
 
     found = [
         ConfusedPair(word_id=a, confused_with_word_id=b, occurrences=count)
-        for (a, b), count in pairs.items()
+        for (a, b), count in counts.items()
         if count >= minimum
     ]
     found.sort(key=lambda p: (-p.occurrences, p.word_id, p.confused_with_word_id))

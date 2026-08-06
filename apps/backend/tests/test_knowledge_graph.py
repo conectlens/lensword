@@ -222,6 +222,20 @@ def test_confused_with_returns_only_confusions(graph):
     assert all(e.relation is Relation.CONFUSED_WITH for e in confused)
 
 
+def test_relations_between_reports_every_relation_holding_between_two_words(graph):
+    """gato and perro share a topic *and* are confused with each other —
+    both must come back, not just whichever edge sorts first."""
+    assert graph.relations_between(1, 2) == {Relation.TOPIC, Relation.CONFUSED_WITH}
+
+
+def test_relations_between_is_order_independent(graph):
+    assert graph.relations_between(2, 1) == graph.relations_between(1, 2)
+
+
+def test_relations_between_is_empty_for_unrelated_words(graph):
+    assert graph.relations_between(2, 4) == frozenset()
+
+
 def test_topic_words_lists_the_members(graph):
     assert graph.topic_words("animals") == [1, 2]
 

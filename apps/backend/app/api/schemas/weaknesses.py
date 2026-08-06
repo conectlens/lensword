@@ -22,10 +22,29 @@ class ConfusedPairResponse(BaseModel):
     occurrences: int
 
 
+class RelationErrorCountResponse(BaseModel):
+    relation: str
+    occurrences: int
+
+
+class CrossAssociationReportResponse(BaseModel):
+    """Issue #207 TODO 0: how often a wrong answer named a word already known
+    to be semantically related to the target, segmented by relation type."""
+
+    resolved_errors: int
+    related_errors: int
+    error_rate: float
+    by_relation: list[RelationErrorCountResponse]
+    # True when there are too few resolved errors to report a rate without
+    # it being noise dressed up as a finding.
+    insufficient_data: bool
+
+
 class WeaknessProfileResponse(BaseModel):
     total_mistakes: int
     categories: list[CategoryWeaknessResponse]
     confused_pairs: list[ConfusedPairResponse]
+    cross_association: CrossAssociationReportResponse
     # True when there is not enough history to say anything. The client shows
     # this rather than an empty profile, which reads as "you have no
     # weaknesses" instead of "we do not know yet".
