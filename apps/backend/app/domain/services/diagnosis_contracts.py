@@ -58,6 +58,12 @@ class LearningObservation:
     outcome: ReviewOutcome
     session_mode: SessionMode
     observed_at: datetime
+    # Client-generated and stable across retries (#182 TODO 1) — the same
+    # idempotency pattern #90's sync_operations uses. `None` only for
+    # observations a legacy client's answer produced without ever knowing
+    # this field exists; the repository that persists observations always
+    # fills one in rather than storing a row with no stable identity.
+    operation_id: str | None = None
     attempted_answer: str | None = None
     response_time_ms: int | None = None
     # e.g. "term_to_translation" / "translation_to_term". A direction
@@ -67,6 +73,17 @@ class LearningObservation:
     prompt_direction: str | None = None
     hint_used: bool = False
     answer_format: str | None = None
+    # text/audio/image/spatial/story/contrast/cloze/typing/speaking/
+    # multiple_choice (#182 TODO 2) — an open string rather than an enum
+    # here, since the closed set of supported modalities is a UI/feature
+    # concern, not a fact this contract should have to be revised to keep
+    # up with.
+    modality: str | None = None
+    # Links this observation to the InterventionPlan that caused it, once
+    # #184/#185 ship real intervention plans to link to. An opaque
+    # reference rather than a foreign key at this layer — the domain
+    # contract does not know how interventions are persisted.
+    intervention_plan_ref: str | None = None
     # Only ever set when the *learner* explicitly supplied a confidence
     # rating (e.g. a "how sure were you" prompt). Never populated by an AI
     # guess — see ADR 0007's rule about what confidence values are allowed
