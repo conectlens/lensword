@@ -241,6 +241,13 @@ class RecallSettingsModel(Base):
         Boolean, default=False, server_default=false()
     )
     ai_coach_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Same server_default requirement as the flags above, for the same
+    # reason: 20260730_14's backfill INSERT predates these fields and
+    # cannot name them.
+    ai_companion_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    companion_sampling_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    companion_remote_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    companion_multimodal_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
 
 class PracticeExerciseModel(Base):

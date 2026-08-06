@@ -438,6 +438,15 @@ class RecallSettings:
     learning_diagnosis_enabled: bool = False
     acquisition_loop_enabled: bool = False
     ai_coach_enabled: bool = False
+    # Four independently controllable flags for the AI Companion epic
+    # (#190, ADR 0008) — remote/multimodal/sampling access is each its own
+    # opt-in, not implied by turning the companion on at all. All default
+    # off for existing users; with every flag false the review and
+    # conversation request paths remain byte-identical to today.
+    ai_companion_enabled: bool = False
+    companion_sampling_enabled: bool = False
+    companion_remote_enabled: bool = False
+    companion_multimodal_enabled: bool = False
 
     def set_intensity(self, level: int) -> None:
         if not (1 <= level <= 5):
