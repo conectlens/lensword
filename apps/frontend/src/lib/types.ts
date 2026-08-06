@@ -22,6 +22,9 @@ export interface AcquisitionState {
   due_at: string
   graduated: boolean
   entry_reason: string | null
+  /** Roughly when this ladder hands back to FSRS — a best-case estimate,
+   *  null once graduated. */
+  estimated_graduation_at: string | null
 }
 
 export interface User {

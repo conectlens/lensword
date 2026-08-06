@@ -164,6 +164,13 @@ export function SettingsPage() {
             checked={settings.night_winddown_enabled}
             onChange={(v) => patch({ night_winddown_enabled: v })}
           />
+          <ToggleRow
+            icon="auto_awesome"
+            title="Graduated acquisition loop"
+            description="A short same-day loop to stabilize a word right after you get it wrong, before it goes back to spaced repetition."
+            checked={settings.acquisition_loop_enabled}
+            onChange={(v) => patch({ acquisition_loop_enabled: v })}
+          />
         </div>
       </Card>
 

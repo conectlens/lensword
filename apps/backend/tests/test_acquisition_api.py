@@ -71,6 +71,10 @@ def test_explicit_start_creates_a_ladder_at_rung_zero(client, auth_headers):
     assert body["rung"] == 0
     assert body["graduated"] is False
     assert body["entry_reason"] == "explicit_user_choice"
+    # #233 TODO 1: "roughly when it hands back to FSRS" — present and after
+    # due_at (the ladder has more than one rung left to climb first).
+    assert body["estimated_graduation_at"] is not None
+    assert body["estimated_graduation_at"] > body["due_at"]
 
 
 def test_starting_twice_does_not_restart_an_active_ladder(client, auth_headers):

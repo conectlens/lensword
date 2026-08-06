@@ -25,15 +25,17 @@ _fsrs_scheduler = FSRSScheduler()
 
 
 def _response(state: AcquisitionState) -> AcquisitionStateResponse:
+    scheduler = AcquisitionScheduler()
     return AcquisitionStateResponse(
         word_id=state.word_id,
         rung=state.rung,
         ladder_version=state.ladder_version,
         started_at=state.started_at,
         updated_at=state.updated_at,
-        due_at=AcquisitionScheduler().due_at(state),
+        due_at=scheduler.due_at(state),
         graduated=state.graduated,
         entry_reason=state.entry_reason,
+        estimated_graduation_at=scheduler.estimated_graduation_at(state),
     )
 
 

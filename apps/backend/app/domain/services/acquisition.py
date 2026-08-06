@@ -145,6 +145,25 @@ class AcquisitionScheduler:
         index = min(state.rung, len(offsets) - 1)
         return state.updated_at + offsets[index]
 
+    def estimated_graduation_at(self, state: AcquisitionState) -> datetime | None:
+        """Best-case estimate of when this ladder hands back to FSRS
+        (issue #233 TODO 1's "roughly when it hands back"): every remaining
+        rung answered correctly, back-to-back, on schedule.
+
+        A floor, not a promise — an incorrect answer anywhere along the way
+        backs the ladder off `_BACKOFF_RUNGS` and pushes this later, the
+        same way `due_at` only ever describes the current rung rather than
+        being stored and going stale. Null once graduated, the same
+        convention `entry_reason` already uses for "there is nothing left
+        to show here".
+        """
+        if state.graduated:
+            return None
+        offsets = LADDER_OFFSETS[state.ladder_version]
+        remaining = offsets[state.rung :]
+        earliest = state.updated_at + sum(remaining, timedelta())
+        return max(earliest, state.started_at + _MIN_GRADUATION_GAP)
+
     def advance(
         self, state: AcquisitionState, outcome: ReviewOutcome, now: datetime, operation_id: str | None = None
     ) -> AcquisitionState:
