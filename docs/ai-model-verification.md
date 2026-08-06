@@ -311,3 +311,36 @@ Not something a low-effort gate can fix, and not what #213 asked for;
 worth its own issue if this keeps happening (a stricter schema
 instruction or a few-shot example in the prompt would be the first things
 to try).
+
+## Follow-up: learning path generation re-verified, root cause identified (issue #212)
+
+Item 2 above was diagnosed and fixed. The raw model payload was never
+logged on this failure path before, so the first step was making the
+actual failure visible — reproducing it directly against the real model
+rather than guessing:
+
+```
+[{"title": "Plan de estudio para pedir comida en España", ...,
+  "topic": "restaurant", "target_word_count": 10, "cefr_level": "A1"}]
+```
+
+One milestone. For both goals, on every run. The prompt
+(`build_learning_path_request`) asked only for "a JSON array of *at
+most* N objects" — no floor — and the model consistently read an
+ordinary multi-step goal ("order food in Spain") as a single task,
+returning exactly one milestone for it. `validate_plan`'s own
+`MIN_MILESTONES = 2` then rejected the whole plan as unusable. Not
+malformed JSON, not a parsing failure — a real, valid, single-item plan
+that the validator's floor (correctly) refuses to call a "path."
+
+Fixed by stating the floor explicitly alongside the ceiling ("between
+`MIN_MILESTONES` and `MAX_MILESTONES`... never fewer than
+`MIN_MILESTONES`, even for a goal that sounds like a single task").
+Re-verified against the real model, the same two goals that failed
+originally plus a third: all three now return 4-8 milestones and pass
+`validate_plan`, confirmed across three separate runs per goal. Also
+added logging of the raw payload when `validate_plan` rejects a plan
+(`app/api/routers/learning_paths.py`), per this issue's own proposed
+first step, so a future regression is diagnosable from a server log
+rather than requiring a full re-run of this methodology to even see
+what the model returned.

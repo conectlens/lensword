@@ -17,6 +17,7 @@ import pytest
 
 from app.domain.exceptions import AIProviderUnavailableError
 from app.domain.services.conversation import Difficulty, Speaker, Turn, build_context
+from app.domain.services.learning_path import MAX_MILESTONES, MIN_MILESTONES, InvalidPlanError, validate_plan
 from app.domain.services.scenarios import CATALOG
 from app.infrastructure.ai import DATA_BLOCK_BEGIN, DATA_BLOCK_END, OllamaProvider
 
@@ -125,6 +126,31 @@ def test_enrich_word_does_not_log_when_cefr_level_is_present(caplog):
 
     assert enrichment.cefr_level == "B1"
     assert "cefr_level" not in caplog.text
+
+
+def _generate_path(provider: OllamaProvider, goal: str = "order food in Spain"):
+    return asyncio.run(
+        provider.generate_learning_path(goal, "Spanish", MAX_MILESTONES, MIN_MILESTONES)
+    )
+
+
+def test_generate_learning_path_states_the_milestone_floor_not_just_the_ceiling():
+    """Issue #212: asked only for "at most N" milestones, a real model
+    reliably read an ordinary goal as a single task and returned one
+    milestone, which the validator's own floor then rejected as not a
+    plan at all. The request must name both bounds."""
+
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.read())
+        captured["system"] = payload["system"]
+        return httpx.Response(200, json={"response": json.dumps([])})
+
+    _generate_path(_provider(handler))
+
+    assert str(MIN_MILESTONES) in captured["system"]
+    assert str(MAX_MILESTONES) in captured["system"]
 
 
 def test_extract_normalizes_a_single_nested_candidate_and_keeps_target_examples():
@@ -521,3 +547,44 @@ def test_enrich_word_localizes_examples_and_collocations_against_real_ollama():
     assert not (known_bad & {c.lower() for c in result.collocations}), (
         f"collocations came back in English, unchanged from the reported bug: {result.collocations!r}"
     )
+
+
+@pytest.mark.skipif(
+    not _ollama_model_available("llama3.2"),
+    reason="Ollama isn't running locally on :11434, or the 'llama3.2' model isn't pulled",
+)
+def test_generate_learning_path_produces_a_usable_plan_against_real_ollama():
+    """Issue #212: the exact defect found during #166's real-model pass —
+    two different goals both came back with a single milestone against a
+    real llama3.2 daemon, which validate_plan's MIN_MILESTONES then
+    rejected as "not a usable plan" on both. Confirmed fixed, not assumed:
+    the same two goals, run against the real model after stating the floor
+    explicitly in the prompt.
+
+    max_output_tokens is raised here for the same reason as the other
+    real-Ollama tests in this file: to isolate this issue's fix from #211's
+    separate, still-open truncation defect.
+
+    Both goals are awaited inside one `asyncio.run` rather than one call
+    each: the provider's httpx client holds connections bound to whichever
+    loop made the request, and a second `asyncio.run` against the same
+    provider after the first one's loop closed fails closing that
+    connection out from under it — an event-loop lifecycle detail of this
+    test, not something the real request-scoped provider in production
+    ever does twice on one loop.
+    """
+
+    async def run() -> None:
+        provider = OllamaProvider(max_output_tokens=900)
+        for goal, target in (
+            ("I want to order food in Spain", "Spanish"),
+            ("Learn business English for job interviews", "English"),
+        ):
+            raw = await provider.generate_learning_path(goal, target, MAX_MILESTONES, MIN_MILESTONES)
+            try:
+                plans = validate_plan(raw)
+            except InvalidPlanError as exc:
+                pytest.fail(f"goal {goal!r} produced no usable plan: {exc}; raw={raw!r}")
+            assert MIN_MILESTONES <= len(plans) <= MAX_MILESTONES
+
+    asyncio.run(run())

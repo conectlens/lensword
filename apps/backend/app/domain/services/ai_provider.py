@@ -85,7 +85,7 @@ class AIProvider(Protocol):
     ) -> WordEnrichment: ...
 
     async def generate_learning_path(
-        self, goal: str, target_language: str, max_milestones: int
+        self, goal: str, target_language: str, max_milestones: int, min_milestones: int
     ) -> list[dict]:
         """Propose milestones for a stated goal (#137).
 
@@ -93,6 +93,13 @@ class AIProvider(Protocol):
         and cleans them, because a model's output is a proposal and validating
         it inside the adapter would put that judgement in the one place a
         different provider would have to reimplement.
+
+        `min_milestones` exists alongside `max_milestones` because stating
+        only a ceiling ("at most N") does not stop a model reading a goal as
+        a single task and returning one milestone for it (issue #212) —
+        `validate_plan`'s own floor then rejects the whole plan as unusable.
+        Naming the floor in the request is cheaper than discovering it was
+        missing after the fact.
         """
         ...
 

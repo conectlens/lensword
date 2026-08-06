@@ -19,6 +19,7 @@ from app.api.schemas.learning_paths import (
 from app.domain.exceptions import AIProviderUnavailableError
 from app.domain.services.learning_path import (
     MAX_MILESTONES,
+    MIN_MILESTONES,
     InvalidPlanError,
     MilestonePlan,
     clean_goal,
@@ -50,7 +51,9 @@ async def generate_path(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
 
     try:
-        raw = await provider.generate_learning_path(goal, payload.target_language, MAX_MILESTONES)
+        raw = await provider.generate_learning_path(
+            goal, payload.target_language, MAX_MILESTONES, MIN_MILESTONES
+        )
     except AIProviderUnavailableError as exc:
         return GeneratePathResponse(status="unavailable", detail=str(exc))
 
@@ -60,6 +63,12 @@ async def generate_path(
         # or a target of five thousand words — none of those are paths.
         plans = validate_plan(raw)
     except InvalidPlanError as exc:
+        # Issue #212: this used to be a dead end — the raw payload was
+        # never logged anywhere, so a rejected plan was undiagnosable
+        # without re-running a whole verification pass. Logged rather than
+        # raised further, matching the "always 200" contract this endpoint
+        # already states in its own module docstring.
+        logger.warning("Learning path plan rejected for goal %r: %s; raw=%r", goal, exc, raw)
         return GeneratePathResponse(status="unavailable", detail=str(exc))
 
     stored = path_repo.add(

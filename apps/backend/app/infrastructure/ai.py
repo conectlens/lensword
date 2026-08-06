@@ -50,6 +50,7 @@ def build_learning_path_request(
     goal: str,
     target_language: str,
     max_milestones: int,
+    min_milestones: int,
     *,
     context_max_chars: int,
 ) -> tuple[str, str]:
@@ -62,11 +63,21 @@ def build_learning_path_request(
     The milestone ceiling is stated in the instruction *and* enforced after the
     response comes back. Asking politely is not a bound — a model that returns
     thirty steps has still returned thirty steps.
+
+    The floor is stated too (issue #212): asked only for "at most N" and
+    nothing else, a real model reliably read even an ordinary multi-step goal
+    ("order food in Spain") as one task and returned a single milestone —
+    which the validator's own MIN_MILESTONES then rejected as not a plan at
+    all. Even a goal simple enough to genuinely be one task should still be
+    broken into at least a couple of concrete, checkable steps; that's stated
+    explicitly rather than left for the model to infer from "at most".
     """
     safe_target = _as_data(target_language, 32)
     system = (
         "You turn a language learner's stated goal into a short, ordered study plan. "
-        f"Return a JSON array of at most {max_milestones} objects, each with "
+        f"Return a JSON array of between {min_milestones} and {max_milestones} objects — "
+        f"never fewer than {min_milestones}, even for a goal that sounds like a single task; "
+        "break it into that many concrete, checkable steps. Each object needs "
         "title, description, topic, target_word_count and cefr_level. "
         "`topic` must be a single lowercase vocabulary tag such as 'restaurant' "
         "or 'travel', because it is matched against the learner's own word topics. "
@@ -346,10 +357,10 @@ class OllamaProvider:
         return text.strip()
 
     async def generate_learning_path(
-        self, goal: str, target_language: str, max_milestones: int
+        self, goal: str, target_language: str, max_milestones: int, min_milestones: int
     ) -> list[dict]:
         system, prompt = build_learning_path_request(
-            goal, target_language, max_milestones, context_max_chars=self._context_max_chars
+            goal, target_language, max_milestones, min_milestones, context_max_chars=self._context_max_chars
         )
         payload = await self._json_generate(system, prompt, "learning path")
         if isinstance(payload, dict):
