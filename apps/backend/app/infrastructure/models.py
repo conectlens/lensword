@@ -851,6 +851,54 @@ class InterventionOutcomeModel(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class CompanionSessionModel(Base):
+    """Provider-neutral companion session state (issue #193).
+
+    No provider memory, chain-of-thought, credentials, or opaque tool state is
+    represented here. Turns are normalized in the separate table below.
+    """
+
+    __tablename__ = "companion_sessions"
+    __table_args__ = (
+        Index("ix_companion_sessions_user_updated", "user_id", "updated_at"),
+        Index("ix_companion_sessions_user_connection", "user_id", "connection_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    connection_id: Mapped[str] = mapped_column(String(128))
+    client_id: Mapped[str] = mapped_column(String(128))
+    goal: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    language: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id"), nullable=True)
+    difficulty: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    active_activity: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    consent_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
+class CompanionTurnModel(Base):
+    """Normalized user/assistant turns for a companion session."""
+
+    __tablename__ = "companion_turns"
+    __table_args__ = (
+        UniqueConstraint("session_id", "operation_id", name="uq_companion_turn_session_operation"),
+        Index("ix_companion_turns_session_created", "session_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[str] = mapped_column(ForeignKey("companion_sessions.id", ondelete="CASCADE"), index=True)
+    role: Mapped[str] = mapped_column(String(16))
+    content: Mapped[str] = mapped_column(Text)
+    activity_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    operation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
 class AcquisitionEventModel(Base):
     """One transition of a same-day acquisition ladder (issue #184).
 
