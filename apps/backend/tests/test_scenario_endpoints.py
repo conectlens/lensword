@@ -79,9 +79,14 @@ def _say(client, headers, session_id, text):
 
 
 def _talk(client, headers, session_id, turns: int, provider):
+    # Long enough, across MIN_LEARNER_TURNS_TO_SCORE turns, to clear issue
+    # #213's MIN_LEARNER_CHARACTERS_TO_SCORE gate too — these tests are
+    # about the scoring flow, not about exercising that gate itself (see
+    # test_scenarios.py for that), so the fixture content must not
+    # accidentally trip it.
     with _use(provider):
         for index in range(turns):
-            _say(client, headers, session_id, f"mensaje {index}")
+            _say(client, headers, session_id, f"este es un mensaje de prueba numero {index}")
 
 
 # --- The catalog ------------------------------------------------------------
@@ -164,6 +169,26 @@ def test_the_refusal_says_what_would_make_it_scoreable(client, headers):
         ).json()
 
     assert str(MIN_LEARNER_TURNS_TO_SCORE) in body["evaluation"]["detail"]
+
+
+def test_enough_turns_but_too_little_substance_is_not_scored_and_the_model_is_not_asked(client, headers):
+    """Issue #213: a real model scored this exact transcript — four
+    one-word non-answers — 82/100 on one run, with a fabricated summary
+    claiming things that never happened. Refused before the model is
+    asked at all, the same way a too-short attempt already was."""
+    attempt = _start(client, headers)
+    judge = _Judge()
+    with _use(judge):
+        for text in ("queso", "no se", "mmm", "banana carro azul"):
+            _say(client, headers, attempt["session_id"], text)
+
+        body = client.post(
+            f"/api/v1/scenarios/attempts/{attempt['id']}/finish", headers=headers
+        ).json()
+
+    assert body["evaluation"]["scored"] is False
+    assert body["evaluation"]["overall"] is None
+    assert judge.calls == 0
 
 
 # --- A scored attempt -------------------------------------------------------

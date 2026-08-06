@@ -29,6 +29,17 @@ from enum import Enum
 # the honest answer is that there is not enough to judge.
 MIN_LEARNER_TURNS_TO_SCORE = 4
 
+# Total characters across every learner turn combined — a floor on substance,
+# not fluency, kept separate from the turn count above because a turn-count
+# check alone cannot tell four one-word non-answers ("queso", "no se", "mmm",
+# "banana carro azul" — the exact transcript that produced a fabricated
+# 82/100 during issue #166's real-model verification pass) from four short
+# but real sentences. Four genuine short exchanges in a restaurant scenario
+# ("Hola", "Una mesa para dos, por favor", "Sí, el especial", "Gracias" — 54
+# characters) comfortably clear this; four throwaway non-answers (31
+# characters) do not (issue #213).
+MIN_LEARNER_CHARACTERS_TO_SCORE = 40
+
 # Scores are 0-100 to match the strength scale already used for words, so a
 # learner never has to hold two different scales in mind.
 MIN_SCORE = 0
@@ -173,8 +184,8 @@ class Evaluation:
         return round(sum(s.score for s in self.scores) / len(self.scores))
 
 
-def can_score(learner_turns: int) -> bool:
-    return learner_turns >= MIN_LEARNER_TURNS_TO_SCORE
+def can_score(learner_turns: int, learner_characters: int) -> bool:
+    return learner_turns >= MIN_LEARNER_TURNS_TO_SCORE and learner_characters >= MIN_LEARNER_CHARACTERS_TO_SCORE
 
 
 def validate_evaluation(raw: dict, scenario: Scenario) -> Evaluation:
