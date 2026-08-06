@@ -90,3 +90,40 @@ def test_deleting_content_preserves_redacted_session_metadata(client, auth_heade
     fetched = client.get(f"/api/v1/companion/sessions/{session['id']}", headers=headers).json()
     assert fetched["turns"] == []
     assert fetched["summary"] == "[content deleted]"
+
+
+def test_structured_activity_is_separate_from_free_chat_and_never_claims_mastery(client, auth_headers):
+    headers = auth_headers()
+    _enable(client, headers)
+    session = _start(client, headers)
+    started = client.post(
+        f"/api/v1/companion/sessions/{session['id']}/activities",
+        json={
+            "activity_type": "recall",
+            "prompt": "Recall the meaning of deploy.",
+            "expected_evaluation": {"kind": "presence"},
+            "operation_id": "activity-1",
+        },
+        headers=headers,
+    )
+    assert started.status_code == 201, started.text
+    activity = started.json()
+    assert activity["status"] == "active"
+
+    response = client.post(
+        f"/api/v1/companion/sessions/{session['id']}/activities/{activity['id']}/response",
+        json={"response": "to deploy is to release"},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "submitted"
+    assert body["result"]["evaluator"] == "deterministic_presence_v1"
+    assert "mastery" not in body["result"]
+
+    finished = client.post(
+        f"/api/v1/companion/sessions/{session['id']}/activities/{activity['id']}/finish",
+        headers=headers,
+    )
+    assert finished.status_code == 200
+    assert finished.json()["status"] == "finished"

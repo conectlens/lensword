@@ -37,6 +37,7 @@ from app.domain.services.companion_sessions import (
     CompanionTurn,
     CompanionTurnRole,
 )
+from app.domain.services.companion_activities import ActivityStatus, ActivityType, LearningActivity
 from app.domain.services.diagnosis_contracts import (
     AcquisitionState,
     Diagnosis,
@@ -90,6 +91,7 @@ from app.infrastructure.models import (
     AcquisitionEventModel,
     CompanionSessionModel,
     CompanionTurnModel,
+    CompanionActivityModel,
 )
 
 logger = logging.getLogger(__name__)
@@ -2369,6 +2371,81 @@ class SqlAlchemyCompanionSessionRepository:
         session.revision += 1
         session.updated_at = utcnow()
         self.db.flush()
+
+
+def _companion_activity_to_domain(m: CompanionActivityModel) -> LearningActivity:
+    return LearningActivity(
+        id=m.id,
+        session_id=m.session_id,
+        user_id=m.user_id,
+        activity_type=ActivityType(m.activity_type),
+        prompt=m.prompt,
+        expected_evaluation=dict(m.expected_evaluation or {}),
+        status=ActivityStatus(m.status),
+        response=m.response,
+        result=dict(m.result) if m.result is not None else None,
+        operation_id=m.operation_id,
+        started_at=m.started_at,
+        updated_at=m.updated_at,
+        revision=m.revision,
+    )
+
+
+class SqlAlchemyCompanionActivityRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add(self, activity: LearningActivity) -> LearningActivity:
+        model = CompanionActivityModel(
+            id=activity.id,
+            session_id=activity.session_id,
+            user_id=activity.user_id,
+            activity_type=activity.activity_type.value,
+            prompt=activity.prompt,
+            expected_evaluation=activity.expected_evaluation,
+            status=activity.status.value,
+            response=activity.response,
+            result=activity.result,
+            operation_id=activity.operation_id,
+            started_at=activity.started_at,
+            updated_at=activity.updated_at,
+            revision=activity.revision,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _companion_activity_to_domain(model)
+
+    def get(self, user_id: int, session_id: str, activity_id: str) -> LearningActivity | None:
+        model = self.db.scalar(
+            select(CompanionActivityModel).where(
+                CompanionActivityModel.id == activity_id,
+                CompanionActivityModel.session_id == session_id,
+                CompanionActivityModel.user_id == user_id,
+            )
+        )
+        return _companion_activity_to_domain(model) if model else None
+
+    def update(self, activity: LearningActivity) -> LearningActivity:
+        model = self.db.get(CompanionActivityModel, activity.id)
+        if model is None or model.user_id != activity.user_id or model.session_id != activity.session_id:
+            raise ValueError("Companion activity not found")
+        model.status = activity.status.value
+        model.response = activity.response
+        model.result = activity.result
+        model.updated_at = activity.updated_at
+        model.revision = activity.revision
+        self.db.flush()
+        return _companion_activity_to_domain(model)
+
+    def find_by_operation(self, user_id: int, session_id: str, operation_id: str) -> LearningActivity | None:
+        model = self.db.scalar(
+            select(CompanionActivityModel).where(
+                CompanionActivityModel.user_id == user_id,
+                CompanionActivityModel.session_id == session_id,
+                CompanionActivityModel.operation_id == operation_id,
+            )
+        )
+        return _companion_activity_to_domain(model) if model else None
 
 
 def _acquisition_state_to_domain(m: AcquisitionEventModel) -> AcquisitionState:

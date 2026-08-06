@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routers import acquisition, admin, ai, ai_settings, auth, companion, conversations, diagnosis, extract, graph, groups, imports, learning_paths, mcp, mcp_plans, mnemonics, notifications, observations, practice, reminder_failover, reminder_windows, reports, sync, review, rooms, scenarios, settings, weaknesses, words
+from app.api.routers import acquisition, admin, ai, ai_settings, auth, companion, companion_activities, conversations, diagnosis, extract, graph, groups, imports, learning_paths, mcp, mcp_plans, mnemonics, notifications, observations, practice, reminder_failover, reminder_windows, reports, sync, review, rooms, scenarios, settings, weaknesses, words
 from app.application.use_cases.auth import RegisterUserUseCase
 from app.config import get_settings
 from app.domain.exceptions import DomainError
@@ -61,6 +61,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(mcp.router)
 app.include_router(companion.router)
+app.include_router(companion_activities.router)
 app.include_router(mcp_plans.router)
 app.include_router(groups.router)
 app.include_router(words.router)
