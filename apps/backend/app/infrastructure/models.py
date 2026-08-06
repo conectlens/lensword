@@ -727,3 +727,37 @@ class KnowledgeEdgeModel(Base):
     evidence: Mapped[str] = mapped_column(String(255))
     occurrences: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     updated_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class DiagnosisModel(Base):
+    """A deterministic engine's conclusion about one word (issue #183).
+
+    Append-only, the same reasoning as every other evidence table in this
+    epic: a correction is a new row, not an edit to an old one — #183 TODO
+    1's requirement that a diagnosis be reproducible depends on the row
+    that was actually shown never silently changing under it.
+
+    Only written when `RecallSettings.learning_diagnosis_enabled` is true
+    (ADR 0007), the same gate #182's learning_observations table uses.
+    """
+
+    __tablename__ = "diagnoses"
+    __table_args__ = (
+        # The read pattern is always "this word's diagnoses, newest first".
+        Index("ix_diagnoses_user_word_diagnosed", "user_id", "word_id", "diagnosed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    word_id: Mapped[int] = mapped_column(ForeignKey("words.id"))
+    outcome: Mapped[str] = mapped_column(String(48))
+    # [{"kind": ..., "observation_ids": [...], "weight": ..., "description": ...}, ...] —
+    # JSON rather than a child table: evidence is read and displayed whole,
+    # never queried by its own fields independently of the diagnosis it
+    # belongs to.
+    evidence: Mapped[list] = mapped_column(JSON)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rules_version: Mapped[int] = mapped_column(Integer)
+    diagnosed_at: Mapped[datetime] = mapped_column(DateTime)
+    sample_size: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    competing_hypotheses: Mapped[list] = mapped_column(JSON, default=list)

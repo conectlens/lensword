@@ -10,6 +10,7 @@ from app.domain.exceptions import (
     PermissionDeniedError,
     ValidationError,
 )
+from app.application.use_cases.diagnosis import RunDiagnosisForWordUseCase
 from app.application.use_cases.knowledge_graph import RecomputeKnowledgeEdgesForWordUseCase
 from app.application.use_cases.vocabulary import _require_word_owner
 from app.domain.repositories import (
@@ -138,6 +139,7 @@ class SubmitAnswerUseCase:
         mistake_repo=None,
         observation_repo=None,
         edge_repo=None,
+        diagnosis_repo=None,
     ):
         self.session_repo = session_repo
         self.word_repo = word_repo
@@ -156,6 +158,10 @@ class SubmitAnswerUseCase:
         # from mistakes, so a new one needs the same recompute a synonym
         # edit gets (#203 TODO 2).
         self.edge_repo = edge_repo
+        # Same gate as observation_repo: the router only passes this when
+        # learning_diagnosis_enabled is true, so a disabled account's
+        # answer never triggers a diagnosis run at all.
+        self.diagnosis_repo = diagnosis_repo
 
     def execute(
         self,
@@ -188,9 +194,17 @@ class SubmitAnswerUseCase:
         self._record_observation(
             user_id, session, word_id, outcome, response_time_ms, attempted_answer, observation
         )
+        self._run_diagnosis(user_id, word_id)
 
         became_learned = was_new_word and outcome == ReviewOutcome.CORRECT
         return AnswerResult(word=word, was_new_word=became_learned)
+
+    def _run_diagnosis(self, user_id: int, word_id: int) -> None:
+        if self.diagnosis_repo is None or self.observation_repo is None or self.edge_repo is None:
+            return
+        RunDiagnosisForWordUseCase(
+            self.word_repo, self.observation_repo, self.edge_repo, self.diagnosis_repo
+        ).execute(user_id, word_id)
 
     def _record_observation(
         self,

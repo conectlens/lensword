@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.api.deps import (
     CurrentUser,
+    DiagnosisRepo,
     KnowledgeEdgeRepo,
     LearningObservationRepo,
     MistakeEventRepo,
@@ -74,6 +75,7 @@ def submit_answer(
     mistake_repo: MistakeEventRepo,
     observation_repo: LearningObservationRepo,
     edge_repo: KnowledgeEdgeRepo,
+    diagnosis_repo: DiagnosisRepo,
 ) -> SubmitAnswerResponse:
     try:
         settings = settings_repo.get_by_user(current_user.id)
@@ -89,6 +91,7 @@ def submit_answer(
             mistake_repo,
             observation_repo if diagnosis_enabled else None,
             edge_repo,
+            diagnosis_repo if diagnosis_enabled else None,
         ).execute(
             current_user.id,
             session_id,

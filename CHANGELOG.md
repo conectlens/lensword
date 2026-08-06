@@ -397,6 +397,12 @@ releases exist yet).
   as SQLite was the only target. Deleting a group now also removes its rooms,
   placements and reminders. Found by running the new tenant-isolation audit
   against Postgres.
+- Deleting a word with any recorded `learning_observations` or `diagnoses`
+  history (#182, #183) now removes those rows too, instead of leaving them
+  referencing a word that no longer exists. The same class of bug as above,
+  reached again because both tables shipped after the word-deletion cleanup
+  was written and neither was added to it — silently orphaned on SQLite,
+  a `ForeignKeyViolation` on Postgres.
 - Mnemonic endpoints now verify that the requesting account owns the word.
   Previously any authenticated user could read and vote on mnemonics attached
   to another account's words.

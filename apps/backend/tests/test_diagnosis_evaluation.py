@@ -16,10 +16,14 @@ from app.domain.services.diagnosis_contracts import (
 )
 from app.domain.services.diagnosis_evaluation import (
     DEFAULT_SEED,
+    FALSE_CAUSE_RATE_GATE,
     GoldenCase,
     abstain_baseline,
     evaluate,
+    evaluate_per_class,
     golden_dataset,
+    passes_release_gate,
+    real_engine,
 )
 from app.domain.value_objects import ReviewOutcome, SessionMode
 
@@ -102,8 +106,8 @@ def test_evaluate_scores_a_perfect_diagnoser_against_a_small_fixture():
         ),
     )
 
-    def perfect(observations):
-        word_id = observations[0].word_id
+    def perfect(case):
+        word_id = case.observations[0].word_id
         outcome = "forgetting" if word_id == 1 else DIAGNOSIS_INSUFFICIENT_EVIDENCE
         return Diagnosis(
             word_id=word_id, user_id=1, outcome=outcome, evidence=(),
@@ -133,7 +137,7 @@ def test_evaluate_does_not_credit_a_claim_on_a_must_abstain_case():
         ),
     )
 
-    def overconfident(observations):
+    def overconfident(case):
         return Diagnosis(
             word_id=1, user_id=1, outcome="forgetting", evidence=(),
             confidence=0.9, rules_version=1, diagnosed_at=NOW,
@@ -143,3 +147,28 @@ def test_evaluate_does_not_credit_a_claim_on_a_must_abstain_case():
     assert metrics.claims_made == 1
     assert metrics.correct_claims == 0
     assert metrics.false_cause_rate == 1.0
+
+
+def test_the_real_engine_passes_its_own_release_gate():
+    # #183 TODO 6's stated number: "no release if false-cause rate exceeds
+    # 5% on the agreed golden set." This is the one gate in this whole
+    # epic the issue actually names — everything else asks for a report,
+    # this asks for a pass/fail.
+    dataset = golden_dataset()
+    metrics = evaluate(dataset, real_engine)
+    assert metrics.false_cause_rate <= FALSE_CAUSE_RATE_GATE
+    assert passes_release_gate(metrics)
+
+
+def test_the_real_engine_has_positive_precision_and_recall_per_named_category():
+    # A gate on the aggregate false-cause rate alone could still hide one
+    # category that never fires correctly, so long as it also never fires
+    # wrongly (recall 0, precision undefined) — this asserts every named
+    # category actually contributes claims, not just that nothing false
+    # slips through.
+    dataset = golden_dataset()
+    per_class = evaluate_per_class(dataset, real_engine)
+    for category, metrics in per_class.items():
+        assert metrics.support > 0, category
+        assert metrics.precision is not None and metrics.precision > 0.0, category
+        assert metrics.recall is not None and metrics.recall > 0.0, category
