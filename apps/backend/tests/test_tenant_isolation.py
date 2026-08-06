@@ -55,7 +55,13 @@ def owned(client, two_accounts, db_session):
     # #184: /acquisition/start 403s when this is off, which would be
     # indistinguishable from a tenant denial in the reachable-by-owner
     # check below unless the owner actually has the feature enabled.
-    client.put("/api/v1/recall-settings", json={"acquisition_loop_enabled": True}, headers=owner)
+    # learning_diagnosis_enabled is needed too, for #229's observation
+    # below — with it off, no observation is ever recorded to correct.
+    client.put(
+        "/api/v1/recall-settings",
+        json={"acquisition_loop_enabled": True, "learning_diagnosis_enabled": True},
+        headers=owner,
+    )
 
     group = client.post(
         "/api/v1/groups", json={"name": "Alex Group", "target_language": "Spanish"}, headers=owner
@@ -155,6 +161,17 @@ def owned(client, two_accounts, db_session):
     )
     _db.commit()
 
+    # #229: recorded through the real endpoint (learning_diagnosis_enabled
+    # was turned on above) rather than seeded, since it needs no AI
+    # provider and doing it for real also exercises the write path this
+    # fixture's other resources use.
+    client.post(
+        f"/api/v1/review/sessions/{session['session_id']}/answers",
+        json={"word_id": word["id"], "outcome": "incorrect"},
+        headers=owner,
+    )
+    observation = client.get("/api/v1/me/observations", headers=owner).json()["items"][0]["observation_id"]
+
     return {
         "group": group["id"],
         "word": word["id"],
@@ -170,6 +187,7 @@ def owned(client, two_accounts, db_session):
         "path": learning_path.id,
         "conversation": conversation.id,
         "attempt": scenario_attempt.id,
+        "observation": observation,
     }
 
 
@@ -206,6 +224,9 @@ CROSS_TENANT_CASES = [
     _case("GET", "/api/v1/words/{word}/acquisition"),
     _case("POST", "/api/v1/words/{word}/acquisition/start"),
     _case("POST", "/api/v1/words/{word}/acquisition/answer", {"outcome": "correct"}),
+    # Observation history and corrections (#229). Flagging an observation
+    # is a write against someone else's recorded evidence, not just a read.
+    _case("POST", "/api/v1/me/observations/{observation}/correct", {"reason": "misgraded"}),
     # AI provenance (#140). The history of someone else's card describes
     # their vocabulary, and verification is a claim about their data.
     _case("GET", "/api/v1/words/{word}/history"),

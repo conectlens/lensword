@@ -326,6 +326,39 @@ export interface WeaknessProfile {
   insufficient_data: boolean
 }
 
+// Learner-facing observation history and corrections (issue #229 TODO 5).
+export type ObservationCorrectionReason = 'misgraded' | 'irrelevant'
+
+export interface ObservationCorrection {
+  correction_id: string
+  reason: ObservationCorrectionReason
+  note: string | null
+  created_at: string
+}
+
+export interface ObservationHistoryItem {
+  observation_id: string
+  word_id: number
+  // Null for a word that has since been deleted — the observation still
+  // happened and still counts as history.
+  word_term: string | null
+  outcome: ReviewOutcome
+  session_mode: SessionMode
+  observed_at: string
+  attempted_answer: string | null
+  modality: string | null
+  hint_used: boolean
+  // Still shown once set, even though a flagged observation stops being
+  // used as diagnosis evidence — the learner needs to see what they
+  // already flagged.
+  correction: ObservationCorrection | null
+}
+
+export interface ObservationHistoryResponse {
+  items: ObservationHistoryItem[]
+  has_more: boolean
+}
+
 // Knowledge-graph search and CEFR progress (issue #143).
 export interface RelatedWord {
   word_id: number

@@ -686,6 +686,32 @@ class LearningObservationModel(Base):
     schema_version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
 
 
+class ObservationCorrectionModel(Base):
+    """A learner's flag on a previously recorded observation (issue #229
+    TODO 5) — misgraded or irrelevant — kept as a new row referencing the
+    observation it corrects rather than an edit to it, so a diagnosis
+    rebuild can still see the original for audit even though it stops
+    treating the flagged observation as evidence.
+
+    `observation_id` is unique here: at most one correction per
+    observation, because flagging is a yes/no fact about a recorded row,
+    not itself a thing worth a history of the way the observation it
+    points at is.
+    """
+
+    __tablename__ = "observation_corrections"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    correction_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    observation_id: Mapped[str] = mapped_column(
+        ForeignKey("learning_observations.observation_id"), unique=True, index=True
+    )
+    reason: Mapped[str] = mapped_column(String(16))
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
 class KnowledgeEdgeModel(Base):
     """One relation between two of a learner's own words (issue #138, #203).
 
