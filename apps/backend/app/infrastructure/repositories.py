@@ -689,6 +689,12 @@ class SqlAlchemyWordRepository:
         return self.db.scalar(stmt)
 
     def list_due_for_user(self, user_id: int, limit: int, group_id: int | None = None) -> list[Word]:
+        # Ordered strictly by due_at, and deliberately not by issue #204's
+        # semantic-diversity policy: that policy only acts at word
+        # introduction, where no observed errors exist yet (its own boundary
+        # with #180 Sec. 3). The review queue is #176's territory, and #204
+        # TODO 5 explicitly excludes it — considered and rejected, not an
+        # oversight.
         stmt = (
             select(WordModel)
             .join(GroupModel, WordModel.group_id == GroupModel.id)

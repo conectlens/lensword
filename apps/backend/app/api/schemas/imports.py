@@ -37,10 +37,18 @@ class ImportPreviewRecord(BaseModel):
     synonyms: list[str] = Field(default_factory=list)
     antonyms: list[str] = Field(default_factory=list)
     topics: list[str] = Field(default_factory=list)
+    # Set only when issue #204's diversity policy pushed this record later
+    # in the order because it overlaps vocabulary the account already
+    # studies — the one case with an unambiguous, learner-facing "why".
+    deferred_reason: str | None = None
 
 
 class ImportPreviewResponse(BaseModel):
     records: list[ImportPreviewRecord]
+    # Whether issue #204's semantic-diversity policy reordered `records`
+    # from the request's original order. False whenever the flag is off or
+    # nothing in the batch was related enough to move.
+    diversity_ordering_applied: bool = False
 
 
 class ImportCommitRequest(BaseModel):
