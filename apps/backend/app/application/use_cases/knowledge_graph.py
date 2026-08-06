@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from app.domain.repositories import KnowledgeEdgeRepository, WordRepository
 from app.domain.services.knowledge_graph import KnowledgeGraph, WordNode, build_edges
+from app.domain.services.weakness import confusion_pair_counts
 
 
 def nodes_for(words) -> list[WordNode]:
@@ -35,14 +36,12 @@ def confusions_for(mistake_repo, user_id: int) -> dict[tuple[int, int], int]:
     """Word pairs the learner actually mixes up, from the mistake log (#134).
 
     Shared with the read-path callers for the same reason as `nodes_for`.
+    Grouping itself is `confusion_pair_counts` (`weakness.py`) — the same
+    derivation `ConfusedPair` is built from, so this and the weakness
+    profile agree on what counts as a confusion pair (issue #207).
     """
-    counts: dict[tuple[int, int], int] = {}
-    for row in mistake_repo.list_for_user(user_id):
-        if row.confused_with_word_id is None or row.confused_with_word_id == row.word_id:
-            continue
-        key = (min(row.word_id, row.confused_with_word_id), max(row.word_id, row.confused_with_word_id))
-        counts[key] = counts.get(key, 0) + row.occurrence_count
-    return counts
+    rows = mistake_repo.list_for_user(user_id)
+    return confusion_pair_counts((row.word_id, row.confused_with_word_id, row.occurrence_count) for row in rows)
 
 
 def graph_for_user(words, edge_repo: KnowledgeEdgeRepository, user_id: int) -> KnowledgeGraph:
