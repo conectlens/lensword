@@ -899,6 +899,30 @@ class CompanionTurnModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
 
 
+class CompanionActivityModel(Base):
+    """An explicitly started, measurable companion activity (#194)."""
+
+    __tablename__ = "companion_activities"
+    __table_args__ = (
+        UniqueConstraint("session_id", "operation_id", name="uq_companion_activity_session_operation"),
+        Index("ix_companion_activities_session_updated", "session_id", "updated_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    session_id: Mapped[str] = mapped_column(ForeignKey("companion_sessions.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    activity_type: Mapped[str] = mapped_column(String(32))
+    prompt: Mapped[str] = mapped_column(Text)
+    expected_evaluation: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    response: Mapped[str | None] = mapped_column(Text, nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    operation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime)
+    revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+
 class AcquisitionEventModel(Base):
     """One transition of a same-day acquisition ladder (issue #184).
 

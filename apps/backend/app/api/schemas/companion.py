@@ -60,3 +60,29 @@ class CompanionExportResponse(BaseModel):
 
 class CompanionActionResponse(BaseModel):
     session: CompanionSessionResponse
+
+
+class CompanionActivityCreateRequest(BaseModel):
+    activity_type: str = Field(min_length=1, max_length=32)
+    prompt: str = Field(min_length=1, max_length=4000)
+    expected_evaluation: dict[str, Any] = Field(default_factory=dict)
+    operation_id: str | None = Field(default=None, max_length=128)
+
+
+class CompanionActivityResponse(BaseModel):
+    id: str
+    session_id: str
+    activity_type: str
+    prompt: str
+    expected_evaluation: dict[str, Any]
+    status: str
+    response: str | None
+    result: dict[str, Any] | None
+    operation_id: str | None
+    started_at: datetime
+    updated_at: datetime
+    revision: int
+
+
+class CompanionActivityAnswerRequest(BaseModel):
+    response: str = Field(min_length=1, max_length=10000)
