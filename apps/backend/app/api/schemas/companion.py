@@ -86,3 +86,35 @@ class CompanionActivityResponse(BaseModel):
 
 class CompanionActivityAnswerRequest(BaseModel):
     response: str = Field(min_length=1, max_length=10000)
+
+
+class CompanionTaskCreateRequest(BaseModel):
+    task_type: str = Field(min_length=1, max_length=32)
+    total_units: int = Field(ge=1, le=10000)
+    expires_in_seconds: int = Field(default=300, ge=1, le=86400)
+    operation_id: str | None = Field(default=None, max_length=128)
+
+
+class CompanionTaskProgressRequest(BaseModel):
+    completed_units: int = Field(ge=0, le=10000)
+
+
+class CompanionTaskCompleteRequest(BaseModel):
+    result: dict[str, Any] = Field(default_factory=dict)
+
+
+class CompanionTaskResponse(BaseModel):
+    id: str
+    session_id: str
+    task_type: str
+    status: str
+    total_units: int
+    completed_units: int
+    progress: float
+    result: dict[str, Any] | None
+    error: str | None
+    operation_id: str | None
+    expires_at: datetime
+    created_at: datetime
+    updated_at: datetime
+    revision: int

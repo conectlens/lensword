@@ -923,6 +923,32 @@ class CompanionActivityModel(Base):
     revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
 
+class CompanionTaskModel(Base):
+    """Durable owner-scoped long-running companion task state (#197)."""
+
+    __tablename__ = "companion_tasks"
+    __table_args__ = (
+        UniqueConstraint("session_id", "operation_id", name="uq_companion_task_session_operation"),
+        Index("ix_companion_tasks_session_updated", "session_id", "updated_at"),
+        Index("ix_companion_tasks_expiry_status", "expires_at", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    session_id: Mapped[str] = mapped_column(ForeignKey("companion_sessions.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    task_type: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    total_units: Mapped[int] = mapped_column(Integer)
+    completed_units: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    operation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime)
+    revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+
 class AcquisitionEventModel(Base):
     """One transition of a same-day acquisition ladder (issue #184).
 

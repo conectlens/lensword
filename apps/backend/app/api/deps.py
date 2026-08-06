@@ -27,6 +27,7 @@ from app.infrastructure.repositories import (
     SqlAlchemyInterventionRepository,
     SqlAlchemyCompanionSessionRepository,
     SqlAlchemyCompanionActivityRepository,
+    SqlAlchemyCompanionTaskRepository,
     SqlAlchemyAcquisitionStateRepository,
     SqlAlchemyMnemonicRepository,
     SqlAlchemyRecallSettingsRepository,
@@ -131,6 +132,10 @@ def get_companion_activity_repository(db: DbSession) -> SqlAlchemyCompanionActiv
     return SqlAlchemyCompanionActivityRepository(db)
 
 
+def get_companion_task_repository(db: DbSession) -> SqlAlchemyCompanionTaskRepository:
+    return SqlAlchemyCompanionTaskRepository(db)
+
+
 def get_acquisition_state_repository(db: DbSession) -> SqlAlchemyAcquisitionStateRepository:
     return SqlAlchemyAcquisitionStateRepository(db)
 
@@ -221,6 +226,9 @@ CompanionSessionRepo = Annotated[
 ]
 CompanionActivityRepo = Annotated[
     SqlAlchemyCompanionActivityRepository, Depends(get_companion_activity_repository)
+]
+CompanionTaskRepo = Annotated[
+    SqlAlchemyCompanionTaskRepository, Depends(get_companion_task_repository)
 ]
 AcquisitionStateRepo = Annotated[
     SqlAlchemyAcquisitionStateRepository, Depends(get_acquisition_state_repository)

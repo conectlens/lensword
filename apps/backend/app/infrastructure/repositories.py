@@ -38,6 +38,7 @@ from app.domain.services.companion_sessions import (
     CompanionTurnRole,
 )
 from app.domain.services.companion_activities import ActivityStatus, ActivityType, LearningActivity
+from app.domain.services.companion_tasks import CompanionTask, CompanionTaskStatus, CompanionTaskType
 from app.domain.services.diagnosis_contracts import (
     AcquisitionState,
     Diagnosis,
@@ -92,6 +93,7 @@ from app.infrastructure.models import (
     CompanionSessionModel,
     CompanionTurnModel,
     CompanionActivityModel,
+    CompanionTaskModel,
 )
 
 logger = logging.getLogger(__name__)
@@ -2446,6 +2448,99 @@ class SqlAlchemyCompanionActivityRepository:
             )
         )
         return _companion_activity_to_domain(model) if model else None
+
+
+def _companion_task_to_domain(m: CompanionTaskModel) -> CompanionTask:
+    return CompanionTask(
+        id=m.id,
+        session_id=m.session_id,
+        user_id=m.user_id,
+        task_type=CompanionTaskType(m.task_type),
+        status=CompanionTaskStatus(m.status),
+        total_units=m.total_units,
+        completed_units=m.completed_units,
+        result=dict(m.result) if m.result is not None else None,
+        error=m.error,
+        operation_id=m.operation_id,
+        expires_at=m.expires_at,
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+        revision=m.revision,
+    )
+
+
+class SqlAlchemyCompanionTaskRepository:
+    """Owner/session-scoped durable task state (#197)."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add(self, task: CompanionTask) -> CompanionTask:
+        model = CompanionTaskModel(
+            id=task.id,
+            session_id=task.session_id,
+            user_id=task.user_id,
+            task_type=task.task_type.value,
+            status=task.status.value,
+            total_units=task.total_units,
+            completed_units=task.completed_units,
+            result=task.result,
+            error=task.error,
+            operation_id=task.operation_id,
+            expires_at=task.expires_at,
+            created_at=task.created_at,
+            updated_at=task.updated_at,
+            revision=task.revision,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _companion_task_to_domain(model)
+
+    def get(self, user_id: int, session_id: str, task_id: str) -> CompanionTask | None:
+        model = self.db.scalar(
+            select(CompanionTaskModel).where(
+                CompanionTaskModel.id == task_id,
+                CompanionTaskModel.session_id == session_id,
+                CompanionTaskModel.user_id == user_id,
+            )
+        )
+        return _companion_task_to_domain(model) if model else None
+
+    def update(self, task: CompanionTask) -> CompanionTask:
+        model = self.db.get(CompanionTaskModel, task.id)
+        if model is None or model.user_id != task.user_id or model.session_id != task.session_id:
+            raise ValueError("Companion task not found")
+        model.status = task.status.value
+        model.completed_units = task.completed_units
+        model.result = task.result
+        model.error = task.error
+        model.expires_at = task.expires_at
+        model.updated_at = task.updated_at
+        model.revision = task.revision
+        self.db.flush()
+        return _companion_task_to_domain(model)
+
+    def list_for_session(self, user_id: int, session_id: str, limit: int = 50) -> list[CompanionTask]:
+        stmt = (
+            select(CompanionTaskModel)
+            .where(
+                CompanionTaskModel.user_id == user_id,
+                CompanionTaskModel.session_id == session_id,
+            )
+            .order_by(CompanionTaskModel.created_at.desc(), CompanionTaskModel.id.desc())
+            .limit(min(max(limit, 1), 100))
+        )
+        return [_companion_task_to_domain(model) for model in self.db.scalars(stmt)]
+
+    def find_by_operation(self, user_id: int, session_id: str, operation_id: str) -> CompanionTask | None:
+        model = self.db.scalar(
+            select(CompanionTaskModel).where(
+                CompanionTaskModel.user_id == user_id,
+                CompanionTaskModel.session_id == session_id,
+                CompanionTaskModel.operation_id == operation_id,
+            )
+        )
+        return _companion_task_to_domain(model) if model else None
 
 
 def _acquisition_state_to_domain(m: AcquisitionEventModel) -> AcquisitionState:
