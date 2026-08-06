@@ -25,6 +25,41 @@ logger = logging.getLogger(__name__)
 
 SUPPORTED_AI_PROVIDERS = ("none", "ollama")
 
+
+def _unavailable_error(raw_text: str | None, exc: Exception) -> AIProviderUnavailableError:
+    """Distinguishes a truncated response from a genuinely malformed one
+    (issue #211).
+
+    "The AI provider is not reachable" (`AIProviderUnavailableError`'s own
+    default) is actively false when a response is cut off mid-token by the
+    output-token budget: the provider was reached and answered, just not
+    in time to finish. Both look identical as a bare `ValueError` unless
+    the shape of the failure itself is examined:
+
+    - The exact signature this codebase has actually seen in production
+      (see docs/ai-model-verification.md) is `json.JSONDecodeError` with
+      message "Unterminated string starting at" — the model was cut off
+      partway through a string value, which is by definition the last
+      thing in the truncated text (there is nothing after it to close the
+      string with), so this alone is a reliable signal on its own.
+    - The other way output ends early — cut off right after a complete
+      token, still expecting a delimiter or closing bracket — reports the
+      failure position at or very near the end of the text rather than
+      inside an unterminated string. Malformed-from-the-start JSON fails
+      near position 0 instead, which is how the two are told apart.
+
+    The message stays as generic and operator-agnostic as the default it
+    replaces — no backend detail, just an honest description of what
+    happened and what to do about it.
+    """
+    if raw_text is not None and isinstance(exc, json.JSONDecodeError):
+        looks_truncated = exc.msg.startswith("Unterminated string") or exc.pos >= len(raw_text) - 5
+        if looks_truncated:
+            return AIProviderUnavailableError(
+                "The AI response was cut off before it finished — try a shorter message, or try again."
+            )
+    return AIProviderUnavailableError()
+
 # The vocabulary record travels between these markers. Both the term and its
 # context come from user-supplied rows, so the prompt is assembled as
 # instruction-plus-data rather than as one interpolated sentence: a term
@@ -210,7 +245,10 @@ def build_extraction_request(
 # generous for any legitimate record; the term is a single word.
 DEFAULT_CONTEXT_MAX_CHARS = 500
 DEFAULT_TERM_MAX_CHARS = 100
-DEFAULT_MAX_OUTPUT_TOKENS = 200
+# See Settings.ai_max_output_tokens's own comment (issue #211) — this is
+# only the fallback for an OllamaProvider built without one, e.g. in a test;
+# the real app always passes settings.ai_max_output_tokens explicitly.
+DEFAULT_MAX_OUTPUT_TOKENS = 900
 
 # Any run of three or more hyphens collapses to one. The markers above are
 # built from five, so no value that passes through here can reproduce one —
@@ -397,11 +435,13 @@ class OllamaProvider:
         if response.is_error:
             logger.warning("Ollama %s returned HTTP %s", what, response.status_code)
             raise AIProviderUnavailableError()
+        raw_text = None
         try:
-            return json.loads(response.json()["response"])
+            raw_text = response.json()["response"]
+            return json.loads(raw_text)
         except (ValueError, KeyError, TypeError) as exc:
             logger.warning("Ollama %s response was not valid JSON: %s", what, exc)
-            raise AIProviderUnavailableError() from exc
+            raise _unavailable_error(raw_text, exc) from exc
 
     async def extract_vocabulary(
         self, text: str, source_language: str | None, target_language: str, max_items: int
@@ -434,11 +474,13 @@ class OllamaProvider:
         if response.is_error:
             logger.warning("Ollama extraction returned HTTP %s", response.status_code)
             raise AIProviderUnavailableError()
+        raw_text = None
         try:
-            payload = json.loads(response.json()["response"])
+            raw_text = response.json()["response"]
+            payload = json.loads(raw_text)
         except (ValueError, KeyError, TypeError) as exc:
             logger.warning("Ollama extraction response was not valid JSON: %s", exc)
-            raise AIProviderUnavailableError() from exc
+            raise _unavailable_error(raw_text, exc) from exc
         if isinstance(payload, dict):
             payload = [payload]
         if not isinstance(payload, list):
@@ -486,6 +528,7 @@ class OllamaProvider:
         return candidates
 
     async def _json_generation(self, system: str, prompt: str) -> dict[str, object]:
+        raw_text = None
         try:
             response = await self._client.post(
                 "/api/generate",
@@ -499,10 +542,11 @@ class OllamaProvider:
                 },
             )
             response.raise_for_status()
-            payload = json.loads(response.json()["response"])
+            raw_text = response.json()["response"]
+            payload = json.loads(raw_text)
         except (httpx.RequestError, ValueError, KeyError, TypeError) as exc:
             logger.warning("Ollama structured generation failed: %s", exc)
-            raise AIProviderUnavailableError() from exc
+            raise _unavailable_error(raw_text, exc) from exc
         if not isinstance(payload, dict):
             raise AIProviderUnavailableError()
         return payload
