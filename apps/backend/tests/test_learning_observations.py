@@ -175,19 +175,33 @@ def _observation(user_id, word_id, **overrides) -> LearningObservation:
 
 
 def test_repository_queries_cover_word_pair_window_modality_and_intervention(client, auth_headers, db_session):
-    auth_headers()
+    headers = auth_headers()
     owner_id = SqlAlchemyUserRepository(db_session).get_by_email("alex@example.com").id
     repo = SqlAlchemyLearningObservationRepository(db_session)
 
-    repo.add(_observation(owner_id, 1, operation_id="a", modality="typing", intervention_plan_ref="plan-1", observed_at=datetime(2026, 8, 1, 9, 0)))
-    repo.add(_observation(owner_id, 2, operation_id="b", modality="speaking", observed_at=datetime(2026, 8, 3, 9, 0)))
-    repo.add(_observation(owner_id, 3, operation_id="c", observed_at=datetime(2026, 8, 5, 9, 0)))
+    # Real words, not fabricated ids: word_id is a genuine foreign key, and
+    # SQLite (which never sets PRAGMA foreign_keys) will not catch a
+    # dangling reference the way Postgres correctly does.
+    group = client.post("/api/v1/groups", json={"name": "G", "target_language": "Spanish"}, headers=headers).json()
+    words = [
+        client.post(
+            f"/api/v1/groups/{group['id']}/words",
+            json={"term": term, "target_language": "Spanish", "translations": ["x"]},
+            headers=headers,
+        ).json()
+        for term in ("uno", "dos", "tres")
+    ]
+    w1, w2, w3 = (w["id"] for w in words)
 
-    assert {o.word_id for o in repo.list_for_word(owner_id, 1)} == {1}
-    assert {o.word_id for o in repo.list_for_pair(owner_id, 1, 2)} == {1, 2}
-    assert {o.word_id for o in repo.list_in_window(owner_id, datetime(2026, 8, 2), datetime(2026, 8, 4))} == {2}
-    assert {o.word_id for o in repo.list_by_modality(owner_id, "typing")} == {1}
-    assert {o.word_id for o in repo.list_by_intervention(owner_id, "plan-1")} == {1}
+    repo.add(_observation(owner_id, w1, operation_id="a", modality="typing", intervention_plan_ref="plan-1", observed_at=datetime(2026, 8, 1, 9, 0)))
+    repo.add(_observation(owner_id, w2, operation_id="b", modality="speaking", observed_at=datetime(2026, 8, 3, 9, 0)))
+    repo.add(_observation(owner_id, w3, operation_id="c", observed_at=datetime(2026, 8, 5, 9, 0)))
+
+    assert {o.word_id for o in repo.list_for_word(owner_id, w1)} == {w1}
+    assert {o.word_id for o in repo.list_for_pair(owner_id, w1, w2)} == {w1, w2}
+    assert {o.word_id for o in repo.list_in_window(owner_id, datetime(2026, 8, 2), datetime(2026, 8, 4))} == {w2}
+    assert {o.word_id for o in repo.list_by_modality(owner_id, "typing")} == {w1}
+    assert {o.word_id for o in repo.list_by_intervention(owner_id, "plan-1")} == {w1}
 
 
 def test_find_by_operation_returns_none_for_an_unseen_operation_id(client, auth_headers, db_session):
