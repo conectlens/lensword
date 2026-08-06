@@ -22,6 +22,7 @@ from app.infrastructure.repositories import (
     SqlAlchemyMistakeEventRepository,
     SqlAlchemyWordRevisionRepository,
     SqlAlchemyLearningObservationRepository,
+    SqlAlchemyKnowledgeEdgeRepository,
     SqlAlchemyMnemonicRepository,
     SqlAlchemyRecallSettingsRepository,
     SqlAlchemyDailySessionPreferenceRepository,
@@ -105,6 +106,10 @@ def get_learning_observation_repository(db: DbSession) -> SqlAlchemyLearningObse
     return SqlAlchemyLearningObservationRepository(db)
 
 
+def get_knowledge_edge_repository(db: DbSession) -> SqlAlchemyKnowledgeEdgeRepository:
+    return SqlAlchemyKnowledgeEdgeRepository(db)
+
+
 def get_learning_path_repository(db: DbSession) -> SqlAlchemyLearningPathRepository:
     return SqlAlchemyLearningPathRepository(db)
 
@@ -183,6 +188,7 @@ WordRevisionRepo = Annotated[SqlAlchemyWordRevisionRepository, Depends(get_word_
 LearningObservationRepo = Annotated[
     SqlAlchemyLearningObservationRepository, Depends(get_learning_observation_repository)
 ]
+KnowledgeEdgeRepo = Annotated[SqlAlchemyKnowledgeEdgeRepository, Depends(get_knowledge_edge_repository)]
 LearningPathRepo = Annotated[SqlAlchemyLearningPathRepository, Depends(get_learning_path_repository)]
 ConversationRepo = Annotated[SqlAlchemyConversationRepository, Depends(get_conversation_repository)]
 ScenarioAttemptRepo = Annotated[SqlAlchemyScenarioAttemptRepository, Depends(get_scenario_attempt_repository)]

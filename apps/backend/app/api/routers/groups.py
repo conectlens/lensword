@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.deps import CurrentUser, GroupRepo, WordRepo
+from app.api.deps import CurrentUser, GroupRepo, KnowledgeEdgeRepo, MistakeEventRepo, WordRepo
 from app.api.mappers import group_summary_to_response, word_to_response
 from app.api.schemas.vocabulary import (
     GroupCreateRequest,
@@ -54,10 +54,16 @@ def get_group_words(
 
 @router.post("/{group_id}/words", response_model=WordResponse, status_code=status.HTTP_201_CREATED)
 def add_word_to_group(
-    group_id: int, payload: WordCreateRequest, current_user: CurrentUser, group_repo: GroupRepo, word_repo: WordRepo
+    group_id: int,
+    payload: WordCreateRequest,
+    current_user: CurrentUser,
+    group_repo: GroupRepo,
+    word_repo: WordRepo,
+    edge_repo: KnowledgeEdgeRepo,
+    mistake_repo: MistakeEventRepo,
 ) -> WordResponse:
     try:
-        word = AddWordUseCase(word_repo, group_repo).execute(
+        word = AddWordUseCase(word_repo, group_repo, edge_repo, mistake_repo).execute(
             current_user.id,
             group_id,
             WordInput(

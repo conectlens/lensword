@@ -147,6 +147,31 @@ rather than add a second, competing ordering component.
   counter-evidence recorded above, not a re-citation of only the
   supportive half of the literature.
 
+## Addendum: the deck-boundary rule (issue #203 TODO 6)
+
+`knowledge_graph.py`'s edge derivation resolves a lexical association
+(a synonym string, an antonym string, a topic tag) against words the
+*same learner owns*, by exact casefolded term match. A synonym string
+that names a word not in the learner's deck produces no edge — it is
+vocabulary they do not study, and an edge to it would point at nothing
+a query can follow.
+
+**Kept as-is, with the consequence stated explicitly:** this caps the
+feature's recall. A learner who tags "generous" with the synonym
+"magnanimous" gets no edge unless "magnanimous" is also a card in their
+own deck. The alternative — adding unowned lexical nodes as a second node
+type, so an edge could point at a word the learner has not added — was
+considered and rejected for this phase: it would mean the graph answers
+questions about vocabulary nobody is studying, which is a different and
+larger feature (effectively a second, unbounded vocabulary source) than
+"relate the cards I already have," and it multiplies every downstream
+query (`related`, `prerequisites`, distractor selection) with a
+node-type check it does not currently need.
+
+If recall becomes a real limitation later, the fix is additive — a new
+node type — not a change to how owned-word edges already work, so this
+decision does not need to be revisited to make that possible.
+
 ## Sources
 
 - Hutchison, K. A., et al. (2013). The Semantic Priming Project.

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 
+from app.application.use_cases.knowledge_graph import RecomputeKnowledgeEdgesForWordUseCase
 from app.domain.entities import Group, Room, Word
 from app.domain.exceptions import EntityNotFoundError, PermissionDeniedError
 from app.domain.repositories import GroupRepository, RoomRepository, WordRepository
@@ -133,9 +134,20 @@ class WordInput:
 
 
 class AddWordUseCase:
-    def __init__(self, word_repo: WordRepository, group_repo: GroupRepository):
+    def __init__(
+        self,
+        word_repo: WordRepository,
+        group_repo: GroupRepository,
+        edge_repo=None,
+        mistake_repo=None,
+    ):
         self.word_repo = word_repo
         self.group_repo = group_repo
+        # Optional so every existing caller and test that only cares about
+        # adding a word is unaffected — the same pattern review.py already
+        # uses for mistake_repo.
+        self.edge_repo = edge_repo
+        self.mistake_repo = mistake_repo
 
     def execute(self, owner_id: int, group_id: int, data: WordInput) -> Word:
         _require_group_owner(self.group_repo, group_id, owner_id)
@@ -162,7 +174,19 @@ class AddWordUseCase:
         for t in data.translations:
             word.add_translation(t)
         word.set_mnemonic(data.mnemonic)
-        return self.word_repo.add(word)
+        added = self.word_repo.add(word)
+        self._recompute_edges(owner_id, added.id)
+        return added
+
+    def _recompute_edges(self, owner_id: int, word_id: int | None) -> None:
+        if self.edge_repo is None or word_id is None:
+            return
+        RecomputeKnowledgeEdgesForWordUseCase(self.word_repo, self.edge_repo, self.mistake_repo).execute(
+            owner_id, word_id
+        )
+
+
+_GRAPH_FIELDS = frozenset({"synonyms", "antonyms", "collocations", "topics"})
 
 
 class UpdateWordUseCase:
@@ -171,12 +195,16 @@ class UpdateWordUseCase:
         word_repo: WordRepository,
         group_repo: GroupRepository,
         revision_repo=None,
+        edge_repo=None,
+        mistake_repo=None,
     ):
         self.word_repo = word_repo
         self.group_repo = group_repo
         # Optional so callers that do not care about provenance are unaffected.
         # Recording history is bookkeeping beside the edit, not part of it.
         self.revision_repo = revision_repo
+        self.edge_repo = edge_repo
+        self.mistake_repo = mistake_repo
 
     def execute(
         self, owner_id: int, word_id: int, data: WordInput, source: EditSource = EditSource.HUMAN
@@ -213,6 +241,13 @@ class UpdateWordUseCase:
 
         updated = self.word_repo.update(word)
         self._record(word_id, before, _tracked_snapshot(word), changes, source)
+        if self.edge_repo is not None and _GRAPH_FIELDS.intersection(changes):
+            # Only when a field the graph actually derives edges from
+            # changed — an edit to example_sentence or mnemonic has no
+            # graph consequence and should not touch knowledge_edges.
+            RecomputeKnowledgeEdgesForWordUseCase(self.word_repo, self.edge_repo, self.mistake_repo).execute(
+                owner_id, word_id
+            )
         return updated
 
     def _record(self, word_id: int, before: dict, after: dict, changes: list[str], source: EditSource) -> None:
@@ -261,9 +296,11 @@ class DeleteWordUseCase:
 class UpdateWordAssociationsUseCase:
     """Add/remove synonyms, antonyms, and topics — powers the mind-map page."""
 
-    def __init__(self, word_repo: WordRepository, group_repo: GroupRepository):
+    def __init__(self, word_repo: WordRepository, group_repo: GroupRepository, edge_repo=None, mistake_repo=None):
         self.word_repo = word_repo
         self.group_repo = group_repo
+        self.edge_repo = edge_repo
+        self.mistake_repo = mistake_repo
 
     def execute(
         self,
@@ -277,7 +314,12 @@ class UpdateWordAssociationsUseCase:
             word.add_association(kind, value)
         for kind, value in remove or []:
             word.remove_association(kind, value)
-        return self.word_repo.update(word)
+        updated = self.word_repo.update(word)
+        if self.edge_repo is not None and (add or remove):
+            RecomputeKnowledgeEdgesForWordUseCase(self.word_repo, self.edge_repo, self.mistake_repo).execute(
+                owner_id, word_id
+            )
+        return updated
 
 
 class GetWordUseCase:

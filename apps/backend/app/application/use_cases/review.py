@@ -10,6 +10,7 @@ from app.domain.exceptions import (
     PermissionDeniedError,
     ValidationError,
 )
+from app.application.use_cases.knowledge_graph import RecomputeKnowledgeEdgesForWordUseCase
 from app.application.use_cases.vocabulary import _require_word_owner
 from app.domain.repositories import (
     GroupRepository,
@@ -136,6 +137,7 @@ class SubmitAnswerUseCase:
         scheduler: Scheduler,
         mistake_repo=None,
         observation_repo=None,
+        edge_repo=None,
     ):
         self.session_repo = session_repo
         self.word_repo = word_repo
@@ -149,6 +151,11 @@ class SubmitAnswerUseCase:
         # when `learning_diagnosis_enabled` is true for the account, so a
         # disabled account's request path never reaches this table at all.
         self.observation_repo = observation_repo
+        # Optional so mistake recording works unchanged when nobody cares
+        # about the graph consequence — a CONFUSED_WITH edge is derived
+        # from mistakes, so a new one needs the same recompute a synonym
+        # edit gets (#203 TODO 2).
+        self.edge_repo = edge_repo
 
     def execute(
         self,
@@ -258,6 +265,14 @@ class SubmitAnswerUseCase:
             confused_with_word_id=confused_with,
             context="review",
         )
+        if self.edge_repo is not None and confused_with is not None:
+            # Recomputing for word.id alone is sufficient: the CONFUSED_WITH
+            # edge this mistake produces touches word.id by construction, so
+            # it lands in that word's replace_for_word batch regardless of
+            # which side confused_with fell on.
+            RecomputeKnowledgeEdgesForWordUseCase(self.word_repo, self.edge_repo, self.mistake_repo).execute(
+                user_id, word.id
+            )
 
 
 class CompleteReviewSessionUseCase:
