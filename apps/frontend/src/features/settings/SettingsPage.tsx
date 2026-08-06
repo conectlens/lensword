@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { aiSettingsApi, groupsApi, practiceApi, settingsApi } from '../../lib/api'
+import { aiSettingsApi, groupsApi, practiceApi, settingsApi, syncApi } from '../../lib/api'
+import { QUEUE_CHANGED_EVENT, queueLength } from '../../lib/offlineQueue'
 import { OllamaSetupCheck } from './OllamaSetupCheck'
-import type { AISettings, DailySession, Group, RecallSettings } from '../../lib/types'
+import type { AISettings, DailySession, Group, RecallSettings, SyncConflict } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { Icon } from '../../components/ui/Icon'
@@ -88,6 +89,7 @@ export function SettingsPage() {
       <SelectedTextCaptureCard />
       <ClipboardCaptureCard />
       <AutostartCard />
+      <OfflineSyncCard />
 
       <Card className="p-6">
         <div className="mb-4 flex items-center justify-between">
@@ -436,6 +438,64 @@ function AutostartCard() {
     try { setError(null); await setAutostartEnabled(next); setEnabled(next) } catch (err) { setError(err instanceof Error ? err.message : 'Could not update launch at login.') }
   }
   return <Card className="p-6"><div className="flex items-center justify-between"><div><h2 className="font-display text-lg font-bold text-white">Launch at login</h2><p className="mt-1 text-sm text-white/50">Starts LensWord in the background when you sign in to this computer, so reminders and the tray keep working without opening it by hand.</p></div><Toggle checked={enabled} onChange={toggle} /></div>{error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}</Card>
+}
+
+/** Offline edits queued locally (issue #218) and conflicts the server could
+ *  not reconcile automatically (issue #90) — read-only here; picking a
+ *  version to keep is a further, separable step the issue itself calls out
+ *  as not required yet. */
+function OfflineSyncCard() {
+  // Lazily initialized from the queue itself rather than 0-then-an-effect,
+  // so the first render is already correct and the effect below only has
+  // to subscribe to *changes*, not also perform the initial read.
+  const [pending, setPending] = useState(() => queueLength())
+  const [conflicts, setConflicts] = useState<SyncConflict[]>([])
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    function refreshPending() {
+      setPending(queueLength())
+    }
+    window.addEventListener(QUEUE_CHANGED_EVENT, refreshPending)
+    return () => window.removeEventListener(QUEUE_CHANGED_EVENT, refreshPending)
+  }, [])
+
+  useEffect(() => {
+    syncApi.conflicts().then(setConflicts).catch((err) => setError(err instanceof Error ? err.message : 'Could not load sync conflicts.'))
+  }, [])
+
+  if (pending === 0 && conflicts.length === 0 && !error) return null
+
+  return (
+    <Card className="p-6">
+      <h2 className="font-display text-lg font-bold text-white">Offline changes</h2>
+      {pending > 0 && (
+        <p className="mt-1 text-sm text-white/50">
+          {pending} change{pending === 1 ? '' : 's'} made offline, waiting to sync once you're back online.
+        </p>
+      )}
+      {error && <p role="alert" className="mt-2 text-sm text-danger">{error}</p>}
+      {conflicts.length > 0 && (
+        <div className="mt-4 flex flex-col gap-2 border-t border-white/10 pt-4">
+          <p className="text-sm font-medium text-white">
+            {conflicts.length} change{conflicts.length === 1 ? '' : 's'} could not be synced automatically
+          </p>
+          <p className="text-xs text-white/40">
+            Each of these was made against a version of the word that had already changed elsewhere. Nothing was lost — the
+            edit below is kept, just not applied.
+          </p>
+          <div className="mt-2 flex flex-col gap-2">
+            {conflicts.map((c) => (
+              <div key={c.operation_id} className="rounded-lg border border-white/10 p-3 text-sm">
+                <p className="text-white">{c.entity_type} · {c.operation}</p>
+                <p className="mt-1 text-xs text-white/50">{c.conflict_reason}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </Card>
+  )
 }
 
 const EMPTY_MCP_SERVER: McpServerSave = {

@@ -4,13 +4,18 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 import { WordFormPage } from './WordFormPage'
 import { groupsApi } from '../../lib/api'
+import { loadQueuedOperations, queueLength } from '../../lib/offlineQueue'
 import type { Group } from '../../lib/types'
 
-vi.mock('../../lib/api', () => ({
-  groupsApi: { list: vi.fn(), addWord: vi.fn() },
-  wordsApi: { get: vi.fn(), update: vi.fn() },
-  aiVocabularyApi: { translateInContext: vi.fn(), regenerateField: vi.fn() },
-}))
+vi.mock('../../lib/api', async () => {
+  const actual = await vi.importActual<typeof import('../../lib/api')>('../../lib/api')
+  return {
+    ...actual,
+    groupsApi: { list: vi.fn(), addWord: vi.fn() },
+    wordsApi: { get: vi.fn(), update: vi.fn() },
+    aiVocabularyApi: { translateInContext: vi.fn(), regenerateField: vi.fn() },
+  }
+})
 
 const list = vi.mocked(groupsApi.list)
 const addWord = vi.mocked(groupsApi.addWord)
@@ -41,6 +46,7 @@ function renderAt(path: string) {
 beforeEach(() => {
   list.mockReset()
   addWord.mockReset()
+  localStorage.clear()
 })
 
 describe('WordFormPage without a group in the URL', () => {
@@ -96,5 +102,28 @@ describe('WordFormPage with a group in the URL', () => {
 
     await screen.findByText('In Travel')
     expect(screen.queryByRole('combobox', { name: 'Group' })).not.toBeInTheDocument()
+  })
+})
+
+describe('WordFormPage offline (issue #218)', () => {
+  it('queues the new word on a network error and still navigates away', async () => {
+    list.mockResolvedValue([group({ id: 1, name: 'Travel' })])
+    addWord.mockRejectedValue(new TypeError('Failed to fetch'))
+
+    renderAt('/groups/1/words/new')
+
+    await screen.findByText('In Travel')
+    fireEvent.change(screen.getByPlaceholderText('Enter the word'), { target: { value: 'hola' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save word' }))
+
+    await waitFor(() => expect(addWord).toHaveBeenCalled())
+    await waitFor(() => expect(queueLength()).toBe(1))
+    expect(loadQueuedOperations()[0]).toMatchObject({
+      entity_type: 'word',
+      entity_id: null,
+      operation: 'create',
+      payload: expect.objectContaining({ group_id: 1, term: 'hola' }),
+      base_revision: null,
+    })
   })
 })

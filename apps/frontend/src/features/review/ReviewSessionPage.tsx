@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiRequestError, reviewApi } from '../../lib/api'
+import { queueableRequest } from '../../lib/offlineQueue'
 import type { SessionMode, SessionSummary, Word } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
@@ -87,8 +88,21 @@ export function ReviewSessionPage() {
     if (!sessionId || !currentWord) return
     setFeedback(outcome === 'skipped' ? null : outcome)
     const wasNew = currentWord.review_state.repetitions === 0
-    const result = await reviewApi.answer(sessionId, currentWord.id, outcome)
-    if (result.was_new_word_learned && wasNew) setNewWordsLearned((n) => n + 1)
+    // Offline (issue #218): an append never conflicts, so this always
+    // "succeeds" locally — queued for real submission once reconnected.
+    // was_new_word_learned is unknown until then, so the streak counter
+    // just does not credit this answer yet; it still counts once synced.
+    const result = await queueableRequest(
+      () => reviewApi.answer(sessionId, currentWord.id, outcome),
+      () => ({
+        entity_type: 'review',
+        entity_id: null,
+        operation: 'append',
+        payload: { session_id: sessionId, word_id: currentWord.id, outcome },
+        base_revision: null,
+      }),
+    )
+    if (result?.was_new_word_learned && wasNew) setNewWordsLearned((n) => n + 1)
 
     setTimeout(
       () => {
