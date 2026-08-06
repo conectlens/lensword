@@ -13,15 +13,32 @@ the fix turns two of these red on SQLite and more than that on Postgres.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from app.infrastructure.models import (
     AcquisitionEventModel,
+    ConversationMessageModel,
+    ConversationSessionModel,
+    DailySessionPreferenceModel,
+    DesktopNotificationModel,
     DiagnosisModel,
+    GroupModel,
+    InterventionPlanModel,
     LearningObservationModel,
+    LearningPathModel,
     MnemonicNoteModel,
+    ObservationCorrectionModel,
+    PathMilestoneModel,
     PracticeExerciseModel,
+    RecallSettingsModel,
+    ReminderModel,
     ReviewAttemptModel,
     RoomModel,
     RoomPlacementModel,
+    ScenarioAttemptModel,
+    SyncOperationModel,
+    UserModel,
+    WeeklyLearningReportModel,
     WordModel,
 )
 
@@ -117,6 +134,42 @@ def test_deleting_a_group_leaves_another_groups_data_alone(client, auth_headers,
     assert client.get(f"/api/v1/words/{kept_word['id']}", headers=headers).status_code == 200
 
 
+def test_deleting_a_group_clears_but_keeps_learning_paths_and_conversations_that_reference_it(
+    client, auth_headers, db_session
+):
+    """#234: found while adding account-deletion cleanup. A learning path or
+    conversation's `group_id` is nullable — a goal or tutoring session can be
+    about a language studied across several groups, not pinned to one — and
+    neither was in `GroupRepository.delete()`'s cleanup at all. On SQLite the
+    delete "succeeded" and left a dangling group_id; on Postgres it never got
+    that far, since the group row itself could not be deleted while a
+    learning path still referenced it.
+    """
+    headers = auth_headers()
+    group = client.post(
+        "/api/v1/groups", json={"name": "G", "target_language": "Spanish"}, headers=headers
+    ).json()
+    me = client.get("/api/v1/auth/me", headers=headers).json()
+
+    now = datetime.now(timezone.utc)
+    path = LearningPathModel(
+        user_id=me["id"], group_id=group["id"], goal="Order coffee", target_language="Spanish", created_at=now
+    )
+    conversation = ConversationSessionModel(
+        user_id=me["id"], group_id=group["id"], target_language="Spanish", created_at=now
+    )
+    db_session.add_all([path, conversation])
+    db_session.commit()
+
+    response = client.delete(f"/api/v1/groups/{group['id']}", headers=headers)
+    assert response.status_code == 204, response.text
+
+    db_session.refresh(path)
+    db_session.refresh(conversation)
+    assert path.group_id is None
+    assert conversation.group_id is None
+
+
 def _enable_diagnosis(client, headers):
     resp = client.put("/api/v1/recall-settings", json={"learning_diagnosis_enabled": True}, headers=headers)
     assert resp.status_code == 200
@@ -181,6 +234,79 @@ def test_deleting_a_word_with_an_acquisition_ladder_succeeds_and_leaves_no_refer
     assert db_session.query(AcquisitionEventModel).filter_by(word_id=word["id"]).count() == 0
 
 
+def test_deleting_a_word_with_an_intervention_plan_succeeds_and_leaves_no_references(
+    client, auth_headers, db_session
+):
+    """#185: intervention_plans also carries a NOT NULL word_id — added to
+    the cleanup list from the start, same reasoning as AcquisitionEventModel
+    above."""
+    headers = auth_headers()
+    _enable_diagnosis(client, headers)
+    group = client.post(
+        "/api/v1/groups", json={"name": "G", "target_language": "Spanish"}, headers=headers
+    ).json()
+    target = client.post(
+        f"/api/v1/groups/{group['id']}/words",
+        json={"term": "libre", "target_language": "Spanish", "translations": ["free"]},
+        headers=headers,
+    ).json()
+    client.post(
+        f"/api/v1/groups/{group['id']}/words",
+        json={"term": "libro", "target_language": "Spanish", "translations": ["book"]},
+        headers=headers,
+    )
+    session = client.post("/api/v1/review/sessions", json={"mode": "standard"}, headers=headers).json()
+    for _ in range(2):
+        client.post(
+            f"/api/v1/review/sessions/{session['session_id']}/answers",
+            json={"word_id": target["id"], "outcome": "incorrect", "attempted_answer": "libro"},
+            headers=headers,
+        )
+    assert db_session.query(InterventionPlanModel).filter_by(word_id=target["id"]).count() == 1
+
+    response = client.delete(f"/api/v1/words/{target['id']}", headers=headers)
+
+    assert response.status_code == 204, response.text
+    assert db_session.query(InterventionPlanModel).filter_by(word_id=target["id"]).count() == 0
+
+
+def test_deleting_a_word_with_a_corrected_observation_succeeds_and_leaves_no_references(
+    client, auth_headers, db_session
+):
+    """#229: observation_corrections references learning_observations by
+    its (unique, non-primary-key) observation_id — a foreign key
+    _delete_word_dependents has to resolve before deleting the observation
+    itself, the same ordering problem #234 hit for learning_paths/
+    conversation_sessions's nullable group_id, one join further out here."""
+    headers = auth_headers()
+    client.put("/api/v1/recall-settings", json={"learning_diagnosis_enabled": True}, headers=headers)
+    group = client.post(
+        "/api/v1/groups", json={"name": "G", "target_language": "Spanish"}, headers=headers
+    ).json()
+    word = client.post(
+        f"/api/v1/groups/{group['id']}/words",
+        json={"term": "Correr", "target_language": "Spanish", "translations": ["to run"]},
+        headers=headers,
+    ).json()
+    start = client.post("/api/v1/review/sessions", json={"mode": "standard", "limit": 20}, headers=headers)
+    client.post(
+        f"/api/v1/review/sessions/{start.json()['session_id']}/answers",
+        json={"word_id": word["id"], "outcome": "incorrect"},
+        headers=headers,
+    )
+    observation_id = client.get("/api/v1/me/observations", headers=headers).json()["items"][0]["observation_id"]
+    resp = client.post(
+        f"/api/v1/me/observations/{observation_id}/correct", json={"reason": "misgraded"}, headers=headers
+    )
+    assert resp.status_code == 201
+
+    response = client.delete(f"/api/v1/words/{word['id']}", headers=headers)
+
+    assert response.status_code == 204, response.text
+    assert db_session.query(LearningObservationModel).filter_by(word_id=word["id"]).count() == 0
+    assert db_session.query(ObservationCorrectionModel).filter_by(observation_id=observation_id).count() == 0
+
+
 def test_deleting_an_unplaced_word_still_works(client, auth_headers):
     """The simple path, which had no dependants to trip over and so was the
     only one the old code was ever exercised on."""
@@ -195,3 +321,151 @@ def test_deleting_an_unplaced_word_still_works(client, auth_headers):
     ).json()
 
     assert client.delete(f"/api/v1/words/{word['id']}", headers=headers).status_code == 204
+
+
+def _make_admin(client, db_session):
+    """Register a normal user then promote them to admin directly via the
+    repository, since there is no public signup path for admins (by
+    design). Mirrors test_admin_api.py's helper of the same name."""
+    resp = client.post(
+        "/api/v1/auth/register", json={"username": "root", "email": "root@example.com", "password": "supersecret1"}
+    )
+    admin_id = resp.json()["user"]["id"]
+    token = resp.json()["token"]["access_token"]
+
+    db_user = db_session.get(UserModel, admin_id)
+    db_user.role = "admin"
+    db_session.commit()
+
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_deleting_a_user_removes_every_dependent_table(client, db_session):
+    """#234: SqlAlchemyUserRepository.delete() removed only the `users` row
+    itself, leaving every table that references a deleted user — directly,
+    or through an owned group/word — pointing at an account that no longer
+    exists. Same bug class as the word- and group-level fixes above, one
+    level up: silently orphaned on SQLite, a `ForeignKeyViolation` on
+    Postgres the moment the account being deleted owns so much as one group.
+
+    Covers both the group/word-reachable tables (already exercised above at
+    the group level) and the account-only tables that have no group or word
+    to be reached through at all — review sessions, learning paths,
+    conversations, recall settings and the rest are seeded directly via the
+    ORM here because reaching them through their real endpoints would mean
+    mocking an AI provider, which is incidental to this bug.
+    """
+    admin_headers = _make_admin(client, db_session)
+    resp = client.post(
+        "/api/v1/auth/register",
+        json={"username": "alex", "email": "alex@example.com", "password": "supersecret1"},
+    )
+    user_id = resp.json()["user"]["id"]
+    headers = {"Authorization": f"Bearer {resp.json()['token']['access_token']}"}
+
+    group, word, room = _group_with_placed_word(client, headers)
+    session = client.post("/api/v1/review/sessions", json={"mode": "standard"}, headers=headers).json()
+    client.post(
+        f"/api/v1/review/sessions/{session['session_id']}/answers",
+        json={"word_id": word["id"], "outcome": "correct", "response_time_ms": 100},
+        headers=headers,
+    )
+
+    now = datetime.now(timezone.utc)
+    path = LearningPathModel(
+        user_id=user_id, group_id=group["id"], goal="Order coffee", target_language="Spanish", created_at=now
+    )
+    db_session.add(path)
+    db_session.flush()
+    db_session.add(
+        PathMilestoneModel(path_id=path.id, position=1, title="Basics", topic="food", target_word_count=10)
+    )
+
+    conversation = ConversationSessionModel(
+        user_id=user_id, group_id=group["id"], target_language="Spanish", created_at=now
+    )
+    db_session.add(conversation)
+    db_session.flush()
+    db_session.add(
+        ConversationMessageModel(session_id=conversation.id, speaker="learner", text="Hola", created_at=now)
+    )
+    db_session.add(
+        ScenarioAttemptModel(user_id=user_id, session_id=conversation.id, scenario_key="cafe", started_at=now)
+    )
+
+    db_session.add(
+        ReminderModel(
+            user_id=user_id, group_id=group["id"], trigger_time="09:00", recurrence="daily", created_at=now
+        )
+    )
+    db_session.add(RecallSettingsModel(user_id=user_id))
+    db_session.add(DailySessionPreferenceModel(user_id=user_id))
+    db_session.add(
+        WeeklyLearningReportModel(
+            user_id=user_id, week_start=now, week_end=now, time_zone="UTC", snapshot={}, created_at=now
+        )
+    )
+    db_session.add(DesktopNotificationModel(user_id=user_id, message="Time to review", created_at=now))
+    db_session.add(
+        SyncOperationModel(
+            user_id=user_id,
+            operation_id="op-1",
+            entity_type="word",
+            operation="update",
+            payload={},
+            status="applied",
+            server_sequence=1,
+            created_at=now,
+        )
+    )
+    db_session.commit()
+
+    response = client.delete(f"/api/v1/admin/users/{user_id}", headers=admin_headers)
+    assert response.status_code == 204, response.text
+
+    assert db_session.query(UserModel).filter_by(id=user_id).count() == 0
+    assert db_session.query(GroupModel).filter_by(owner_id=user_id).count() == 0
+    assert db_session.query(WordModel).filter_by(group_id=group["id"]).count() == 0
+    assert db_session.query(RoomModel).filter_by(id=room["id"]).count() == 0
+    assert db_session.query(RoomPlacementModel).filter_by(room_id=room["id"]).count() == 0
+    assert db_session.query(MnemonicNoteModel).filter_by(word_id=word["id"]).count() == 0
+    assert db_session.query(PracticeExerciseModel).filter_by(word_id=word["id"]).count() == 0
+    assert db_session.query(ReviewAttemptModel).filter_by(word_id=word["id"]).count() == 0
+    assert db_session.query(LearningPathModel).filter_by(user_id=user_id).count() == 0
+    assert db_session.query(PathMilestoneModel).filter_by(path_id=path.id).count() == 0
+    assert db_session.query(ConversationSessionModel).filter_by(user_id=user_id).count() == 0
+    assert db_session.query(ConversationMessageModel).filter_by(session_id=conversation.id).count() == 0
+    assert db_session.query(ScenarioAttemptModel).filter_by(user_id=user_id).count() == 0
+    assert db_session.query(ReminderModel).filter_by(user_id=user_id).count() == 0
+    assert db_session.query(RecallSettingsModel).filter_by(user_id=user_id).count() == 0
+    assert db_session.query(DailySessionPreferenceModel).filter_by(user_id=user_id).count() == 0
+    assert db_session.query(WeeklyLearningReportModel).filter_by(user_id=user_id).count() == 0
+    assert db_session.query(DesktopNotificationModel).filter_by(user_id=user_id).count() == 0
+    assert db_session.query(SyncOperationModel).filter_by(user_id=user_id).count() == 0
+
+
+def test_deleting_a_user_leaves_another_users_data_alone(client, db_session):
+    """The account-deletion cleanup selects by user id (and by the groups it
+    owns). A predicate wide enough to be wrong here would take out other
+    accounts' vocabulary along with the one being deleted."""
+    admin_headers = _make_admin(client, db_session)
+    doomed = client.post(
+        "/api/v1/auth/register",
+        json={"username": "doomed", "email": "doomed@example.com", "password": "supersecret1"},
+    ).json()
+    doomed_headers = {"Authorization": f"Bearer {doomed['token']['access_token']}"}
+    _group_with_placed_word(client, doomed_headers)
+
+    keeper = client.post(
+        "/api/v1/auth/register",
+        json={"username": "keeper", "email": "keeper@example.com", "password": "supersecret1"},
+    ).json()
+    keeper_headers = {"Authorization": f"Bearer {keeper['token']['access_token']}"}
+    _keeper_group, keeper_word, _keeper_room = _group_with_placed_word(client, keeper_headers)
+
+    resp = client.delete(f"/api/v1/admin/users/{doomed['user']['id']}", headers=admin_headers)
+    assert resp.status_code == 204
+
+    assert db_session.query(UserModel).filter_by(id=keeper["user"]["id"]).count() == 1
+    assert db_session.query(WordModel).filter_by(id=keeper_word["id"]).count() == 1
+    assert client.get(f"/api/v1/words/{keeper_word['id']}", headers=keeper_headers).status_code == 200

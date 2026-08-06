@@ -7,16 +7,20 @@ see someone else's?" has no endpoint to ask it of.
 """
 from fastapi import APIRouter
 
-from app.api.deps import CurrentUser, MistakeEventRepo, WordRepo
+from app.api.deps import CurrentUser, KnowledgeEdgeRepo, MistakeEventRepo, WordRepo
 from app.api.schemas.weaknesses import (
     CategoryWeaknessResponse,
     ConfusedPairResponse,
+    CrossAssociationReportResponse,
+    RelationErrorCountResponse,
     WeaknessProfileResponse,
 )
+from app.application.use_cases.knowledge_graph import graph_for_user
 from app.domain.services.weakness import (
     ErrorCategory,
     MistakeEvent,
     WeaknessProfileService,
+    cross_association_report,
 )
 
 router = APIRouter(prefix="/api/v1/me", tags=["weaknesses"])
@@ -32,6 +36,7 @@ def get_my_weaknesses(
     current_user: CurrentUser,
     mistake_repo: MistakeEventRepo,
     word_repo: WordRepo,
+    edge_repo: KnowledgeEdgeRepo,
 ) -> WeaknessProfileResponse:
     rows = mistake_repo.list_for_user(current_user.id, limit=PROFILE_WINDOW)
 
@@ -51,6 +56,8 @@ def get_my_weaknesses(
     ]
 
     profile = WeaknessProfileService.build(events)
+    graph = graph_for_user(word_repo.list_all_for_user(current_user.id), edge_repo, current_user.id)
+    cross_association = cross_association_report(events, graph)
 
     # Terms are resolved only for the pairs actually reported — a handful —
     # rather than for every mistake loaded.
@@ -79,6 +86,16 @@ def get_my_weaknesses(
             )
             for p in profile.confused_pairs
         ],
+        cross_association=CrossAssociationReportResponse(
+            resolved_errors=cross_association.resolved_errors,
+            related_errors=cross_association.related_errors,
+            error_rate=round(cross_association.error_rate, 4),
+            by_relation=[
+                RelationErrorCountResponse(relation=r.relation.value, occurrences=r.occurrences)
+                for r in cross_association.by_relation
+            ],
+            insufficient_data=cross_association.insufficient_data,
+        ),
         insufficient_data=profile.insufficient_data,
     )
 

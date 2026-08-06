@@ -13,11 +13,13 @@ from app.application.use_cases.knowledge_graph import nodes_for
 from app.domain.repositories import (
     AcquisitionStateRepository,
     DiagnosisRepository,
+    InterventionRepository,
     KnowledgeEdgeRepository,
     LearningObservationRepository,
     WordRepository,
 )
 from app.domain.services.diagnosis_engine import DiagnosisContext, diagnose
+from app.domain.services.intervention_planning import plan_intervention
 from app.domain.services.knowledge_graph import KnowledgeGraph
 
 
@@ -29,6 +31,7 @@ class RunDiagnosisForWordUseCase:
         edge_repo: KnowledgeEdgeRepository,
         diagnosis_repo: DiagnosisRepository,
         acquisition_repo: AcquisitionStateRepository | None = None,
+        intervention_repo: InterventionRepository | None = None,
     ):
         self.word_repo = word_repo
         self.observation_repo = observation_repo
@@ -39,6 +42,13 @@ class RunDiagnosisForWordUseCase:
         # account, so a disabled account's diagnosis never triggers ladder
         # entry at all (#184 TODO 4).
         self.acquisition_repo = acquisition_repo
+        # Optional, but not behind its own flag (#185): a plan always
+        # requires a Diagnosis as input, so the router passes this
+        # whenever learning_diagnosis_enabled is true — the same flag
+        # diagnosis_repo/observation_repo already use — rather than
+        # inventing a fourth independent toggle for something that cannot
+        # do anything without diagnosis already being on.
+        self.intervention_repo = intervention_repo
 
     def execute(self, user_id: int, word_id: int):
         word = self.word_repo.get_by_id(word_id)
@@ -67,5 +77,10 @@ class RunDiagnosisForWordUseCase:
 
         if self.acquisition_repo is not None:
             EnterAcquisitionUseCase(self.acquisition_repo).execute(user_id, word_id, diagnosis=result)
+
+        if self.intervention_repo is not None:
+            plan = plan_intervention(result)
+            if plan is not None:
+                self.intervention_repo.add_plan(plan)
 
         return result

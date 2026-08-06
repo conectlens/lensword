@@ -10,7 +10,7 @@ import logging
 import uuid
 from datetime import datetime
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, exists, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.domain.entities import (
@@ -31,7 +31,24 @@ from app.domain.entities import (
 )
 from app.domain.services.cefr_progress import MASTERY_STRENGTH
 from app.domain.services.acquisition import AcquisitionScheduler
-from app.domain.services.diagnosis_contracts import AcquisitionState, Diagnosis, DiagnosisEvidence, LearningObservation
+from app.domain.services.companion_sessions import (
+    CompanionSession,
+    CompanionSessionStatus,
+    CompanionTurn,
+    CompanionTurnRole,
+)
+from app.domain.services.companion_activities import ActivityStatus, ActivityType, LearningActivity
+from app.domain.services.companion_tasks import CompanionTask, CompanionTaskStatus, CompanionTaskType
+from app.domain.services.diagnosis_contracts import (
+    AcquisitionState,
+    Diagnosis,
+    DiagnosisEvidence,
+    InterventionOutcome,
+    InterventionPlan,
+    LearningObservation,
+    ObservationCorrection,
+    ObservationCorrectionReason,
+)
 from app.domain.services.knowledge_graph import KnowledgeEdge, Relation
 from app.domain.value_objects import (
     DEFAULT_TIME_ZONE,
@@ -67,9 +84,16 @@ from app.infrastructure.models import (
     UserModel,
     WordModel,
     LearningObservationModel,
+    ObservationCorrectionModel,
     KnowledgeEdgeModel,
     DiagnosisModel,
+    InterventionPlanModel,
+    InterventionOutcomeModel,
     AcquisitionEventModel,
+    CompanionSessionModel,
+    CompanionTurnModel,
+    CompanionActivityModel,
+    CompanionTaskModel,
 )
 
 logger = logging.getLogger(__name__)
@@ -320,9 +344,15 @@ def _settings_to_domain(m: RecallSettingsModel) -> RecallSettings:
         notifications_paused=m.notifications_paused,
         scheduler=m.scheduler,
         semantic_relatedness_enabled=m.semantic_relatedness_enabled,
+        contrast_cards_enabled=m.contrast_cards_enabled,
+        contrast_min_stability=m.contrast_min_stability,
         learning_diagnosis_enabled=m.learning_diagnosis_enabled,
         acquisition_loop_enabled=m.acquisition_loop_enabled,
         ai_coach_enabled=m.ai_coach_enabled,
+        ai_companion_enabled=m.ai_companion_enabled,
+        companion_sampling_enabled=m.companion_sampling_enabled,
+        companion_remote_enabled=m.companion_remote_enabled,
+        companion_multimodal_enabled=m.companion_multimodal_enabled,
     )
 
 
@@ -378,6 +408,22 @@ def _delete_word_dependents(db: Session, word_ids: list[int]) -> None:
     """
     if not word_ids:
         return
+    # An observation correction (#229) references its observation's
+    # observation_id, not a word_id, so it cannot be swept up by the
+    # word_id-keyed loop below — it has to go first, or deleting the
+    # observation it points at would be the same dangling-FK bug this
+    # whole function exists to close off, one join further out.
+    observation_ids = list(
+        db.scalars(
+            select(LearningObservationModel.observation_id).where(LearningObservationModel.word_id.in_(word_ids))
+        )
+    )
+    if observation_ids:
+        for row in db.scalars(
+            select(ObservationCorrectionModel).where(ObservationCorrectionModel.observation_id.in_(observation_ids))
+        ):
+            db.delete(row)
+
     for model in (
         RoomPlacementModel,
         ReviewAttemptModel,
@@ -394,6 +440,8 @@ def _delete_word_dependents(db: Session, word_ids: list[int]) -> None:
         # added here from the start rather than repeating that.
         LearningObservationModel,
         DiagnosisModel,
+        InterventionPlanModel,
+        InterventionOutcomeModel,
         AcquisitionEventModel,
     ):
         for row in db.scalars(select(model).where(model.word_id.in_(word_ids))):
@@ -419,6 +467,103 @@ def _delete_word_dependents(db: Session, word_ids: list[int]) -> None:
         )
     ):
         db.delete(row)
+
+    db.flush()
+
+
+def _delete_group_dependents(db: Session, group_id: int) -> None:
+    """Remove every row that references this group: its words (and each
+    word's own dependants via `_delete_word_dependents`), rooms and their
+    placements, and reminders. Does not delete the group row itself, so
+    callers can run this ahead of a bulk delete (e.g. the owning account)
+    that will remove the group separately.
+
+    A learning path or conversation's `group_id` is optional — a goal or a
+    tutoring session can be about a language studied across several groups,
+    not pinned to one — so losing the group it happened to reference is not
+    losing anything the path/conversation means. The reference is cleared
+    rather than the row deleted, the same choice already made for
+    `MistakeEventModel.confused_with_word_id`, and for the same two reasons:
+    the row still has a life of its own, and leaving the id in place would
+    be a dangling foreign key on Postgres the moment this group is gone.
+    """
+    for path in db.scalars(select(LearningPathModel).where(LearningPathModel.group_id == group_id)):
+        path.group_id = None
+    for conversation in db.scalars(
+        select(ConversationSessionModel).where(ConversationSessionModel.group_id == group_id)
+    ):
+        conversation.group_id = None
+    word_ids = list(db.scalars(select(WordModel.id).where(WordModel.group_id == group_id)))
+    _delete_word_dependents(db, word_ids)
+    for room in db.scalars(select(RoomModel).where(RoomModel.group_id == group_id)):
+        for placement in list(room.placements):
+            db.delete(placement)
+        db.delete(room)
+    for reminder in db.scalars(select(ReminderModel).where(ReminderModel.group_id == group_id)):
+        db.delete(reminder)
+    for word in db.scalars(select(WordModel).where(WordModel.group_id == group_id)):
+        db.delete(word)
+
+
+def _delete_user_dependents(db: Session, user_id: int) -> None:
+    """Remove every row that references this account, directly or through
+    an owned group/word, so the account row can be deleted without
+    orphaning data — silently on SQLite, a `ForeignKeyViolation` on
+    Postgres, the same bug class `_delete_word_dependents` and
+    `_delete_group_dependents` exist to close off at the word/group level.
+
+    Dependants are removed explicitly rather than through
+    `UserModel`'s `cascade="all, delete-orphan"` relationships (`groups`,
+    `rooms`, `review_sessions`): those only cascade one level, and several
+    of the tables below (learning observations, diagnoses, acquisition
+    events, knowledge edges) are not declared as relationships at all, so
+    an ORM-only cascade would still leave them behind.
+
+    Rooms, reminders, mistakes and practice exercises are not deleted by
+    `user_id` here: every use case that creates one requires group or word
+    ownership first (`_require_group_owner`/`_require_word_owner`), so they
+    are always reachable through the owned-group loop below — a room and
+    reminder through their `group_id`, a mistake or practice exercise
+    through their (NOT NULL) `word_id` via `_delete_word_dependents`.
+    """
+    for group_id in list(db.scalars(select(GroupModel.id).where(GroupModel.owner_id == user_id))):
+        _delete_group_dependents(db, group_id)
+        db.delete(db.get(GroupModel, group_id))
+
+    for review_session in db.scalars(select(ReviewSessionModel).where(ReviewSessionModel.user_id == user_id)):
+        for attempt in db.scalars(
+            select(ReviewAttemptModel).where(ReviewAttemptModel.session_id == review_session.id)
+        ):
+            db.delete(attempt)
+        db.delete(review_session)
+
+    for path in db.scalars(select(LearningPathModel).where(LearningPathModel.user_id == user_id)):
+        for milestone in db.scalars(select(PathMilestoneModel).where(PathMilestoneModel.path_id == path.id)):
+            db.delete(milestone)
+        db.delete(path)
+
+    for conversation in db.scalars(
+        select(ConversationSessionModel).where(ConversationSessionModel.user_id == user_id)
+    ):
+        for attempt in db.scalars(
+            select(ScenarioAttemptModel).where(ScenarioAttemptModel.session_id == conversation.id)
+        ):
+            db.delete(attempt)
+        for message in db.scalars(
+            select(ConversationMessageModel).where(ConversationMessageModel.session_id == conversation.id)
+        ):
+            db.delete(message)
+        db.delete(conversation)
+
+    for model in (
+        RecallSettingsModel,
+        DailySessionPreferenceModel,
+        WeeklyLearningReportModel,
+        DesktopNotificationModel,
+        SyncOperationModel,
+    ):
+        for row in db.scalars(select(model).where(model.user_id == user_id)):
+            db.delete(row)
 
     db.flush()
 
@@ -457,6 +602,7 @@ class SqlAlchemyUserRepository:
     def delete(self, user_id: int) -> None:
         m = self.db.get(UserModel, user_id)
         if m is not None:
+            _delete_user_dependents(self.db, user_id)
             self.db.delete(m)
             self.db.flush()
 
@@ -507,18 +653,7 @@ class SqlAlchemyGroupRepository:
         m = self.db.get(GroupModel, group_id)
         if m is None:
             return
-        # Depth first: placements reference both a room and a word, so both
-        # sides have to go before either parent can.
-        word_ids = list(self.db.scalars(select(WordModel.id).where(WordModel.group_id == group_id)))
-        _delete_word_dependents(self.db, word_ids)
-        for room in self.db.scalars(select(RoomModel).where(RoomModel.group_id == group_id)):
-            for placement in list(room.placements):
-                self.db.delete(placement)
-            self.db.delete(room)
-        for reminder in self.db.scalars(select(ReminderModel).where(ReminderModel.group_id == group_id)):
-            self.db.delete(reminder)
-        for word in self.db.scalars(select(WordModel).where(WordModel.group_id == group_id)):
-            self.db.delete(word)
+        _delete_group_dependents(self.db, group_id)
         self.db.delete(m)
         self.db.flush()
 
@@ -578,6 +713,12 @@ class SqlAlchemyWordRepository:
         return self.db.scalar(stmt)
 
     def list_due_for_user(self, user_id: int, limit: int, group_id: int | None = None) -> list[Word]:
+        # Ordered strictly by due_at, and deliberately not by issue #204's
+        # semantic-diversity policy: that policy only acts at word
+        # introduction, where no observed errors exist yet (its own boundary
+        # with #180 Sec. 3). The review queue is #176's territory, and #204
+        # TODO 5 explicitly excludes it — considered and rejected, not an
+        # oversight.
         stmt = (
             select(WordModel)
             .join(GroupModel, WordModel.group_id == GroupModel.id)
@@ -922,9 +1063,15 @@ class SqlAlchemyRecallSettingsRepository:
         m.notifications_paused = settings.notifications_paused
         m.scheduler = settings.scheduler
         m.semantic_relatedness_enabled = settings.semantic_relatedness_enabled
+        m.contrast_cards_enabled = settings.contrast_cards_enabled
+        m.contrast_min_stability = settings.contrast_min_stability
         m.learning_diagnosis_enabled = settings.learning_diagnosis_enabled
         m.acquisition_loop_enabled = settings.acquisition_loop_enabled
         m.ai_coach_enabled = settings.ai_coach_enabled
+        m.ai_companion_enabled = settings.ai_companion_enabled
+        m.companion_sampling_enabled = settings.companion_sampling_enabled
+        m.companion_remote_enabled = settings.companion_remote_enabled
+        m.companion_multimodal_enabled = settings.companion_multimodal_enabled
         self.db.flush()
         return _settings_to_domain(m)
 
@@ -1650,6 +1797,25 @@ def _learning_observation_to_domain(m: LearningObservationModel) -> LearningObse
     )
 
 
+def _observation_correction_to_domain(m: ObservationCorrectionModel) -> ObservationCorrection:
+    return ObservationCorrection(
+        correction_id=m.correction_id,
+        observation_id=m.observation_id,
+        user_id=m.user_id,
+        reason=ObservationCorrectionReason(m.reason),
+        note=m.note,
+        created_at=m.created_at,
+    )
+
+
+def _not_corrected():
+    """A correlated NOT EXISTS clause, added to every diagnosis-facing
+    query below so a flagged observation (issue #229 TODO 5) stops being
+    evidence without its row ever being touched — the query-time half of
+    "corrections are new records, not edits"."""
+    return ~exists().where(ObservationCorrectionModel.observation_id == LearningObservationModel.observation_id)
+
+
 class SqlAlchemyLearningObservationRepository:
     """Append-only store of learning observations (issue #182).
 
@@ -1708,7 +1874,11 @@ class SqlAlchemyLearningObservationRepository:
     def list_for_word(self, user_id: int, word_id: int, limit: int = 500) -> list[LearningObservation]:
         stmt = (
             select(LearningObservationModel)
-            .where(LearningObservationModel.user_id == user_id, LearningObservationModel.word_id == word_id)
+            .where(
+                LearningObservationModel.user_id == user_id,
+                LearningObservationModel.word_id == word_id,
+                _not_corrected(),
+            )
             .order_by(LearningObservationModel.observed_at.desc())
             .limit(limit)
         )
@@ -1722,6 +1892,7 @@ class SqlAlchemyLearningObservationRepository:
             .where(
                 LearningObservationModel.user_id == user_id,
                 LearningObservationModel.word_id.in_((word_id_a, word_id_b)),
+                _not_corrected(),
             )
             .order_by(LearningObservationModel.observed_at.desc())
             .limit(limit)
@@ -1737,6 +1908,7 @@ class SqlAlchemyLearningObservationRepository:
                 LearningObservationModel.user_id == user_id,
                 LearningObservationModel.observed_at >= since,
                 LearningObservationModel.observed_at <= until,
+                _not_corrected(),
             )
             .order_by(LearningObservationModel.observed_at.desc())
             .limit(limit)
@@ -1746,7 +1918,11 @@ class SqlAlchemyLearningObservationRepository:
     def list_by_modality(self, user_id: int, modality: str, limit: int = 500) -> list[LearningObservation]:
         stmt = (
             select(LearningObservationModel)
-            .where(LearningObservationModel.user_id == user_id, LearningObservationModel.modality == modality)
+            .where(
+                LearningObservationModel.user_id == user_id,
+                LearningObservationModel.modality == modality,
+                _not_corrected(),
+            )
             .order_by(LearningObservationModel.observed_at.desc())
             .limit(limit)
         )
@@ -1760,11 +1936,55 @@ class SqlAlchemyLearningObservationRepository:
             .where(
                 LearningObservationModel.user_id == user_id,
                 LearningObservationModel.intervention_plan_ref == intervention_plan_ref,
+                _not_corrected(),
             )
             .order_by(LearningObservationModel.observed_at.desc())
             .limit(limit)
         )
         return [_learning_observation_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def list_for_user(self, user_id: int, limit: int = 50, offset: int = 0) -> list[LearningObservation]:
+        # Deliberately no _not_corrected() filter — see the protocol
+        # docstring: a learner's own history view must still show what
+        # they already flagged.
+        stmt = (
+            select(LearningObservationModel)
+            .where(LearningObservationModel.user_id == user_id)
+            .order_by(LearningObservationModel.observed_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return [_learning_observation_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def add_correction(self, correction: ObservationCorrection) -> ObservationCorrection:
+        model = ObservationCorrectionModel(
+            correction_id=correction.correction_id or uuid.uuid4().hex,
+            user_id=correction.user_id,
+            observation_id=correction.observation_id,
+            reason=correction.reason.value,
+            note=correction.note,
+            created_at=correction.created_at,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _observation_correction_to_domain(model)
+
+    def correction_for(self, user_id: int, observation_id: str) -> ObservationCorrection | None:
+        stmt = select(ObservationCorrectionModel).where(
+            ObservationCorrectionModel.user_id == user_id,
+            ObservationCorrectionModel.observation_id == observation_id,
+        )
+        model = self.db.scalars(stmt).first()
+        return _observation_correction_to_domain(model) if model else None
+
+    def corrections_for(self, user_id: int, observation_ids: list[str]) -> dict[str, ObservationCorrection]:
+        if not observation_ids:
+            return {}
+        stmt = select(ObservationCorrectionModel).where(
+            ObservationCorrectionModel.user_id == user_id,
+            ObservationCorrectionModel.observation_id.in_(observation_ids),
+        )
+        return {m.observation_id: _observation_correction_to_domain(m) for m in self.db.scalars(stmt)}
 
 
 def _knowledge_edge_to_domain(m: KnowledgeEdgeModel) -> KnowledgeEdge:
@@ -1937,6 +2157,390 @@ class SqlAlchemyDiagnosisRepository:
             .limit(limit)
         )
         return [_diagnosis_to_domain(m) for m in self.db.scalars(stmt)]
+
+
+def _intervention_plan_to_domain(m: InterventionPlanModel) -> InterventionPlan:
+    return InterventionPlan(
+        word_id=m.word_id,
+        user_id=m.user_id,
+        diagnosis_outcome=m.diagnosis_outcome,
+        strategy=m.strategy,
+        policy_version=m.policy_version,
+        eligible=m.eligible,
+        rationale=m.rationale,
+        planned_at=m.planned_at,
+        scheduled_for=m.scheduled_for,
+    )
+
+
+def _intervention_outcome_to_domain(m: InterventionOutcomeModel) -> InterventionOutcome:
+    return InterventionOutcome(
+        word_id=m.word_id,
+        user_id=m.user_id,
+        strategy=m.strategy,
+        completed=m.completed,
+        result=m.result,
+        recorded_at=m.recorded_at,
+        completed_at=m.completed_at,
+    )
+
+
+class SqlAlchemyInterventionRepository:
+    """Append-only store of intervention plans and their outcomes (issue
+    #185) — the same shape `SqlAlchemyDiagnosisRepository` above uses."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add_plan(self, plan: InterventionPlan) -> InterventionPlan:
+        model = InterventionPlanModel(
+            user_id=plan.user_id,
+            word_id=plan.word_id,
+            diagnosis_outcome=plan.diagnosis_outcome,
+            strategy=plan.strategy,
+            policy_version=plan.policy_version,
+            eligible=plan.eligible,
+            rationale=plan.rationale,
+            planned_at=plan.planned_at,
+            scheduled_for=plan.scheduled_for,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _intervention_plan_to_domain(model)
+
+    def add_outcome(self, outcome: InterventionOutcome) -> InterventionOutcome:
+        model = InterventionOutcomeModel(
+            user_id=outcome.user_id,
+            word_id=outcome.word_id,
+            strategy=outcome.strategy,
+            completed=outcome.completed,
+            result=outcome.result,
+            recorded_at=outcome.recorded_at,
+            completed_at=outcome.completed_at,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _intervention_outcome_to_domain(model)
+
+    def list_plans_for_word(self, user_id: int, word_id: int) -> list[InterventionPlan]:
+        stmt = (
+            select(InterventionPlanModel)
+            .where(InterventionPlanModel.user_id == user_id, InterventionPlanModel.word_id == word_id)
+            .order_by(InterventionPlanModel.planned_at.desc())
+        )
+        return [_intervention_plan_to_domain(m) for m in self.db.scalars(stmt)]
+
+
+def _companion_session_to_domain(m: CompanionSessionModel) -> CompanionSession:
+    return CompanionSession(
+        id=m.id,
+        user_id=m.user_id,
+        connection_id=m.connection_id,
+        client_id=m.client_id,
+        goal=m.goal,
+        language=m.language,
+        group_id=m.group_id,
+        difficulty=m.difficulty,
+        active_activity=m.active_activity,
+        consent_snapshot=dict(m.consent_snapshot or {}),
+        summary=m.summary,
+        status=CompanionSessionStatus(m.status),
+        revision=m.revision,
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+    )
+
+
+def _companion_turn_to_domain(m: CompanionTurnModel) -> CompanionTurn:
+    return CompanionTurn(
+        id=m.id,
+        session_id=m.session_id,
+        role=CompanionTurnRole(m.role),
+        content=m.content,
+        activity_id=m.activity_id,
+        operation_id=m.operation_id,
+        created_at=m.created_at,
+    )
+
+
+class SqlAlchemyCompanionSessionRepository:
+    """Tenant-scoped persistence for normalized companion sessions (#193)."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add(self, session: CompanionSession) -> CompanionSession:
+        model = CompanionSessionModel(
+            id=session.id,
+            user_id=session.user_id,
+            connection_id=session.connection_id,
+            client_id=session.client_id,
+            goal=session.goal,
+            language=session.language,
+            group_id=session.group_id,
+            difficulty=session.difficulty,
+            active_activity=session.active_activity,
+            consent_snapshot=session.consent_snapshot,
+            summary=session.summary,
+            status=session.status.value,
+            revision=session.revision,
+            created_at=session.created_at,
+            updated_at=session.updated_at,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _companion_session_to_domain(model)
+
+    def get(self, user_id: int, session_id: str) -> CompanionSession | None:
+        model = self.db.scalar(
+            select(CompanionSessionModel).where(
+                CompanionSessionModel.id == session_id,
+                CompanionSessionModel.user_id == user_id,
+            )
+        )
+        return _companion_session_to_domain(model) if model else None
+
+    def update(self, session: CompanionSession) -> CompanionSession:
+        model = self.db.scalar(
+            select(CompanionSessionModel).where(
+                CompanionSessionModel.id == session.id,
+                CompanionSessionModel.user_id == session.user_id,
+            )
+        )
+        if model is None:
+            raise ValueError("Companion session not found")
+        model.goal = session.goal
+        model.language = session.language
+        model.group_id = session.group_id
+        model.difficulty = session.difficulty
+        model.active_activity = session.active_activity
+        model.consent_snapshot = session.consent_snapshot
+        model.summary = session.summary
+        model.status = session.status.value
+        model.revision = session.revision
+        model.updated_at = session.updated_at
+        self.db.flush()
+        return _companion_session_to_domain(model)
+
+    def list_turns(self, user_id: int, session_id: str, limit: int = 100) -> list[CompanionTurn]:
+        if self.get(user_id, session_id) is None:
+            return []
+        stmt = (
+            select(CompanionTurnModel)
+            .join(CompanionSessionModel, CompanionSessionModel.id == CompanionTurnModel.session_id)
+            .where(CompanionSessionModel.id == session_id, CompanionSessionModel.user_id == user_id)
+            .order_by(CompanionTurnModel.created_at.asc(), CompanionTurnModel.id.asc())
+            .limit(min(max(limit, 1), 100))
+        )
+        return [_companion_turn_to_domain(model) for model in self.db.scalars(stmt)]
+
+    def add_turn(self, turn: CompanionTurn) -> CompanionTurn:
+        model = CompanionTurnModel(
+            session_id=turn.session_id,
+            role=turn.role.value,
+            content=turn.content,
+            activity_id=turn.activity_id,
+            operation_id=turn.operation_id,
+            created_at=turn.created_at,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _companion_turn_to_domain(model)
+
+    def find_turn_by_operation(self, user_id: int, session_id: str, operation_id: str) -> CompanionTurn | None:
+        model = self.db.scalar(
+            select(CompanionTurnModel)
+            .join(CompanionSessionModel, CompanionSessionModel.id == CompanionTurnModel.session_id)
+            .where(
+                CompanionSessionModel.id == session_id,
+                CompanionSessionModel.user_id == user_id,
+                CompanionTurnModel.operation_id == operation_id,
+            )
+        )
+        return _companion_turn_to_domain(model) if model else None
+
+    def delete_content(self, user_id: int, session_id: str) -> None:
+        session = self.db.scalar(
+            select(CompanionSessionModel).where(
+                CompanionSessionModel.id == session_id,
+                CompanionSessionModel.user_id == user_id,
+            )
+        )
+        if session is None:
+            return
+        self.db.query(CompanionTurnModel).filter(CompanionTurnModel.session_id == session_id).delete()
+        session.summary = "[content deleted]"
+        session.revision += 1
+        session.updated_at = utcnow()
+        self.db.flush()
+
+
+def _companion_activity_to_domain(m: CompanionActivityModel) -> LearningActivity:
+    return LearningActivity(
+        id=m.id,
+        session_id=m.session_id,
+        user_id=m.user_id,
+        activity_type=ActivityType(m.activity_type),
+        prompt=m.prompt,
+        expected_evaluation=dict(m.expected_evaluation or {}),
+        status=ActivityStatus(m.status),
+        response=m.response,
+        result=dict(m.result) if m.result is not None else None,
+        operation_id=m.operation_id,
+        started_at=m.started_at,
+        updated_at=m.updated_at,
+        revision=m.revision,
+    )
+
+
+class SqlAlchemyCompanionActivityRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add(self, activity: LearningActivity) -> LearningActivity:
+        model = CompanionActivityModel(
+            id=activity.id,
+            session_id=activity.session_id,
+            user_id=activity.user_id,
+            activity_type=activity.activity_type.value,
+            prompt=activity.prompt,
+            expected_evaluation=activity.expected_evaluation,
+            status=activity.status.value,
+            response=activity.response,
+            result=activity.result,
+            operation_id=activity.operation_id,
+            started_at=activity.started_at,
+            updated_at=activity.updated_at,
+            revision=activity.revision,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _companion_activity_to_domain(model)
+
+    def get(self, user_id: int, session_id: str, activity_id: str) -> LearningActivity | None:
+        model = self.db.scalar(
+            select(CompanionActivityModel).where(
+                CompanionActivityModel.id == activity_id,
+                CompanionActivityModel.session_id == session_id,
+                CompanionActivityModel.user_id == user_id,
+            )
+        )
+        return _companion_activity_to_domain(model) if model else None
+
+    def update(self, activity: LearningActivity) -> LearningActivity:
+        model = self.db.get(CompanionActivityModel, activity.id)
+        if model is None or model.user_id != activity.user_id or model.session_id != activity.session_id:
+            raise ValueError("Companion activity not found")
+        model.status = activity.status.value
+        model.response = activity.response
+        model.result = activity.result
+        model.updated_at = activity.updated_at
+        model.revision = activity.revision
+        self.db.flush()
+        return _companion_activity_to_domain(model)
+
+    def find_by_operation(self, user_id: int, session_id: str, operation_id: str) -> LearningActivity | None:
+        model = self.db.scalar(
+            select(CompanionActivityModel).where(
+                CompanionActivityModel.user_id == user_id,
+                CompanionActivityModel.session_id == session_id,
+                CompanionActivityModel.operation_id == operation_id,
+            )
+        )
+        return _companion_activity_to_domain(model) if model else None
+
+
+def _companion_task_to_domain(m: CompanionTaskModel) -> CompanionTask:
+    return CompanionTask(
+        id=m.id,
+        session_id=m.session_id,
+        user_id=m.user_id,
+        task_type=CompanionTaskType(m.task_type),
+        status=CompanionTaskStatus(m.status),
+        total_units=m.total_units,
+        completed_units=m.completed_units,
+        result=dict(m.result) if m.result is not None else None,
+        error=m.error,
+        operation_id=m.operation_id,
+        expires_at=m.expires_at,
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+        revision=m.revision,
+    )
+
+
+class SqlAlchemyCompanionTaskRepository:
+    """Owner/session-scoped durable task state (#197)."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add(self, task: CompanionTask) -> CompanionTask:
+        model = CompanionTaskModel(
+            id=task.id,
+            session_id=task.session_id,
+            user_id=task.user_id,
+            task_type=task.task_type.value,
+            status=task.status.value,
+            total_units=task.total_units,
+            completed_units=task.completed_units,
+            result=task.result,
+            error=task.error,
+            operation_id=task.operation_id,
+            expires_at=task.expires_at,
+            created_at=task.created_at,
+            updated_at=task.updated_at,
+            revision=task.revision,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _companion_task_to_domain(model)
+
+    def get(self, user_id: int, session_id: str, task_id: str) -> CompanionTask | None:
+        model = self.db.scalar(
+            select(CompanionTaskModel).where(
+                CompanionTaskModel.id == task_id,
+                CompanionTaskModel.session_id == session_id,
+                CompanionTaskModel.user_id == user_id,
+            )
+        )
+        return _companion_task_to_domain(model) if model else None
+
+    def update(self, task: CompanionTask) -> CompanionTask:
+        model = self.db.get(CompanionTaskModel, task.id)
+        if model is None or model.user_id != task.user_id or model.session_id != task.session_id:
+            raise ValueError("Companion task not found")
+        model.status = task.status.value
+        model.completed_units = task.completed_units
+        model.result = task.result
+        model.error = task.error
+        model.expires_at = task.expires_at
+        model.updated_at = task.updated_at
+        model.revision = task.revision
+        self.db.flush()
+        return _companion_task_to_domain(model)
+
+    def list_for_session(self, user_id: int, session_id: str, limit: int = 50) -> list[CompanionTask]:
+        stmt = (
+            select(CompanionTaskModel)
+            .where(
+                CompanionTaskModel.user_id == user_id,
+                CompanionTaskModel.session_id == session_id,
+            )
+            .order_by(CompanionTaskModel.created_at.desc(), CompanionTaskModel.id.desc())
+            .limit(min(max(limit, 1), 100))
+        )
+        return [_companion_task_to_domain(model) for model in self.db.scalars(stmt)]
+
+    def find_by_operation(self, user_id: int, session_id: str, operation_id: str) -> CompanionTask | None:
+        model = self.db.scalar(
+            select(CompanionTaskModel).where(
+                CompanionTaskModel.user_id == user_id,
+                CompanionTaskModel.session_id == session_id,
+                CompanionTaskModel.operation_id == operation_id,
+            )
+        )
+        return _companion_task_to_domain(model) if model else None
 
 
 def _acquisition_state_to_domain(m: AcquisitionEventModel) -> AcquisitionState:

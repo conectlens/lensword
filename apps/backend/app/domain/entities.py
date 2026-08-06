@@ -430,6 +430,12 @@ class RecallSettings:
     # are a real scope increase that a user should opt into, not inherit
     # silently on upgrade.
     semantic_relatedness_enabled: bool = False
+    # Phase 5 is more speculative than graph import/distractors: it has its
+    # own opt-in even when semantic relatedness is enabled. The threshold is
+    # provisional because the literature does not establish when contrast is
+    # safe for an established word.
+    contrast_cards_enabled: bool = False
+    contrast_min_stability: float = 21.0
     # Three independently controllable flags for the AI Learning Diagnosis
     # epic (#180, ADR 0007), not one. Deterministic diagnosis must not
     # require AI (issue #181 TODO 1) — a user can run diagnosis without the
@@ -438,6 +444,15 @@ class RecallSettings:
     learning_diagnosis_enabled: bool = False
     acquisition_loop_enabled: bool = False
     ai_coach_enabled: bool = False
+    # Four independently controllable flags for the AI Companion epic
+    # (#190, ADR 0008) — remote/multimodal/sampling access is each its own
+    # opt-in, not implied by turning the companion on at all. All default
+    # off for existing users; with every flag false the review and
+    # conversation request paths remain byte-identical to today.
+    ai_companion_enabled: bool = False
+    companion_sampling_enabled: bool = False
+    companion_remote_enabled: bool = False
+    companion_multimodal_enabled: bool = False
 
     def set_intensity(self, level: int) -> None:
         if not (1 <= level <= 5):

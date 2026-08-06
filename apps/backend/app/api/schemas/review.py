@@ -19,6 +19,30 @@ class StartReviewSessionResponse(BaseModel):
     words: list[WordResponse]
 
 
+class ContrastCardResponse(BaseModel):
+    """A pair shown together; it is not an independently scheduled item."""
+
+    word_ids: tuple[int, int]
+    terms: tuple[str, str]
+    relation: str
+    prompt: str
+
+
+class ContrastAnswerRequest(BaseModel):
+    word_ids: tuple[int, int]
+    terms: tuple[str, str]
+    relation: str
+    prompt: str
+    first_word_note: str = Field(min_length=1, max_length=1000)
+    second_word_note: str = Field(min_length=1, max_length=1000)
+    distinction: str = Field(min_length=1, max_length=1000)
+
+
+class ContrastAnswerResponse(BaseModel):
+    accepted: bool = True
+    scheduled: bool = False
+
+
 class SubmitAnswerRequest(BaseModel):
     word_id: int
     outcome: ReviewOutcome

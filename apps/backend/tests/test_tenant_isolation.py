@@ -55,7 +55,17 @@ def owned(client, two_accounts, db_session):
     # #184: /acquisition/start 403s when this is off, which would be
     # indistinguishable from a tenant denial in the reachable-by-owner
     # check below unless the owner actually has the feature enabled.
-    client.put("/api/v1/recall-settings", json={"acquisition_loop_enabled": True}, headers=owner)
+    # learning_diagnosis_enabled is needed too, for #229's observation
+    # below — with it off, no observation is ever recorded to correct.
+    client.put(
+        "/api/v1/recall-settings",
+        json={
+            "acquisition_loop_enabled": True,
+            "learning_diagnosis_enabled": True,
+            "ai_companion_enabled": True,
+        },
+        headers=owner,
+    )
 
     group = client.post(
         "/api/v1/groups", json={"name": "Alex Group", "target_language": "Spanish"}, headers=owner
@@ -146,6 +156,27 @@ def owned(client, two_accounts, db_session):
     conversation = SqlAlchemyConversationRepository(_db).start(
         user_id=owner_id, target_language="Spanish", difficulty="steady"
     )
+
+    companion_session = client.post(
+        "/api/v1/companion/sessions",
+        json={"connection_id": "audit-client", "client_id": "audit-host"},
+        headers=owner,
+    ).json()
+    companion_activity = client.post(
+        f"/api/v1/companion/sessions/{companion_session['id']}/activities",
+        json={
+            "activity_type": "recall",
+            "prompt": "Recall correr.",
+            "expected_evaluation": {"kind": "presence"},
+            "operation_id": "audit-activity",
+        },
+        headers=owner,
+    ).json()
+    companion_task = client.post(
+        f"/api/v1/companion/sessions/{companion_session['id']}/tasks",
+        json={"task_type": "extraction", "total_units": 3, "operation_id": "audit-task"},
+        headers=owner,
+    ).json()
     # Seeded directly: starting an attempt needs no AI provider, and this audit
     # deliberately does not stand one up.
     from app.infrastructure.repositories import SqlAlchemyScenarioAttemptRepository
@@ -154,6 +185,17 @@ def owned(client, two_accounts, db_session):
         user_id=owner_id, session_id=conversation.id, scenario_key="restaurant"
     )
     _db.commit()
+
+    # #229: recorded through the real endpoint (learning_diagnosis_enabled
+    # was turned on above) rather than seeded, since it needs no AI
+    # provider and doing it for real also exercises the write path this
+    # fixture's other resources use.
+    client.post(
+        f"/api/v1/review/sessions/{session['session_id']}/answers",
+        json={"word_id": word["id"], "outcome": "incorrect"},
+        headers=owner,
+    )
+    observation = client.get("/api/v1/me/observations", headers=owner).json()["items"][0]["observation_id"]
 
     return {
         "group": group["id"],
@@ -170,6 +212,10 @@ def owned(client, two_accounts, db_session):
         "path": learning_path.id,
         "conversation": conversation.id,
         "attempt": scenario_attempt.id,
+        "observation": observation,
+        "companion_session": companion_session["id"],
+        "companion_activity": companion_activity["id"],
+        "companion_task": companion_task["id"],
     }
 
 
@@ -206,6 +252,9 @@ CROSS_TENANT_CASES = [
     _case("GET", "/api/v1/words/{word}/acquisition"),
     _case("POST", "/api/v1/words/{word}/acquisition/start"),
     _case("POST", "/api/v1/words/{word}/acquisition/answer", {"outcome": "correct"}),
+    # Observation history and corrections (#229). Flagging an observation
+    # is a write against someone else's recorded evidence, not just a read.
+    _case("POST", "/api/v1/me/observations/{observation}/correct", {"reason": "misgraded"}),
     # AI provenance (#140). The history of someone else's card describes
     # their vocabulary, and verification is a claim about their data.
     _case("GET", "/api/v1/words/{word}/history"),
@@ -260,6 +309,29 @@ CROSS_TENANT_CASES = [
     # Reports
     _case("GET", "/api/v1/reports/weekly/{report}"),
     _case("POST", "/api/v1/reports/weekly/{report}/narration"),
+    # Companion sessions, measurable activities, and durable tasks. All are
+    # owner-scoped even though their identifiers are opaque strings.
+    _case("GET", "/api/v1/companion/sessions/{companion_session}"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/turns", {"role": "user", "content": "hola"}),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/pause"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/resume"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/finish"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/revoke"),
+    _case("GET", "/api/v1/companion/sessions/{companion_session}/export"),
+    _case("DELETE", "/api/v1/companion/sessions/{companion_session}/content"),
+    _case("GET", "/api/v1/companion/sessions/{companion_session}/activities/{companion_activity}"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/activities/{companion_activity}/response", {"response": "correr"}),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/activities/{companion_activity}/finish"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/activities", {
+        "activity_type": "recall", "prompt": "Recall correr.",
+    }),
+    _case("GET", "/api/v1/companion/sessions/{companion_session}/tasks"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/tasks", {"task_type": "extraction", "total_units": 2}),
+    _case("GET", "/api/v1/companion/sessions/{companion_session}/tasks/{companion_task}"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/tasks/{companion_task}/start"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/tasks/{companion_task}/progress", {"completed_units": 1}),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/tasks/{companion_task}/complete", {"result": {}}),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/tasks/{companion_task}/cancel"),
 ]
 
 

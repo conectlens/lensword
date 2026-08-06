@@ -66,3 +66,15 @@ pub fn credential_clear() -> Result<(), String> {
         }
     }
 }
+
+/// The same lookup `credential_get` exposes to the webview, callable
+/// directly from other Rust modules — `scheduler_failover` needs the token
+/// to make its own authenticated requests, without a round trip through a
+/// (possibly offline, possibly closed) webview to get there.
+pub(crate) fn token() -> Result<Option<String>, String> {
+    match entry()?.get_password() {
+        Ok(token) => Ok(Some(token)),
+        Err(Error::NoEntry) => Ok(None),
+        Err(err) => Err(err.to_string()),
+    }
+}

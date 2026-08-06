@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 
 from app.domain.value_objects import ReviewOutcome, SessionMode
 
@@ -91,6 +92,34 @@ class LearningObservation:
     self_reported_confidence: float | None = None
     context_source: str | None = None
     schema_version: int = 1
+
+
+class ObservationCorrectionReason(str, Enum):
+    """Why a learner flagged an observation (issue #229 TODO 5). A closed,
+    small vocabulary — unlike `modality`'s deliberately open string above —
+    because these two are the only actions the review-history UI offers,
+    not an evolving taxonomy a future phase adds to independently of the UI."""
+
+    MISGRADED = "misgraded"
+    IRRELEVANT = "irrelevant"
+
+
+@dataclass(frozen=True, slots=True)
+class ObservationCorrection:
+    """A learner's flag on a previously recorded observation (issue #229
+    TODO 5) — a new record naming the observation it corrects by id, never
+    an edit to that observation. See the module docstring's append-only
+    rule: the diagnosis engine must still be able to see the original
+    alongside the correction for audit, even once it stops using the
+    flagged observation as evidence.
+    """
+
+    correction_id: str
+    observation_id: str
+    user_id: int
+    reason: ObservationCorrectionReason
+    note: str | None
+    created_at: datetime
 
 
 @dataclass(frozen=True, slots=True)

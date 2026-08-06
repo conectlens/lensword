@@ -17,8 +17,9 @@ import pytest
 
 from app.domain.exceptions import AIProviderUnavailableError
 from app.domain.services.conversation import Difficulty, Speaker, Turn, build_context
+from app.domain.services.learning_path import MAX_MILESTONES, MIN_MILESTONES, InvalidPlanError, validate_plan
 from app.domain.services.scenarios import CATALOG
-from app.infrastructure.ai import DATA_BLOCK_BEGIN, DATA_BLOCK_END, OllamaProvider
+from app.infrastructure.ai import DATA_BLOCK_BEGIN, DATA_BLOCK_END, OllamaProvider, _unavailable_error
 
 
 def _provider(handler, **kwargs) -> OllamaProvider:
@@ -75,6 +76,47 @@ def test_suggest_mnemonic_returns_generated_text():
     assert result == "Think 'you-BIK-wit-us'"
 
 
+# --- Truncation vs. genuine malformation (issue #211) ---------------------
+
+
+def test_a_truncated_response_reports_being_cut_off_not_unreachable():
+    """A JSON decode failure whose error position sits at the end of the
+    raw text is what a response cut off mid-token by the output-token
+    budget looks like — "the AI provider is not reachable" is actively
+    false here, since the provider was reached and answered."""
+    truncated = '{"translations": ["prestar"], "definitions": ["to len'  # cut mid-string
+    try:
+        json.loads(truncated)
+        pytest.fail("fixture should not itself be valid JSON")
+    except json.JSONDecodeError as exc:
+        error = _unavailable_error(truncated, exc)
+
+    assert "cut off" in str(error)
+    assert "not reachable" not in str(error)
+
+
+def test_malformed_json_from_the_start_keeps_the_generic_message():
+    """A decode failure early in the text — not near the end — is not
+    consistent with truncation, and must not be reported as though it
+    were; the generic message is the honest one here."""
+    garbage = "not json at all, and plenty more text follows this point"
+    try:
+        json.loads(garbage)
+        pytest.fail("fixture should not itself be valid JSON")
+    except json.JSONDecodeError as exc:
+        error = _unavailable_error(garbage, exc)
+
+    assert "cut off" not in str(error)
+    assert str(error) == str(AIProviderUnavailableError())
+
+
+def test_unavailable_error_without_raw_text_keeps_the_generic_message():
+    """A network-level failure (no response body captured at all) is
+    never mistaken for truncation, which needs the raw text to detect."""
+    error = _unavailable_error(None, httpx.ConnectError("refused"))
+    assert str(error) == str(AIProviderUnavailableError())
+
+
 def _enrich(provider: OllamaProvider, term: str = "prestar"):
     return asyncio.run(provider.enrich_word(term, "English", "Spanish"))
 
@@ -95,6 +137,61 @@ def test_enrich_word_maps_the_ais_tags_output_onto_topics_too():
 
     assert enrichment.tags == ["finance", "favors"]
     assert enrichment.topics == ["finance", "favors"]
+
+
+def test_enrich_word_logs_a_warning_when_cefr_level_is_missing(caplog):
+    """Issue #214: the prompt asks for a best-effort cefr_level on every
+    word, and llama3.2 does not reliably comply (see the real-model test
+    below). Prompting alone cannot guarantee compliance from a model that
+    ignores the instruction, so the fix here is visibility — a null level
+    is flagged rather than silently accepted as though the field were
+    genuinely optional."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"response": json.dumps({"translations": ["prestar"]})})
+
+    with caplog.at_level(logging.WARNING):
+        enrichment = _enrich(_provider(handler), term="lend")
+
+    assert enrichment.cefr_level is None
+    assert "cefr_level" in caplog.text
+    assert "lend" in caplog.text
+
+
+def test_enrich_word_does_not_log_when_cefr_level_is_present(caplog):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"response": json.dumps({"cefr_level": "B1"})})
+
+    with caplog.at_level(logging.WARNING):
+        enrichment = _enrich(_provider(handler))
+
+    assert enrichment.cefr_level == "B1"
+    assert "cefr_level" not in caplog.text
+
+
+def _generate_path(provider: OllamaProvider, goal: str = "order food in Spain"):
+    return asyncio.run(
+        provider.generate_learning_path(goal, "Spanish", MAX_MILESTONES, MIN_MILESTONES)
+    )
+
+
+def test_generate_learning_path_states_the_milestone_floor_not_just_the_ceiling():
+    """Issue #212: asked only for "at most N" milestones, a real model
+    reliably read an ordinary goal as a single task and returned one
+    milestone, which the validator's own floor then rejected as not a
+    plan at all. The request must name both bounds."""
+
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.read())
+        captured["system"] = payload["system"]
+        return httpx.Response(200, json={"response": json.dumps([])})
+
+    _generate_path(_provider(handler))
+
+    assert str(MIN_MILESTONES) in captured["system"]
+    assert str(MAX_MILESTONES) in captured["system"]
 
 
 def test_extract_normalizes_a_single_nested_candidate_and_keeps_target_examples():
@@ -448,3 +545,108 @@ def test_evaluate_scenario_integration_against_real_ollama():
 
     assert isinstance(result, dict)
     assert isinstance(result.get("scores"), dict)
+
+
+@pytest.mark.skipif(
+    not _ollama_model_available("llama3.2"),
+    reason="Ollama isn't running locally on :11434, or the 'llama3.2' model isn't pulled",
+)
+def test_enrich_word_localizes_examples_and_collocations_against_real_ollama():
+    """Issue #214, found during #166's real-model pass: `definitions` reliably
+    respected target_language, but examples, collocations, category and tags
+    frequently did not. Same word ("ubiquitous") and target language (French)
+    docs/ai-model-verification.md's own enrichment step used, for direct
+    comparability.
+
+    cefr_level is deliberately not asserted here: three manual runs against
+    the real model after strengthening the prompt (see enrich_word's system
+    prompt) still came back null on two of three, with no further prompt
+    wording moving that number — llama3.2 does not reliably comply with that
+    specific instruction, prompt engineering alone will not fix it, and a
+    flaky assertion here would only teach people to ignore this test's
+    failures. See test_enrich_word_logs_a_warning_when_cefr_level_is_missing
+    below for the fix this issue actually asks for on that front: flagging
+    the omission (logged), not guaranteeing it away.
+
+    max_output_tokens is passed explicitly, matching the project default
+    (raised to 900 by issue #211) rather than relying on it implicitly —
+    a JSON response with this many fields left no headroom under the old
+    200-token default, and pinning the value here keeps this test's
+    assertions meaningful regardless of what the default becomes later.
+    """
+    provider = OllamaProvider(max_output_tokens=900)
+
+    result = asyncio.run(provider.enrich_word("ubiquitous", "English", "French"))
+
+    for example in result.examples:
+        assert "ubiquitous" not in example.lower(), f"English headword left untranslated in: {example!r}"
+
+    # The exact, verbatim English collocations the original bug report
+    # observed for this word — a regression guard for that specific defect,
+    # not a general language classifier (none is available here).
+    known_bad = {"everywhere", "all over the place"}
+    assert not (known_bad & {c.lower() for c in result.collocations}), (
+        f"collocations came back in English, unchanged from the reported bug: {result.collocations!r}"
+    )
+
+
+@pytest.mark.skipif(
+    not _ollama_model_available("llama3.2"),
+    reason="Ollama isn't running locally on :11434, or the 'llama3.2' model isn't pulled",
+)
+def test_generate_learning_path_produces_a_usable_plan_against_real_ollama():
+    """Issue #212: the exact defect found during #166's real-model pass —
+    two different goals both came back with a single milestone against a
+    real llama3.2 daemon, which validate_plan's MIN_MILESTONES then
+    rejected as "not a usable plan" on both. Confirmed fixed, not assumed:
+    the same two goals, run against the real model after stating the floor
+    explicitly in the prompt.
+
+    max_output_tokens is passed explicitly for the same reason as the other
+    real-Ollama tests in this file: pinning it keeps this test's behavior
+    stable regardless of what the project default (900, per issue #211) is
+    later changed to.
+
+    Both goals are awaited inside one `asyncio.run` rather than one call
+    each: the provider's httpx client holds connections bound to whichever
+    loop made the request, and a second `asyncio.run` against the same
+    provider after the first one's loop closed fails closing that
+    connection out from under it — an event-loop lifecycle detail of this
+    test, not something the real request-scoped provider in production
+    ever does twice on one loop.
+    """
+
+    async def run() -> None:
+        provider = OllamaProvider(max_output_tokens=900)
+        for goal, target in (
+            ("I want to order food in Spain", "Spanish"),
+            ("Learn business English for job interviews", "English"),
+        ):
+            raw = await provider.generate_learning_path(goal, target, MAX_MILESTONES, MIN_MILESTONES)
+            try:
+                plans = validate_plan(raw)
+            except InvalidPlanError as exc:
+                pytest.fail(f"goal {goal!r} produced no usable plan: {exc}; raw={raw!r}")
+            assert MIN_MILESTONES <= len(plans) <= MAX_MILESTONES
+
+    asyncio.run(run())
+
+
+@pytest.mark.skipif(
+    not _ollama_model_available("llama3.2"),
+    reason="Ollama isn't running locally on :11434, or the 'llama3.2' model isn't pulled",
+)
+def test_enrich_word_reports_being_cut_off_when_genuinely_truncated_by_real_ollama():
+    """Issue #211: confirms the fix against the real model, not just the fake
+    transport above. max_output_tokens is deliberately tiny here — the
+    opposite of every other real-Ollama test in this file — to force the
+    exact truncation the bug report described, and checks that the honest
+    "cut off" message reaches the caller instead of the misleading generic
+    "provider unreachable" one.
+    """
+    provider = OllamaProvider(max_output_tokens=15)
+
+    with pytest.raises(AIProviderUnavailableError) as excinfo:
+        asyncio.run(provider.enrich_word("ubiquitous", "English", "French"))
+
+    assert "cut off" in str(excinfo.value)

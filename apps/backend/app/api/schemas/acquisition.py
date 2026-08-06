@@ -18,6 +18,10 @@ class AcquisitionStateResponse(BaseModel):
     # acquisition mode") — null only for a state this account somehow
     # never recorded a reason for.
     entry_reason: str | None
+    # Roughly when this hands back to FSRS (issue #233 TODO 1) — a
+    # best-case estimate assuming every remaining rung is answered
+    # correctly on schedule. Null once graduated.
+    estimated_graduation_at: datetime | None
 
 
 class AcquisitionAnswerRequest(BaseModel):
