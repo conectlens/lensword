@@ -132,6 +132,42 @@ def test_deleting_a_group_leaves_another_groups_data_alone(client, auth_headers,
     assert client.get(f"/api/v1/words/{kept_word['id']}", headers=headers).status_code == 200
 
 
+def test_deleting_a_group_clears_but_keeps_learning_paths_and_conversations_that_reference_it(
+    client, auth_headers, db_session
+):
+    """#234: found while adding account-deletion cleanup. A learning path or
+    conversation's `group_id` is nullable — a goal or tutoring session can be
+    about a language studied across several groups, not pinned to one — and
+    neither was in `GroupRepository.delete()`'s cleanup at all. On SQLite the
+    delete "succeeded" and left a dangling group_id; on Postgres it never got
+    that far, since the group row itself could not be deleted while a
+    learning path still referenced it.
+    """
+    headers = auth_headers()
+    group = client.post(
+        "/api/v1/groups", json={"name": "G", "target_language": "Spanish"}, headers=headers
+    ).json()
+    me = client.get("/api/v1/auth/me", headers=headers).json()
+
+    now = datetime.now(timezone.utc)
+    path = LearningPathModel(
+        user_id=me["id"], group_id=group["id"], goal="Order coffee", target_language="Spanish", created_at=now
+    )
+    conversation = ConversationSessionModel(
+        user_id=me["id"], group_id=group["id"], target_language="Spanish", created_at=now
+    )
+    db_session.add_all([path, conversation])
+    db_session.commit()
+
+    response = client.delete(f"/api/v1/groups/{group['id']}", headers=headers)
+    assert response.status_code == 204, response.text
+
+    db_session.refresh(path)
+    db_session.refresh(conversation)
+    assert path.group_id is None
+    assert conversation.group_id is None
+
+
 def _enable_diagnosis(client, headers):
     resp = client.put("/api/v1/recall-settings", json={"learning_diagnosis_enabled": True}, headers=headers)
     assert resp.status_code == 200

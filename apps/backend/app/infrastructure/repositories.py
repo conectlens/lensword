@@ -429,7 +429,22 @@ def _delete_group_dependents(db: Session, group_id: int) -> None:
     placements, and reminders. Does not delete the group row itself, so
     callers can run this ahead of a bulk delete (e.g. the owning account)
     that will remove the group separately.
+
+    A learning path or conversation's `group_id` is optional — a goal or a
+    tutoring session can be about a language studied across several groups,
+    not pinned to one — so losing the group it happened to reference is not
+    losing anything the path/conversation means. The reference is cleared
+    rather than the row deleted, the same choice already made for
+    `MistakeEventModel.confused_with_word_id`, and for the same two reasons:
+    the row still has a life of its own, and leaving the id in place would
+    be a dangling foreign key on Postgres the moment this group is gone.
     """
+    for path in db.scalars(select(LearningPathModel).where(LearningPathModel.group_id == group_id)):
+        path.group_id = None
+    for conversation in db.scalars(
+        select(ConversationSessionModel).where(ConversationSessionModel.group_id == group_id)
+    ):
+        conversation.group_id = None
     word_ids = list(db.scalars(select(WordModel.id).where(WordModel.group_id == group_id)))
     _delete_word_dependents(db, word_ids)
     for room in db.scalars(select(RoomModel).where(RoomModel.group_id == group_id)):
