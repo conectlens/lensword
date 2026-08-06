@@ -2,6 +2,7 @@ import io
 import json
 
 from lensword_mcp.server import BackendError, MCPServer, StdioMCPServer
+from lensword_mcp.context_import import ContextImportPolicy, ContextImportRejected, preview_context
 from lensword_mcp.companion_workflows import (
     CompanionLoopBudget,
     CompanionLoopState,
@@ -131,3 +132,29 @@ def test_resource_read_rejects_unbounded_or_unknown_uris():
     assert unknown["error"]["code"] == -32003
     too_long = server.handle({"jsonrpc": "2.0", "id": 3, "method": "resources/read", "params": {"uri": "x" * 513}})
     assert too_long["error"]["code"] == -32602
+
+
+def test_context_import_is_bounded_preview_only_and_redacts_secrets():
+    preview = preview_context(
+        "FastAPI FastAPI asyncio password=do-not-store JWT eyJabcdefghijklmnop.qrstuvwxyz.abcdefghijklmnop",
+        source_kind="terminal",
+        source_ref="session-1",
+    )
+    terms = {candidate.term for candidate in preview.candidates}
+    assert "fastapi" in terms and "asyncio" in terms
+    assert "do-not-store" not in terms
+    assert preview.requires_confirmation is True
+    assert preview.writes_performed is False
+
+
+def test_context_import_refuses_unbounded_input_and_source():
+    with __import__("pytest").raises(ContextImportRejected):
+        preview_context("x", source_kind="", source_ref="session")
+    preview = preview_context(
+        "term " * 20,
+        source_kind="file",
+        source_ref="README.md",
+        policy=ContextImportPolicy(max_characters=10, max_candidates=2),
+    )
+    assert preview.truncated is True
+    assert len(preview.candidates) <= 2
