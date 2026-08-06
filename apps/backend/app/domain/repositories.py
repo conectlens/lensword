@@ -199,9 +199,24 @@ class InterventionRepository(Protocol):
 
 
 class AcquisitionStateRepository(Protocol):
+    """Backed by an append-only event table (#184 TODO 2's "immutable
+    acquisition events and a derived current state"): `upsert` never
+    rewrites a row, it inserts a new transition, and `get_for_word` derives
+    "the current state" as the most recent one — the same
+    insert-only-then-read-latest shape `DiagnosisRepository` already uses.
+    """
+
     def get_for_word(self, user_id: int, word_id: int) -> AcquisitionState | None: ...
     def upsert(self, state: AcquisitionState) -> AcquisitionState: ...
     def delete_for_word(self, user_id: int, word_id: int) -> None: ...
+    # Every word whose current ladder is due at or before `now` and not
+    # yet graduated — the dispatch job's and the "due" endpoint's one
+    # query, so due-ness is computed identically by both (TODO 2/3).
+    # `user_id=None` scans every account (the dispatch job's use); a real
+    # id scopes the scan at the query level rather than filtering a
+    # globally-limited page afterward, which could hide a busy account's
+    # own due words behind another account's on a large, shared table.
+    def list_due(self, now, user_id: int | None = None, limit: int = 500) -> list[AcquisitionState]: ...
 
 
 class KnowledgeEdgeRepository(Protocol):

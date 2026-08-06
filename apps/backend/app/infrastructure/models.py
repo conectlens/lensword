@@ -761,3 +761,50 @@ class DiagnosisModel(Base):
     diagnosed_at: Mapped[datetime] = mapped_column(DateTime)
     sample_size: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     competing_hypotheses: Mapped[list] = mapped_column(JSON, default=list)
+
+
+class AcquisitionEventModel(Base):
+    """One transition of a same-day acquisition ladder (issue #184).
+
+    Append-only, like every other evidence table in this epic — a rung
+    transition is a new row, never an edit to the previous one.
+    `SqlAlchemyAcquisitionStateRepository.upsert()` (the name the #181-era
+    `AcquisitionStateRepository` protocol already committed to) always
+    inserts here; "the current state" is derived by reading the most
+    recent row for (user_id, word_id), the same pattern `DiagnosisModel`
+    uses for "latest diagnosis".
+
+    `due_at` is denormalized rather than recomputed from `rung` and
+    `ladder_version` on every read: it is a pure function of the row's own
+    fields (`AcquisitionScheduler.due_at`), so storing it cannot drift, and
+    the dispatch job's and the "due" endpoint's query both need it as a
+    real, indexed, sortable column rather than a client-side filter over
+    every ladder in the system.
+    """
+
+    __tablename__ = "acquisition_events"
+    __table_args__ = (
+        # Partial-unique in effect only: a NULL operation_id never
+        # conflicts with another NULL on Postgres or SQLite, so a caller
+        # with no idempotency key can still submit multiple transitions —
+        # the same nullable-unique shape learning_observations already uses.
+        UniqueConstraint("user_id", "operation_id", name="uq_acquisition_event_user_operation"),
+        Index("ix_acquisition_events_user_word_updated", "user_id", "word_id", "updated_at"),
+        # The dispatch job's and the due-endpoint's query: every
+        # not-yet-graduated ladder due at or before now, across all users.
+        Index("ix_acquisition_events_due", "graduated", "due_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    word_id: Mapped[int] = mapped_column(ForeignKey("words.id"))
+    rung: Mapped[int] = mapped_column(Integer)
+    ladder_version: Mapped[int] = mapped_column(Integer)
+    started_at: Mapped[datetime] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime)
+    graduated: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    due_at: Mapped[datetime] = mapped_column(DateTime)
+    # Entry reason (#184 TODO 4), null only for rows this account created
+    # before the field existed — never re-derived after the fact.
+    entry_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    operation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)

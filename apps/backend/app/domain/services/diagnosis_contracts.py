@@ -215,3 +215,12 @@ class AcquisitionState:
     started_at: datetime
     updated_at: datetime
     graduated: bool = False
+    # Why this ladder started (#184 TODO 4) — recorded once at `start()`
+    # and carried on every later transition's row so "why did this enter
+    # acquisition mode" (TODO 3) never needs a second lookup.
+    entry_reason: str | None = None
+    # Client-generated and stable across retries (#184 TODO 2's "retries do
+    # not duplicate observations"), the same idempotency pattern
+    # `LearningObservation.operation_id` already uses. `None` only for a
+    # transition recorded with no retry protection requested.
+    operation_id: str | None = None

@@ -20,6 +20,7 @@ from app.infrastructure.repositories import (
     SqlAlchemyRecallSettingsRepository,
     SqlAlchemyReminderRepository,
     SqlAlchemyUserRepository,
+    SqlAlchemyWordRepository,
 )
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,7 @@ class ReminderDispatcher:
                 SqlAlchemyUserRepository(db),
                 SqlAlchemyRecallSettingsRepository(db),
                 channel(reminder_id) if channel else self.channel,
+                SqlAlchemyWordRepository(db),
             ).execute(reminder_id)
         except Exception:  # noqa: BLE001 - a failed delivery must not kill the scheduler
             logger.exception("reminder %s could not be delivered", reminder_id)

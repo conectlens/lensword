@@ -30,7 +30,8 @@ from app.domain.entities import (
     Word,
 )
 from app.domain.services.cefr_progress import MASTERY_STRENGTH
-from app.domain.services.diagnosis_contracts import Diagnosis, DiagnosisEvidence, LearningObservation
+from app.domain.services.acquisition import AcquisitionScheduler
+from app.domain.services.diagnosis_contracts import AcquisitionState, Diagnosis, DiagnosisEvidence, LearningObservation
 from app.domain.services.knowledge_graph import KnowledgeEdge, Relation
 from app.domain.value_objects import (
     DEFAULT_TIME_ZONE,
@@ -68,6 +69,7 @@ from app.infrastructure.models import (
     LearningObservationModel,
     KnowledgeEdgeModel,
     DiagnosisModel,
+    AcquisitionEventModel,
 )
 
 logger = logging.getLogger(__name__)
@@ -383,13 +385,16 @@ def _delete_word_dependents(db: Session, word_ids: list[int]) -> None:
         PracticeExerciseModel,
         MistakeEventModel,
         WordFieldRevisionModel,
-        # #182/#183: both carry a NOT NULL word_id, so — like ReviewAttemptModel
-        # above — they cannot be dereferenced the way MistakeEventModel's
-        # confused_with_word_id is; they are deleted with the word. This was
-        # missed when each table shipped, which SQLite (never enforcing
-        # PRAGMA foreign_keys) would not catch but Postgres would.
+        # #182/#183/#184: all three carry a NOT NULL word_id, so — like
+        # ReviewAttemptModel above — they cannot be dereferenced the way
+        # MistakeEventModel's confused_with_word_id is; they are deleted
+        # with the word. This was missed for the first two when each table
+        # shipped, which SQLite (never enforcing PRAGMA foreign_keys)
+        # would not catch but Postgres would — AcquisitionEventModel is
+        # added here from the start rather than repeating that.
         LearningObservationModel,
         DiagnosisModel,
+        AcquisitionEventModel,
     ):
         for row in db.scalars(select(model).where(model.word_id.in_(word_ids))):
             db.delete(row)
@@ -1932,3 +1937,99 @@ class SqlAlchemyDiagnosisRepository:
             .limit(limit)
         )
         return [_diagnosis_to_domain(m) for m in self.db.scalars(stmt)]
+
+
+def _acquisition_state_to_domain(m: AcquisitionEventModel) -> AcquisitionState:
+    return AcquisitionState(
+        word_id=m.word_id,
+        user_id=m.user_id,
+        rung=m.rung,
+        ladder_version=m.ladder_version,
+        started_at=m.started_at,
+        updated_at=m.updated_at,
+        graduated=m.graduated,
+        entry_reason=m.entry_reason,
+        operation_id=m.operation_id,
+    )
+
+
+class SqlAlchemyAcquisitionStateRepository:
+    """Append-only store of ladder transitions (issue #184). `upsert`
+    always inserts a new row; "the current state" `get_for_word` returns
+    is the most recent one — see `AcquisitionEventModel`'s docstring."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_for_word(self, user_id: int, word_id: int) -> AcquisitionState | None:
+        stmt = (
+            select(AcquisitionEventModel)
+            .where(AcquisitionEventModel.user_id == user_id, AcquisitionEventModel.word_id == word_id)
+            .order_by(AcquisitionEventModel.updated_at.desc())
+            .limit(1)
+        )
+        model = self.db.scalars(stmt).first()
+        return _acquisition_state_to_domain(model) if model else None
+
+    def upsert(self, state: AcquisitionState) -> AcquisitionState:
+        if state.operation_id is not None:
+            # #184 TODO 2's "retries do not duplicate observations": a
+            # retried submission with the same operation_id returns the
+            # transition it already produced rather than recording a
+            # second one.
+            existing = self.db.scalars(
+                select(AcquisitionEventModel).where(
+                    AcquisitionEventModel.user_id == state.user_id,
+                    AcquisitionEventModel.operation_id == state.operation_id,
+                )
+            ).first()
+            if existing is not None:
+                return _acquisition_state_to_domain(existing)
+
+        model = AcquisitionEventModel(
+            user_id=state.user_id,
+            word_id=state.word_id,
+            rung=state.rung,
+            ladder_version=state.ladder_version,
+            started_at=state.started_at,
+            updated_at=state.updated_at,
+            graduated=state.graduated,
+            due_at=AcquisitionScheduler().due_at(state),
+            entry_reason=state.entry_reason,
+            operation_id=state.operation_id,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _acquisition_state_to_domain(model)
+
+    def delete_for_word(self, user_id: int, word_id: int) -> None:
+        for row in self.db.scalars(
+            select(AcquisitionEventModel).where(
+                AcquisitionEventModel.user_id == user_id, AcquisitionEventModel.word_id == word_id
+            )
+        ):
+            self.db.delete(row)
+        self.db.flush()
+
+    def list_due(self, now, user_id: int | None = None, limit: int = 500) -> list[AcquisitionState]:
+        # Every word's *current* state (the row with the greatest id within
+        # its (user_id, word_id) group, append-only so id order and
+        # updated_at order agree) is resolved first via the subquery below,
+        # and only that row is checked against due_at/graduated — filtering
+        # the raw table directly would risk matching an old, since-
+        # superseded row that happened to be due when a newer, not-yet-due
+        # transition for the same word should shadow it.
+        group_by = [AcquisitionEventModel.user_id, AcquisitionEventModel.word_id]
+        latest_ids_query = select(func.max(AcquisitionEventModel.id).label("id"))
+        if user_id is not None:
+            latest_ids_query = latest_ids_query.where(AcquisitionEventModel.user_id == user_id)
+        latest_ids = latest_ids_query.group_by(*group_by).subquery()
+
+        stmt = (
+            select(AcquisitionEventModel)
+            .join(latest_ids, AcquisitionEventModel.id == latest_ids.c.id)
+            .where(AcquisitionEventModel.graduated.is_(False), AcquisitionEventModel.due_at <= now)
+            .order_by(AcquisitionEventModel.due_at)
+            .limit(limit)
+        )
+        return [_acquisition_state_to_domain(m) for m in self.db.scalars(stmt)]

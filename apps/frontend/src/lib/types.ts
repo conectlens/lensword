@@ -13,6 +13,17 @@ export type SessionMode = 'standard' | 'focus' | 'walking' | 'night' | 'break' |
 export type UserRole = 'user' | 'admin'
 export type AIProvider = 'none' | 'ollama'
 
+export interface AcquisitionState {
+  word_id: number
+  rung: number
+  ladder_version: number
+  started_at: string
+  updated_at: string
+  due_at: string
+  graduated: boolean
+  entry_reason: string | null
+}
+
 export interface User {
   id: number
   username: string

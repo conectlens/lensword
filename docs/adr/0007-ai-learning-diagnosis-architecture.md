@@ -131,3 +131,26 @@ than retrofitted:
   identifier-bearing route (`/diagnosis/{word_id}`, and equivalents) must
   be covered by the same account-scoping test pattern this codebase
   already uses elsewhere, before merge, not added afterward.
+
+## Addendum: the acquisition scheduler shipped, and what did not (#184)
+
+Responsibility 4's `AcquisitionScheduler` is real now: a versioned,
+seconds-to-hours graduated ladder (`app/domain/services/acquisition.py`),
+persisted as an append-only event log the same shape `Diagnosis` already
+uses, a routing decision (`should_enter_acquisition`) that keeps semantic
+confusion out of this loop until #185's contrast intervention exists to
+take it, and the one-bounded-handoff guarantee this ADR already promised
+— `graduate()` is the single call site that ever reaches the long-term
+scheduler from acquisition state, verified directly by a test that climbs
+a full ladder and confirms no `ReviewState` was touched until that call.
+
+Two things TODO 3 and TODO 5 asked for are deliberately not in this
+phase, tracked in a follow-up issue this PR links: the actual review-
+experience UI (a short "stabilize this word" session, shown reasoning,
+accessibility and keyboard-only passes — this ADR's boundary is a backend
+concern, and a frontend surface needs its own design and manual browser
+verification this pipeline cannot fabricate), and TODO 5's live retention/
+workload comparison against an FSRS-only control, which needs a real
+opt-in cohort's usage data to mean anything — there is no synthetic
+substitute for "did this actually help," the same reasoning #182's p95
+benchmark threshold was left unset rather than invented.

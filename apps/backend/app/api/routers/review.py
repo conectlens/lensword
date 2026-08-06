@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.deps import (
+    AcquisitionStateRepo,
     CurrentUser,
     DiagnosisRepo,
     KnowledgeEdgeRepo,
@@ -76,6 +77,7 @@ def submit_answer(
     observation_repo: LearningObservationRepo,
     edge_repo: KnowledgeEdgeRepo,
     diagnosis_repo: DiagnosisRepo,
+    acquisition_repo: AcquisitionStateRepo,
 ) -> SubmitAnswerResponse:
     try:
         settings = settings_repo.get_by_user(current_user.id)
@@ -84,6 +86,11 @@ def submit_answer(
         # learning_observations at all — not just "records nothing", the
         # repository itself is never wired into the use case.
         diagnosis_enabled = bool(settings and settings.learning_diagnosis_enabled)
+        # #184: a diagnosis-driven ladder entry only matters if a diagnosis
+        # is even being produced this request — gated on both flags, not
+        # just its own, so acquisition_loop_enabled alone (diagnosis off)
+        # cannot trigger entry from a diagnosis that was never computed.
+        acquisition_enabled = diagnosis_enabled and bool(settings and settings.acquisition_loop_enabled)
         result = SubmitAnswerUseCase(
             session_repo,
             word_repo,
@@ -92,6 +99,7 @@ def submit_answer(
             observation_repo if diagnosis_enabled else None,
             edge_repo,
             diagnosis_repo if diagnosis_enabled else None,
+            acquisition_repo if acquisition_enabled else None,
         ).execute(
             current_user.id,
             session_id,

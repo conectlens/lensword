@@ -140,6 +140,7 @@ class SubmitAnswerUseCase:
         observation_repo=None,
         edge_repo=None,
         diagnosis_repo=None,
+        acquisition_repo=None,
     ):
         self.session_repo = session_repo
         self.word_repo = word_repo
@@ -162,6 +163,10 @@ class SubmitAnswerUseCase:
         # learning_diagnosis_enabled is true, so a disabled account's
         # answer never triggers a diagnosis run at all.
         self.diagnosis_repo = diagnosis_repo
+        # #184: the router only passes this when acquisition_loop_enabled
+        # is true, so a diagnosis-driven ladder entry only ever happens for
+        # an account that opted in — same gate, one level further out.
+        self.acquisition_repo = acquisition_repo
 
     def execute(
         self,
@@ -203,7 +208,7 @@ class SubmitAnswerUseCase:
         if self.diagnosis_repo is None or self.observation_repo is None or self.edge_repo is None:
             return
         RunDiagnosisForWordUseCase(
-            self.word_repo, self.observation_repo, self.edge_repo, self.diagnosis_repo
+            self.word_repo, self.observation_repo, self.edge_repo, self.diagnosis_repo, self.acquisition_repo
         ).execute(user_id, word_id)
 
     def _record_observation(

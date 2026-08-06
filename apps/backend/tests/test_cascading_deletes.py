@@ -14,6 +14,7 @@ the fix turns two of these red on SQLite and more than that on Postgres.
 from __future__ import annotations
 
 from app.infrastructure.models import (
+    AcquisitionEventModel,
     DiagnosisModel,
     LearningObservationModel,
     MnemonicNoteModel,
@@ -150,6 +151,34 @@ def test_deleting_a_word_with_diagnosis_history_succeeds_and_leaves_no_reference
     assert response.status_code == 204, response.text
     assert db_session.query(LearningObservationModel).filter_by(word_id=word["id"]).count() == 0
     assert db_session.query(DiagnosisModel).filter_by(word_id=word["id"]).count() == 0
+
+
+def test_deleting_a_word_with_an_acquisition_ladder_succeeds_and_leaves_no_references(
+    client, auth_headers, db_session
+):
+    """#184: acquisition_events also carries a NOT NULL word_id — added to
+    the cleanup list from the start (see repositories.py's comment) rather
+    than repeating the #182/#183 omission a third time."""
+    headers = auth_headers()
+    client.put(
+        "/api/v1/recall-settings",
+        json={"learning_diagnosis_enabled": True, "acquisition_loop_enabled": True},
+        headers=headers,
+    )
+    group = client.post(
+        "/api/v1/groups", json={"name": "G", "target_language": "Spanish"}, headers=headers
+    ).json()
+    word = client.post(
+        f"/api/v1/groups/{group['id']}/words",
+        json={"term": "Correr", "target_language": "Spanish", "translations": ["to run"]},
+        headers=headers,
+    ).json()
+    client.post(f"/api/v1/words/{word['id']}/acquisition/start", headers=headers)
+
+    response = client.delete(f"/api/v1/words/{word['id']}", headers=headers)
+
+    assert response.status_code == 204, response.text
+    assert db_session.query(AcquisitionEventModel).filter_by(word_id=word["id"]).count() == 0
 
 
 def test_deleting_an_unplaced_word_still_works(client, auth_headers):
