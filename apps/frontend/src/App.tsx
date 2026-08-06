@@ -27,6 +27,7 @@ import { PracticePage } from './features/practice/PracticePage'
 import { WeeklyReportPage } from './features/reports/WeeklyReportPage'
 import { useAuth } from './context/AuthContext'
 import { useDesktopNotifications } from './lib/useDesktopNotifications'
+import { useOfflineSync } from './lib/useOfflineSync'
 import { useTraySync } from './lib/useTraySync'
 
 export default function App() {
@@ -36,6 +37,7 @@ export default function App() {
   const { user } = useAuth()
   const navigate = useNavigate()
   useDesktopNotifications(user !== null)
+  useOfflineSync(user !== null)
   useTraySync({ enabled: user !== null, isAdmin: user?.role === 'admin', navigate })
 
   return (

@@ -92,6 +92,9 @@ export interface Word {
   topics: string[]
   review_state: ReviewState
   created_at: string
+  // What an offline edit must name as base_revision to reconcile without a
+  // conflict later (issue #90, issue #218).
+  revision: number
 }
 
 export interface WordEnrichment {
@@ -357,6 +360,45 @@ export interface ObservationHistoryItem {
 export interface ObservationHistoryResponse {
   items: ObservationHistoryItem[]
   has_more: boolean
+}
+
+// Offline mutation queue (issue #90's server contract, issue #218's client).
+export type SyncEntityType = 'word' | 'review'
+export type SyncOperationKind = 'create' | 'update' | 'delete' | 'append'
+
+/** One offline edit, held in local storage until it can be sent. */
+export interface QueuedOperation {
+  // Client-generated and stable across retries (crypto.randomUUID()) — the
+  // same id resubmitted gets the same recorded outcome back rather than
+  // being applied twice.
+  operation_id: string
+  entity_type: SyncEntityType
+  // Null for a create: no server id exists until the operation applies.
+  entity_id: number | null
+  operation: SyncOperationKind
+  payload: Record<string, unknown>
+  // Required for a reconcilable word update/delete; null for a create or a
+  // review append, neither of which can conflict on revision.
+  base_revision: number | null
+  queued_at: string
+}
+
+export interface SyncOperationResult {
+  operation_id: string
+  status: string
+  conflict_reason: string | null
+  entity_id: number | null
+}
+
+export interface SyncConflict {
+  operation_id: string
+  entity_type: SyncEntityType
+  entity_id: number | null
+  operation: SyncOperationKind
+  payload: Record<string, unknown>
+  base_revision: number | null
+  conflict_reason: string | null
+  created_at: string
 }
 
 // Knowledge-graph search and CEFR progress (issue #143).

@@ -62,6 +62,7 @@ function makeWord(overrides: Partial<Word> = {}): Word {
       due_at: '2026-08-06T09:00:00Z', last_reviewed_at: null, status: 'new',
     },
     created_at: '2026-08-01T00:00:00Z',
+    revision: 1,
     ...overrides,
   }
 }
