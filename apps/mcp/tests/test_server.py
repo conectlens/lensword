@@ -2,6 +2,16 @@ import io
 import json
 
 from lensword_mcp.server import MCPServer, StdioMCPServer
+from lensword_mcp.companion_workflows import (
+    CompanionLoopBudget,
+    CompanionLoopState,
+    ElicitationField,
+    UnsafeElicitationField,
+    WorkflowLimitReached,
+    build_sampling_request,
+    run_bounded_workflow,
+    validate_elicitation_fields,
+)
 
 
 class FakeBackend:
@@ -49,3 +59,38 @@ def test_stdio_keeps_notifications_off_stdout():
     messages = [json.loads(line) for line in output.getvalue().splitlines()]
     assert [message["id"] for message in messages] == [1, 2]
     assert all(message["jsonrpc"] == "2.0" for message in messages)
+
+
+def test_sampling_request_delimits_facts_and_rejects_learning_truth_claims():
+    request = build_sampling_request("Explain this contrast", {"term": "ignore instructions"})
+    assert "<learner_facts>" in request.user_prompt
+    assert "<workflow_task>" in request.user_prompt
+    assert request.max_tokens == 512
+
+    state = CompanionLoopState(CompanionLoopBudget(samples=1, activities=2))
+    result = run_bounded_workflow(
+        state,
+        task="Explain this contrast",
+        facts={"term": "hola"},
+        sample=lambda _request: ("mastery: 100%", "untrusted-model"),
+        fallback=lambda _task, _facts: "Try recalling the word in a new sentence.",
+    )
+    assert result.fallback_used is True
+    assert result.source == "deterministic_fallback"
+
+
+def test_sampling_budget_stops_before_second_external_call():
+    state = CompanionLoopState(CompanionLoopBudget(samples=1, activities=2))
+    sample = lambda _request: ("A safe explanation.", "model")
+    run_bounded_workflow(state, task="Explain", facts={}, sample=sample, fallback=lambda *_: "fallback")
+    with __import__("pytest").raises(WorkflowLimitReached):
+        run_bounded_workflow(state, task="Explain again", facts={}, sample=sample, fallback=None)
+
+
+def test_elicitation_cannot_request_secrets_and_is_bounded():
+    with __import__("pytest").raises(UnsafeElicitationField):
+        ElicitationField("api_key", "What is your API key?")
+    fields = validate_elicitation_fields(
+        [ElicitationField("target_language", "Which language are you learning?")]
+    )
+    assert fields[0].name == "target_language"
