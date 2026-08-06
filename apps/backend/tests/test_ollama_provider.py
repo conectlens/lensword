@@ -19,7 +19,7 @@ from app.domain.exceptions import AIProviderUnavailableError
 from app.domain.services.conversation import Difficulty, Speaker, Turn, build_context
 from app.domain.services.learning_path import MAX_MILESTONES, MIN_MILESTONES, InvalidPlanError, validate_plan
 from app.domain.services.scenarios import CATALOG
-from app.infrastructure.ai import DATA_BLOCK_BEGIN, DATA_BLOCK_END, OllamaProvider
+from app.infrastructure.ai import DATA_BLOCK_BEGIN, DATA_BLOCK_END, OllamaProvider, _unavailable_error
 
 
 def _provider(handler, **kwargs) -> OllamaProvider:
@@ -74,6 +74,47 @@ def test_suggest_mnemonic_returns_generated_text():
     result = _suggest(provider, "ubiquitous", "common in academic writing")
 
     assert result == "Think 'you-BIK-wit-us'"
+
+
+# --- Truncation vs. genuine malformation (issue #211) ---------------------
+
+
+def test_a_truncated_response_reports_being_cut_off_not_unreachable():
+    """A JSON decode failure whose error position sits at the end of the
+    raw text is what a response cut off mid-token by the output-token
+    budget looks like — "the AI provider is not reachable" is actively
+    false here, since the provider was reached and answered."""
+    truncated = '{"translations": ["prestar"], "definitions": ["to len'  # cut mid-string
+    try:
+        json.loads(truncated)
+        pytest.fail("fixture should not itself be valid JSON")
+    except json.JSONDecodeError as exc:
+        error = _unavailable_error(truncated, exc)
+
+    assert "cut off" in str(error)
+    assert "not reachable" not in str(error)
+
+
+def test_malformed_json_from_the_start_keeps_the_generic_message():
+    """A decode failure early in the text — not near the end — is not
+    consistent with truncation, and must not be reported as though it
+    were; the generic message is the honest one here."""
+    garbage = "not json at all, and plenty more text follows this point"
+    try:
+        json.loads(garbage)
+        pytest.fail("fixture should not itself be valid JSON")
+    except json.JSONDecodeError as exc:
+        error = _unavailable_error(garbage, exc)
+
+    assert "cut off" not in str(error)
+    assert str(error) == str(AIProviderUnavailableError())
+
+
+def test_unavailable_error_without_raw_text_keeps_the_generic_message():
+    """A network-level failure (no response body captured at all) is
+    never mistaken for truncation, which needs the raw text to detect."""
+    error = _unavailable_error(None, httpx.ConnectError("refused"))
+    assert str(error) == str(AIProviderUnavailableError())
 
 
 def _enrich(provider: OllamaProvider, term: str = "prestar"):
@@ -527,11 +568,11 @@ def test_enrich_word_localizes_examples_and_collocations_against_real_ollama():
     below for the fix this issue actually asks for on that front: flagging
     the omission (logged), not guaranteeing it away.
 
-    max_output_tokens is raised here to sidestep issue #211's unrelated
-    truncation defect (the project default of 200 cuts a JSON response with
-    this many fields off mid-string) — that failure mode would make this
-    test's assertions meaningless by giving the model no room to answer
-    fully, and fixing it is out of scope for this issue.
+    max_output_tokens is passed explicitly, matching the project default
+    (raised to 900 by issue #211) rather than relying on it implicitly —
+    a JSON response with this many fields left no headroom under the old
+    200-token default, and pinning the value here keeps this test's
+    assertions meaningful regardless of what the default becomes later.
     """
     provider = OllamaProvider(max_output_tokens=900)
 
@@ -561,9 +602,10 @@ def test_generate_learning_path_produces_a_usable_plan_against_real_ollama():
     the same two goals, run against the real model after stating the floor
     explicitly in the prompt.
 
-    max_output_tokens is raised here for the same reason as the other
-    real-Ollama tests in this file: to isolate this issue's fix from #211's
-    separate, still-open truncation defect.
+    max_output_tokens is passed explicitly for the same reason as the other
+    real-Ollama tests in this file: pinning it keeps this test's behavior
+    stable regardless of what the project default (900, per issue #211) is
+    later changed to.
 
     Both goals are awaited inside one `asyncio.run` rather than one call
     each: the provider's httpx client holds connections bound to whichever
@@ -588,3 +630,23 @@ def test_generate_learning_path_produces_a_usable_plan_against_real_ollama():
             assert MIN_MILESTONES <= len(plans) <= MAX_MILESTONES
 
     asyncio.run(run())
+
+
+@pytest.mark.skipif(
+    not _ollama_model_available("llama3.2"),
+    reason="Ollama isn't running locally on :11434, or the 'llama3.2' model isn't pulled",
+)
+def test_enrich_word_reports_being_cut_off_when_genuinely_truncated_by_real_ollama():
+    """Issue #211: confirms the fix against the real model, not just the fake
+    transport above. max_output_tokens is deliberately tiny here — the
+    opposite of every other real-Ollama test in this file — to force the
+    exact truncation the bug report described, and checks that the honest
+    "cut off" message reaches the caller instead of the misleading generic
+    "provider unreachable" one.
+    """
+    provider = OllamaProvider(max_output_tokens=15)
+
+    with pytest.raises(AIProviderUnavailableError) as excinfo:
+        asyncio.run(provider.enrich_word("ubiquitous", "English", "French"))
+
+    assert "cut off" in str(excinfo.value)

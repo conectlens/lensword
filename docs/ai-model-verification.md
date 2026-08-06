@@ -246,7 +246,7 @@ target-language and CEFR-level requirements explicitly, per-field, rather
 than once generally (`app/infrastructure/ai.py`). Re-run against the same
 model, the same word ("ubiquitous"), the same target language (French),
 three times, with `max_output_tokens` raised to sidestep issue #211's
-unrelated truncation defect (still unfixed as of this note):
+unrelated truncation defect (since fixed — see the follow-up below):
 
 - **Examples and collocations were in French, correctly, on all three
   runs** — no repeat of the literal English `"everywhere"` /
@@ -344,3 +344,37 @@ added logging of the raw payload when `validate_plan` rejects a plan
 first step, so a future regression is diagnosable from a server log
 rather than requiring a full re-run of this methodology to even see
 what the model returned.
+
+## Follow-up: output token budget raised, truncation now surfaces honestly (issue #211)
+
+Item 1 above — the root cause behind most of the first pass's
+failures — is fixed. It was addressed on both halves the issue proposed:
+
+- **The default is raised.** `ai_max_output_tokens` (and
+  `DEFAULT_MAX_OUTPUT_TOKENS` in `app/infrastructure/ai.py`) went from 200
+  to 900. `num_predict` is a ceiling, not a target length, so this has no
+  effect on a short plain-text reply — the model still stops on its own
+  once it's actually done. 900 was not guessed: it's the same value
+  #212/#213/#214's real-model verification runs above already used to
+  clear every structured-JSON shape this codebase asks for, including the
+  largest one (an 8-milestone learning path).
+- **A truncated response no longer reports as "provider unreachable."**
+  `_unavailable_error` in `app/infrastructure/ai.py` inspects the
+  `JSONDecodeError` raised when parsing fails and distinguishes a response
+  cut off mid-string from one that was malformed from the start,
+  surfacing "The AI response was cut off before it finished — try a
+  shorter message, or try again." for the former. This matters
+  independently of the raised default — no fixed ceiling is unreachable
+  forever, so a caller who *does* eventually hit it deserves an honest
+  answer, not a diagnosis pointing at the wrong layer of the system.
+
+Both halves were confirmed against the real model, not just deterministic
+unit tests against a fake transport. The default alone was re-verified
+implicitly: `enrich_word` against the real model with no explicit
+`max_output_tokens` override (i.e. exactly what a fresh, unconfigured
+deployment does) completed without truncation. The error-message half
+was verified by forcing genuine truncation on purpose —
+`max_output_tokens=15` against the real model reproduced the exact
+`"Unterminated string starting at..."` `JSONDecodeError` this issue's
+report described, and confirmed the caller now receives the honest
+"cut off" message instead of the misleading generic one.

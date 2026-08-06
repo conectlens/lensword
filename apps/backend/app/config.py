@@ -61,10 +61,19 @@ class Settings(BaseSettings):
     ollama_model: str = "llama3.2"
     ollama_base_url: str = "http://localhost:11434"
 
-    # Bounds on one suggestion. A mnemonic is a sentence, so the token limit
-    # is generous for the intended output while still keeping a steered model
-    # from returning an unbounded response body (issue #45).
-    ai_max_output_tokens: int = 200
+    # Bounds on one generation. Still keeps a steered model from returning an
+    # unbounded response body (issue #45), but 200 — sized only for a
+    # mnemonic's one sentence — cut every structured-JSON response (an
+    # enrichment, a conversation turn with corrections, a learning-path
+    # milestone list) off mid-string well before its closing brace, which
+    # then failed to parse and surfaced as a misleading "provider
+    # unreachable" (issue #211). `num_predict` is a ceiling, not a target
+    # length — raising it does not make a short plain-text reply any
+    # longer, since the model still stops on its own once it's actually
+    # done. 900 is empirically verified (issues #211/#212/#213/#214) to
+    # clear every structured shape this codebase asks for, including the
+    # largest one (an 8-milestone learning path).
+    ai_max_output_tokens: int = 900
     ai_context_max_chars: int = 500
     # Test/demo-only escape hatch. Production stays honest when AI is disabled:
     # it reports that state instead of presenting heuristic output as AI work.
