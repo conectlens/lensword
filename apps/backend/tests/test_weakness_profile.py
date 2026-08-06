@@ -9,13 +9,16 @@ from __future__ import annotations
 
 import pytest
 
+from app.domain.services.knowledge_graph import KnowledgeGraph, Relation, WordNode, build_edges
 from app.domain.services.weakness import (
     MIN_CONFUSIONS_FOR_PAIR,
     MIN_OCCURRENCES_FOR_CATEGORY,
+    MIN_RESOLVED_ERRORS_FOR_CROSS_ASSOCIATION_RATE,
     ErrorCategory,
     MistakeEvent,
     WeaknessProfileService,
     categorise,
+    cross_association_report,
 )
 
 
@@ -217,3 +220,141 @@ def test_classification_ignores_case():
 
     assert category is ErrorCategory.WRONG_WORD
     assert confused == 7
+
+
+# --- One derivation, not two (issue #207) -----------------------------------
+
+
+def test_confusion_pair_counts_agrees_with_the_knowledge_graphs_confusions():
+    """`ConfusedPair` (this module) and the knowledge graph's `CONFUSED_WITH`
+    edges (`app/application/use_cases/knowledge_graph.py`) both derive from
+    the same mistake log. This asserts they agree on the underlying counts
+    for the same data, not just that each looks reasonable on its own."""
+    from app.application.use_cases.knowledge_graph import confusions_for
+    from app.domain.services.weakness import confusion_pair_counts
+
+    class _Row:
+        def __init__(self, word_id: int, confused_with_word_id: int | None, occurrence_count: int = 1):
+            self.word_id = word_id
+            self.confused_with_word_id = confused_with_word_id
+            self.occurrence_count = occurrence_count
+
+    class _MistakeRepo:
+        def __init__(self, rows: list[_Row]):
+            self._rows = rows
+
+        def list_for_user(self, user_id: int) -> list[_Row]:
+            return self._rows
+
+    rows = [_Row(1, 2), _Row(1, 2), _Row(2, 1), _Row(3, 3), _Row(4, None)]
+    events = [
+        MistakeEvent(user_id=1, word_id=r.word_id, category=ErrorCategory.WRONG_WORD, confused_with_word_id=r.confused_with_word_id)
+        for r in rows
+    ]
+
+    from_weakness = confusion_pair_counts((e.word_id, e.confused_with_word_id, 1) for e in events)
+    from_graph = confusions_for(_MistakeRepo(rows), user_id=1)
+
+    assert from_weakness == from_graph == {(1, 2): 3}
+
+
+# --- Cross-association error rate (issue #207 TODO 0) -----------------------
+
+
+def _cross_association_graph() -> KnowledgeGraph:
+    """1 (borrow) is a synonym of 2 (lend), shares a topic with 4 (loan), and
+    shares neither with 3 (table) — a pure control."""
+    nodes = [
+        WordNode(word_id=1, term="borrow", synonyms=("lend",), topics=("finance",)),
+        WordNode(word_id=2, term="lend"),
+        WordNode(word_id=3, term="table"),
+        WordNode(word_id=4, term="loan", topics=("finance",)),
+    ]
+    edges = build_edges(nodes, confusions={(1, 2): 1, (1, 3): 1})
+    return KnowledgeGraph(nodes, edges)
+
+
+def test_a_fixture_deck_produces_a_known_cross_association_rate():
+    """The issue's own verify criterion for TODO 0: a fixture deck with a
+    known composition produces an exactly predictable rate."""
+    graph = _cross_association_graph()
+    events = [
+        *[MistakeEvent(user_id=1, word_id=1, category=ErrorCategory.WRONG_WORD, confused_with_word_id=2) for _ in range(3)],
+        *[MistakeEvent(user_id=1, word_id=1, category=ErrorCategory.WRONG_WORD, confused_with_word_id=3) for _ in range(2)],
+        *[MistakeEvent(user_id=1, word_id=1, category=ErrorCategory.WRONG_WORD, confused_with_word_id=4) for _ in range(3)],
+    ]
+
+    report = cross_association_report(events, graph)
+
+    assert report.resolved_errors == 8
+    assert report.related_errors == 6  # the 3 synonym confusions + the 3 topic confusions
+    assert report.error_rate == 0.75
+    assert not report.insufficient_data
+    assert {r.relation: r.occurrences for r in report.by_relation} == {
+        Relation.SYNONYM: 3,
+        Relation.TOPIC: 3,
+    }
+
+
+def test_being_previously_confused_alone_does_not_count_as_related():
+    """1 and 3 share no lexical/topic relation — only a CONFUSED_WITH edge
+    from the `confusions=` map in the fixture graph above. If CONFUSED_WITH
+    counted toward the rate, this would trivially become "related" for
+    having been confused, which is circular: that edge is itself derived
+    from this same mistake log."""
+    graph = _cross_association_graph()
+    events = [
+        MistakeEvent(user_id=1, word_id=1, category=ErrorCategory.WRONG_WORD, confused_with_word_id=3)
+        for _ in range(MIN_RESOLVED_ERRORS_FOR_CROSS_ASSOCIATION_RATE)
+    ]
+
+    report = cross_association_report(events, graph)
+
+    assert report.related_errors == 0
+    assert report.error_rate == 0.0
+    assert report.by_relation == []
+
+
+def test_below_the_minimum_sample_reports_insufficient_data_not_a_rate():
+    graph = _cross_association_graph()
+    events = [
+        MistakeEvent(user_id=1, word_id=1, category=ErrorCategory.WRONG_WORD, confused_with_word_id=2)
+        for _ in range(MIN_RESOLVED_ERRORS_FOR_CROSS_ASSOCIATION_RATE - 1)
+    ]
+
+    report = cross_association_report(events, graph)
+
+    assert report.insufficient_data
+    assert report.error_rate == 0.0
+
+
+def test_unresolved_mistakes_are_excluded_from_the_denominator():
+    """A typo or a skip cannot be checked against the graph at all — it
+    should not silently count as a non-related error and dilute the rate."""
+    graph = _cross_association_graph()
+    events = [
+        *[MistakeEvent(user_id=1, word_id=1, category=ErrorCategory.WRONG_WORD, confused_with_word_id=2) for _ in range(5)],
+        *[MistakeEvent(user_id=1, word_id=1, category=ErrorCategory.NOT_RECALLED) for _ in range(20)],
+    ]
+
+    report = cross_association_report(events, graph)
+
+    assert report.resolved_errors == 5
+
+
+def test_a_pair_related_more_than_one_way_still_counts_once_toward_related_errors():
+    nodes = [
+        WordNode(word_id=1, term="gato", synonyms=("minino",), topics=("animals",)),
+        WordNode(word_id=2, term="minino", topics=("animals",)),
+    ]
+    graph = KnowledgeGraph(nodes, build_edges(nodes))
+    events = [
+        MistakeEvent(user_id=1, word_id=1, category=ErrorCategory.WRONG_WORD, confused_with_word_id=2)
+        for _ in range(MIN_RESOLVED_ERRORS_FOR_CROSS_ASSOCIATION_RATE)
+    ]
+
+    report = cross_association_report(events, graph)
+
+    assert report.related_errors == MIN_RESOLVED_ERRORS_FOR_CROSS_ASSOCIATION_RATE
+    assert report.error_rate == 1.0
+    assert {r.relation for r in report.by_relation} == {Relation.SYNONYM, Relation.TOPIC}

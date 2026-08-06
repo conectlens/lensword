@@ -70,6 +70,17 @@ def answer_exercise(
 def pronunciation_feedback(
     payload: PronunciationFeedbackRequest, current_user: CurrentUser, words: WordRepo, groups: GroupRepo,
 ) -> PronunciationFeedbackResponse:
+    """A transcript-containment check, not acoustic pronunciation scoring
+    (issue #198 TODO 2). `transcript` is text — speech-to-text output the
+    caller already produced — not audio; nothing here measures how a word
+    sounded, only whether the target term appears in what was heard. The
+    frontend's own copy already states this plainly to the learner
+    (PronunciationPractice.tsx); this docstring exists so a caller reading
+    only this endpoint's name (an MCP tool description, API docs, or any
+    future companion surface) doesn't infer real acoustic measurement that
+    isn't there. A genuine speech/pronunciation adapter would be a new,
+    separate capability behind its own interface, not a change to this one.
+    """
     try:
         word = _require_word_owner(words, groups, payload.word_id, current_user.id)
     except (EntityNotFoundError, PermissionDeniedError) as exc:

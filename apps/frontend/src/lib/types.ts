@@ -22,6 +22,9 @@ export interface AcquisitionState {
   due_at: string
   graduated: boolean
   entry_reason: string | null
+  /** Roughly when this ladder hands back to FSRS — a best-case estimate,
+   *  null once graduated. */
+  estimated_graduation_at: string | null
 }
 
 export interface User {
@@ -89,6 +92,9 @@ export interface Word {
   topics: string[]
   review_state: ReviewState
   created_at: string
+  // What an offline edit must name as base_revision to reconcile without a
+  // conflict later (issue #90, issue #218).
+  revision: number
 }
 
 export interface WordEnrichment {
@@ -321,6 +327,78 @@ export interface WeaknessProfile {
   // enough evidence yet" rather than an empty list, which would read as "you
   // have no weaknesses".
   insufficient_data: boolean
+}
+
+// Learner-facing observation history and corrections (issue #229 TODO 5).
+export type ObservationCorrectionReason = 'misgraded' | 'irrelevant'
+
+export interface ObservationCorrection {
+  correction_id: string
+  reason: ObservationCorrectionReason
+  note: string | null
+  created_at: string
+}
+
+export interface ObservationHistoryItem {
+  observation_id: string
+  word_id: number
+  // Null for a word that has since been deleted — the observation still
+  // happened and still counts as history.
+  word_term: string | null
+  outcome: ReviewOutcome
+  session_mode: SessionMode
+  observed_at: string
+  attempted_answer: string | null
+  modality: string | null
+  hint_used: boolean
+  // Still shown once set, even though a flagged observation stops being
+  // used as diagnosis evidence — the learner needs to see what they
+  // already flagged.
+  correction: ObservationCorrection | null
+}
+
+export interface ObservationHistoryResponse {
+  items: ObservationHistoryItem[]
+  has_more: boolean
+}
+
+// Offline mutation queue (issue #90's server contract, issue #218's client).
+export type SyncEntityType = 'word' | 'review'
+export type SyncOperationKind = 'create' | 'update' | 'delete' | 'append'
+
+/** One offline edit, held in local storage until it can be sent. */
+export interface QueuedOperation {
+  // Client-generated and stable across retries (crypto.randomUUID()) — the
+  // same id resubmitted gets the same recorded outcome back rather than
+  // being applied twice.
+  operation_id: string
+  entity_type: SyncEntityType
+  // Null for a create: no server id exists until the operation applies.
+  entity_id: number | null
+  operation: SyncOperationKind
+  payload: Record<string, unknown>
+  // Required for a reconcilable word update/delete; null for a create or a
+  // review append, neither of which can conflict on revision.
+  base_revision: number | null
+  queued_at: string
+}
+
+export interface SyncOperationResult {
+  operation_id: string
+  status: string
+  conflict_reason: string | null
+  entity_id: number | null
+}
+
+export interface SyncConflict {
+  operation_id: string
+  entity_type: SyncEntityType
+  entity_id: number | null
+  operation: SyncOperationKind
+  payload: Record<string, unknown>
+  base_revision: number | null
+  conflict_reason: string | null
+  created_at: string
 }
 
 // Knowledge-graph search and CEFR progress (issue #143).

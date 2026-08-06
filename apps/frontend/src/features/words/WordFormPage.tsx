@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { aiVocabularyApi, groupsApi, wordsApi } from '../../lib/api'
+import { queueableRequest } from '../../lib/offlineQueue'
 import { LANGUAGES, type Group, type SupportedLanguage } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
@@ -32,6 +33,9 @@ export function WordFormPage() {
   const [mnemonic, setMnemonic] = useState('')
   const [category, setCategory] = useState('')
   const [contextSentence, setContextSentence] = useState('')
+  // What an offline update must name as base_revision to reconcile without
+  // a conflict later (issue #218). Irrelevant for a new word.
+  const [revision, setRevision] = useState(1)
   const [aiLoading, setAiLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [ready, setReady] = useState(!isEditing)
@@ -60,6 +64,7 @@ export function WordFormPage() {
         setExampleSentence(w.example_sentence ?? '')
         setMnemonic(w.mnemonic ?? '')
         setCategory(w.category ?? '')
+        setRevision(w.revision)
         setReady(true)
         if (!groupId) groupsApi.list().then((all) => setGroup(all.find((g) => g.id === w.group_id) ?? null))
       })
@@ -102,11 +107,33 @@ export function WordFormPage() {
     try {
       const targetGroupId = groupId ? Number(groupId) : pickedGroupId
       if (isEditing && wordId) {
-        await wordsApi.update(Number(wordId), payload)
-        const w = await wordsApi.get(Number(wordId))
-        navigate(`/groups/${w.group_id}`)
+        // Offline (issue #218): queued rather than thrown, so the form
+        // still navigates away as though the save succeeded — re-fetching
+        // the word to learn where to go next would itself fail offline,
+        // so navigation uses the group already loaded into state instead
+        // of a round trip whose only purpose was naming it.
+        await queueableRequest(
+          () => wordsApi.update(Number(wordId), payload),
+          () => ({
+            entity_type: 'word',
+            entity_id: Number(wordId),
+            operation: 'update',
+            payload,
+            base_revision: revision,
+          }),
+        )
+        navigate(group ? `/groups/${group.id}` : '/groups')
       } else if (targetGroupId) {
-        await groupsApi.addWord(targetGroupId, payload)
+        await queueableRequest(
+          () => groupsApi.addWord(targetGroupId, payload),
+          () => ({
+            entity_type: 'word',
+            entity_id: null,
+            operation: 'create',
+            payload: { group_id: targetGroupId, ...payload },
+            base_revision: null,
+          }),
+        )
         navigate(`/groups/${targetGroupId}`)
       }
     } finally {

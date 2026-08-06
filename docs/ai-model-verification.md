@@ -238,3 +238,143 @@ not only injection):
 4. **Enrichment does not reliably localize examples, collocations, category
    or CEFR level into the requested target language**, even when the core
    definition does.
+
+## Follow-up: enrichment localization re-verified (issue #214)
+
+Item 4 above was addressed by making `enrich_word`'s prompt name
+target-language and CEFR-level requirements explicitly, per-field, rather
+than once generally (`app/infrastructure/ai.py`). Re-run against the same
+model, the same word ("ubiquitous"), the same target language (French),
+three times, with `max_output_tokens` raised to sidestep issue #211's
+unrelated truncation defect (since fixed — see the follow-up below):
+
+- **Examples and collocations were in French, correctly, on all three
+  runs** — no repeat of the literal English `"everywhere"` /
+  `"all over the place"` collocations, and no run left the raw English
+  headword "ubiquitous" untranslated inside an example. Genuine
+  improvement, confirmed rather than assumed.
+- **The model still sometimes invents a French-looking word rather than
+  using the real one** — "ubiquile", "ubiquue", "ubiquitaire" all appeared
+  across the three runs, never the actual French word (*omniprésent*).
+  Naming this explicitly in the prompt ("never invent a target_language-
+  looking word that does not actually exist; use the real word") did not
+  eliminate it. This looks like a knowledge limitation of a 3B-parameter
+  local model rather than an instruction-following gap — prompting can ask
+  a model to comply with a rule, not to know a fact it doesn't have.
+  Unresolved; a larger model would be the next thing to try, not a
+  different prompt.
+- **`cefr_level` came back null on two of the three runs**, even after
+  strengthening the instruction from a soft ask to an explicit numbered
+  rule ("required, not optional... for every word, even a rare or
+  difficult one"). No prompt wording tried moved this number. Per this
+  issue's own proposed fix #2, the response was to flag the omission
+  (`logger.warning`, covered by a deterministic unit test) rather than
+  keep chasing a guarantee prompting cannot reliably produce from this
+  model.
+
+Net: the *reliably fixable* part of this defect (fields silently
+defaulting to English) is fixed and confirmed. The two remaining gaps
+(invented lookalike words, inconsistent CEFR compliance) are model
+capability limits this project's prompt-engineering lever cannot pull
+past — worth knowing, not worth re-litigating with more prompt tweaks
+against the same model.
+
+## Follow-up: role-play scoring gate re-verified, new finding (issue #213)
+
+Item 3 above was addressed with a content-aware gate: scoring now also
+requires a minimum total character count across the learner's turns
+(`MIN_LEARNER_CHARACTERS_TO_SCORE`, `app/domain/services/scenarios.py`),
+not just the existing turn-count minimum — the exact "queso" / "no se" /
+"mmm" / "banana carro azul" transcript that scored 82/100 against a real
+model is now refused before the model is ever asked, deterministically,
+regardless of what that model would have said. Confirmed against the real
+model with the gate bypassed on purpose: asked anyway, the strengthened
+evaluation prompt (an explicit instruction to return no scores for
+low-effort content) brought the score down from the original 82 to 15 and
+produced an honest "learner struggled" summary instead of a fabricated
+success narrative — better, but still incorrectly claimed two goals were
+met that were not. This confirms the character gate, not the prompt
+alone, is what actually closes this defect; the prompt change is a
+secondary safety net for content that clears the gate but is still weak.
+
+**New finding, out of scope for #213**: verifying a *good* attempt (a
+genuine 4-turn restaurant order, well over the character floor) surfaced
+a different, pre-existing reliability gap. In 2 of 3 runs, the model
+returned `scores` with the right dimension keys but the wrong shape
+inside them — nested per-word or per-criterion sub-objects
+(`{"vocabulary": {"table": {"score": 90, ...}, "menu": {...}}}`) instead
+of the expected `{"vocabulary": {"score": N, "comment": "..."}}` —  which
+`validate_evaluation` correctly refuses as unusable rather than
+misreading, but means a well-executed, substantial attempt can still come
+back unscored for reasons that have nothing to do with effort or content.
+Not something a low-effort gate can fix, and not what #213 asked for;
+worth its own issue if this keeps happening (a stricter schema
+instruction or a few-shot example in the prompt would be the first things
+to try).
+
+## Follow-up: learning path generation re-verified, root cause identified (issue #212)
+
+Item 2 above was diagnosed and fixed. The raw model payload was never
+logged on this failure path before, so the first step was making the
+actual failure visible — reproducing it directly against the real model
+rather than guessing:
+
+```
+[{"title": "Plan de estudio para pedir comida en España", ...,
+  "topic": "restaurant", "target_word_count": 10, "cefr_level": "A1"}]
+```
+
+One milestone. For both goals, on every run. The prompt
+(`build_learning_path_request`) asked only for "a JSON array of *at
+most* N objects" — no floor — and the model consistently read an
+ordinary multi-step goal ("order food in Spain") as a single task,
+returning exactly one milestone for it. `validate_plan`'s own
+`MIN_MILESTONES = 2` then rejected the whole plan as unusable. Not
+malformed JSON, not a parsing failure — a real, valid, single-item plan
+that the validator's floor (correctly) refuses to call a "path."
+
+Fixed by stating the floor explicitly alongside the ceiling ("between
+`MIN_MILESTONES` and `MAX_MILESTONES`... never fewer than
+`MIN_MILESTONES`, even for a goal that sounds like a single task").
+Re-verified against the real model, the same two goals that failed
+originally plus a third: all three now return 4-8 milestones and pass
+`validate_plan`, confirmed across three separate runs per goal. Also
+added logging of the raw payload when `validate_plan` rejects a plan
+(`app/api/routers/learning_paths.py`), per this issue's own proposed
+first step, so a future regression is diagnosable from a server log
+rather than requiring a full re-run of this methodology to even see
+what the model returned.
+
+## Follow-up: output token budget raised, truncation now surfaces honestly (issue #211)
+
+Item 1 above — the root cause behind most of the first pass's
+failures — is fixed. It was addressed on both halves the issue proposed:
+
+- **The default is raised.** `ai_max_output_tokens` (and
+  `DEFAULT_MAX_OUTPUT_TOKENS` in `app/infrastructure/ai.py`) went from 200
+  to 900. `num_predict` is a ceiling, not a target length, so this has no
+  effect on a short plain-text reply — the model still stops on its own
+  once it's actually done. 900 was not guessed: it's the same value
+  #212/#213/#214's real-model verification runs above already used to
+  clear every structured-JSON shape this codebase asks for, including the
+  largest one (an 8-milestone learning path).
+- **A truncated response no longer reports as "provider unreachable."**
+  `_unavailable_error` in `app/infrastructure/ai.py` inspects the
+  `JSONDecodeError` raised when parsing fails and distinguishes a response
+  cut off mid-string from one that was malformed from the start,
+  surfacing "The AI response was cut off before it finished — try a
+  shorter message, or try again." for the former. This matters
+  independently of the raised default — no fixed ceiling is unreachable
+  forever, so a caller who *does* eventually hit it deserves an honest
+  answer, not a diagnosis pointing at the wrong layer of the system.
+
+Both halves were confirmed against the real model, not just deterministic
+unit tests against a fake transport. The default alone was re-verified
+implicitly: `enrich_word` against the real model with no explicit
+`max_output_tokens` override (i.e. exactly what a fresh, unconfigured
+deployment does) completed without truncation. The error-message half
+was verified by forcing genuine truncation on purpose —
+`max_output_tokens=15` against the real model reproduced the exact
+`"Unterminated string starting at..."` `JSONDecodeError` this issue's
+report described, and confirmed the caller now receives the honest
+"cut off" message instead of the misleading generic one.

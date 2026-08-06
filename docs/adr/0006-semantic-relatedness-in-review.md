@@ -119,6 +119,32 @@ track reorders the review queue. If a future phase in this track ever
 needs to influence queue order, it must go through `LearningStepScheduler`
 rather than add a second, competing ordering component.
 
+### Phase 5 implementation boundary and pre-registration (#206)
+
+Phase 5's contrast card is a pair presentation, not a queue item: both words
+are carried by one `ContrastCard`, the prompt asks the learner to describe the
+difference, and the answer path does not invoke FSRS or mutate `due_at`. The
+pair is eligible only when both words have persisted FSRS stability at or above
+the provisional default of **21 days**. That threshold is configurable because
+Nation's evidence does not identify a principled cutoff; it is an experimental
+setting, not a claim about the correct value.
+
+The existing semantic-relatedness opt-in and the new contrast-card sub-setting
+are both required, and both default off. A diagnosis planner's `isolate`
+decision suppresses a graph-derived synonym/antonym pair; a planner-selected
+`contrast` decision takes precedence over that fallback. No contrast response
+is recorded as a standard review observation until a later measurement phase
+defines how to attribute its delayed outcome.
+
+Before measurement begins, the prediction is registered as follows: compared
+with matched uncontrasted pairs at one week, contrast cards are expected to
+improve discrimination accuracy while reducing in-session accuracy. A null or
+negative one-week result is a valid outcome; if the confidence interval does
+not support a positive delayed discrimination effect, the feature will be
+reported as null/negative and removed rather than retained because the theory
+sounds plausible. This prediction does not treat the expected in-session cost
+as a regression.
+
 ## Consequences
 
 ### Positive

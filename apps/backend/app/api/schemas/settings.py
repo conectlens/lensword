@@ -25,9 +25,15 @@ class RecallSettingsResponse(BaseModel):
     notifications_paused: bool
     scheduler: str
     semantic_relatedness_enabled: bool
+    contrast_cards_enabled: bool
+    contrast_min_stability: float
     learning_diagnosis_enabled: bool
     acquisition_loop_enabled: bool
     ai_coach_enabled: bool
+    ai_companion_enabled: bool
+    companion_sampling_enabled: bool
+    companion_remote_enabled: bool
+    companion_multimodal_enabled: bool
     # Stored on the user rather than on these settings, but surfaced here:
     # quiet hours are meaningless without the zone they are read in, and this
     # is the screen where they are configured (issue #44).
@@ -56,9 +62,15 @@ class RecallSettingsUpdateRequest(BaseModel):
     notifications_paused: bool = False
     scheduler: str = Field(default="sm2", pattern="^(sm2|fsrs)$")
     semantic_relatedness_enabled: bool = False
+    contrast_cards_enabled: bool = False
+    contrast_min_stability: float = Field(default=21.0, ge=0, le=3650)
     learning_diagnosis_enabled: bool = False
     acquisition_loop_enabled: bool = False
     ai_coach_enabled: bool = False
+    ai_companion_enabled: bool = False
+    companion_sampling_enabled: bool = False
+    companion_remote_enabled: bool = False
+    companion_multimodal_enabled: bool = False
     # Omitted by a client that does not manage zones, which then leaves the
     # stored value untouched rather than resetting it to UTC.
     time_zone: str | None = None

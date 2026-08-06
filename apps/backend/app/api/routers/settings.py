@@ -45,9 +45,15 @@ def _settings_to_response(s: RecallSettings, time_zone: str) -> RecallSettingsRe
         notifications_paused=s.notifications_paused,
         scheduler=s.scheduler,
         semantic_relatedness_enabled=s.semantic_relatedness_enabled,
+        contrast_cards_enabled=s.contrast_cards_enabled,
+        contrast_min_stability=s.contrast_min_stability,
         learning_diagnosis_enabled=s.learning_diagnosis_enabled,
         acquisition_loop_enabled=s.acquisition_loop_enabled,
         ai_coach_enabled=s.ai_coach_enabled,
+        ai_companion_enabled=s.ai_companion_enabled,
+        companion_sampling_enabled=s.companion_sampling_enabled,
+        companion_remote_enabled=s.companion_remote_enabled,
+        companion_multimodal_enabled=s.companion_multimodal_enabled,
     )
 
 

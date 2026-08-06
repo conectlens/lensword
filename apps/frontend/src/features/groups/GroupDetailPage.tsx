@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { aiVocabularyApi, groupsApi, wordsApi } from '../../lib/api'
+import { queueableRequest } from '../../lib/offlineQueue'
 import type { Group, Word, WordEnrichment } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
@@ -46,8 +47,22 @@ export function GroupDetailPage() {
 
   async function deleteWord(wordId: number) {
     if (!confirm('Delete this word? This cannot be undone.')) return
-    await wordsApi.remove(wordId)
-    load()
+    const target = words?.find((w) => w.id === wordId)
+    // Offline (issue #218): queued rather than thrown, and the word is
+    // removed from the visible list either way — re-fetching the list to
+    // confirm would itself fail offline, and the delete has already
+    // "happened" from the learner's point of view.
+    await queueableRequest(
+      () => wordsApi.remove(wordId),
+      () => ({
+        entity_type: 'word',
+        entity_id: wordId,
+        operation: 'delete',
+        payload: {},
+        base_revision: target?.revision ?? null,
+      }),
+    )
+    setWords((current) => current?.filter((w) => w.id !== wordId) ?? current)
   }
 
   async function enrich() {

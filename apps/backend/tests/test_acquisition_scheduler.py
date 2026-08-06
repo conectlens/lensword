@@ -163,6 +163,66 @@ def test_a_graduated_ladder_does_not_advance_further():
     assert unchanged == state
 
 
+def test_estimated_graduation_at_sums_the_remaining_rungs_from_the_start():
+    """#233 TODO 1: a fresh ladder's estimate is every offset summed from
+    the start — the best case where each rung is answered right on time."""
+    scheduler = AcquisitionScheduler()
+    state = scheduler.start(word_id=1, user_id=1, now=NOW)
+    total = sum(LADDER_OFFSETS[1], timedelta())
+    assert scheduler.estimated_graduation_at(state) == max(NOW + total, NOW + timedelta(hours=1))
+
+
+def test_estimated_graduation_at_does_not_move_later_when_answered_on_schedule():
+    """Answering exactly when a rung comes due neither helps nor hurts the
+    estimate: the offset just spent moves out of `remaining` by exactly as
+    much as `updated_at` moves forward. Answering *before* a rung is due
+    would pull the estimate earlier — there is no route to it moving
+    later, since a correct answer only ever advances the ladder."""
+    scheduler = AcquisitionScheduler()
+    state = scheduler.start(word_id=1, user_id=1, now=NOW)
+    first_estimate = scheduler.estimated_graduation_at(state)
+
+    state = scheduler.advance(state, ReviewOutcome.CORRECT, NOW + LADDER_OFFSETS[1][0])
+    second_estimate = scheduler.estimated_graduation_at(state)
+
+    assert second_estimate is not None and first_estimate is not None
+    assert second_estimate == first_estimate
+
+    earlier = scheduler.advance(state, ReviewOutcome.CORRECT, state.updated_at + timedelta(seconds=1))
+    assert earlier.updated_at + sum(LADDER_OFFSETS[1][earlier.rung :], timedelta()) < first_estimate
+
+
+def test_estimated_graduation_at_is_never_earlier_than_the_minimum_gap(monkeypatch):
+    """`advance()` itself refuses to graduate before `_MIN_GRADUATION_GAP`
+    regardless of rung count (see test_completing_every_rung_quickly_does_
+    not_graduate above). Today's LADDER_OFFSETS never make the estimate's
+    own summed-offsets math come in under that gap, so this exercises the
+    floor directly against a synthetic, much shorter ladder version rather
+    than leaving the invariant unverified just because production's
+    version 1 offsets happen to already run longer than an hour.
+    """
+    from app.domain.services.diagnosis_contracts import AcquisitionState
+
+    monkeypatch.setitem(LADDER_OFFSETS, 99, (timedelta(seconds=1),))
+    state = AcquisitionState(
+        word_id=1, user_id=1, rung=0, ladder_version=99,
+        started_at=NOW, updated_at=NOW, graduated=False, entry_reason=None,
+    )
+
+    assert AcquisitionScheduler().estimated_graduation_at(state) == NOW + timedelta(hours=1)
+
+
+def test_estimated_graduation_at_is_null_once_graduated():
+    scheduler = AcquisitionScheduler()
+    state = scheduler.start(word_id=1, user_id=1, now=NOW)
+    t = NOW
+    for _ in range(len(LADDER_OFFSETS[1])):
+        t += timedelta(hours=1)
+        state = scheduler.advance(state, ReviewOutcome.CORRECT, t)
+    assert state.graduated is True
+    assert scheduler.estimated_graduation_at(state) is None
+
+
 def test_pause_freezes_the_rung_and_moves_updated_at_forward():
     scheduler = AcquisitionScheduler()
     state = scheduler.start(word_id=1, user_id=1, now=NOW)

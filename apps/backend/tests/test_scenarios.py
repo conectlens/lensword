@@ -10,6 +10,7 @@ import pytest
 from app.domain.services.scenarios import (
     CATALOG,
     MAX_SCORE,
+    MIN_LEARNER_CHARACTERS_TO_SCORE,
     MIN_LEARNER_TURNS_TO_SCORE,
     Evaluation,
     ScoreDimension,
@@ -81,12 +82,28 @@ def test_an_unknown_scenario_is_none_rather_than_a_guess():
 def test_a_short_attempt_cannot_be_scored():
     """A confident 72/100 derived from one exchange is a figure the learner will
     believe because it looks precise."""
-    assert can_score(1) is False
-    assert can_score(MIN_LEARNER_TURNS_TO_SCORE - 1) is False
+    assert can_score(1, 100) is False
+    assert can_score(MIN_LEARNER_TURNS_TO_SCORE - 1, 100) is False
 
 
 def test_a_long_enough_attempt_can_be_scored():
-    assert can_score(MIN_LEARNER_TURNS_TO_SCORE) is True
+    assert can_score(MIN_LEARNER_TURNS_TO_SCORE, MIN_LEARNER_CHARACTERS_TO_SCORE) is True
+
+
+def test_enough_turns_but_too_little_substance_cannot_be_scored():
+    """Issue #213: four one-word non-answers ("queso", "no se", "mmm",
+    "banana carro azul" — 31 characters, the exact transcript that scored
+    82/100 against a real model) clear the turn-count gate but not this
+    one — a turn count alone cannot tell that apart from four short but
+    real sentences."""
+    assert can_score(MIN_LEARNER_TURNS_TO_SCORE, MIN_LEARNER_CHARACTERS_TO_SCORE - 1) is False
+
+
+def test_four_short_but_real_turns_can_be_scored():
+    """"Hola" / "Una mesa para dos, por favor" / "Sí, el especial" /
+    "Gracias" — 54 characters across four genuine turns — must not be
+    caught by the same gate that refuses four throwaway non-answers."""
+    assert can_score(MIN_LEARNER_TURNS_TO_SCORE, 54) is True
 
 
 def test_an_unscored_evaluation_carries_a_reason_rather_than_zeroes():

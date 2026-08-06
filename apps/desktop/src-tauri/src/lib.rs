@@ -14,6 +14,7 @@ mod clipboard;
 mod credential;
 mod mcp;
 mod ocr_capture;
+mod scheduler_failover;
 mod selection_capture;
 mod tray;
 
@@ -21,13 +22,17 @@ use lensword_api_config::{read_endpoint_file, resolve, ApiConfig};
 use tauri::Manager;
 
 /// Environment variable checked first, mainly so a developer can point the
-/// shell at a scratch server without editing a file.
-const API_BASE_ENV: &str = "LENSWORD_API_URL";
+/// shell at a scratch server without editing a file. Also read by
+/// `scheduler_failover`, so both this command and the local scheduler agree
+/// on which backend they are talking to.
+pub(crate) const API_BASE_ENV: &str = "LENSWORD_API_URL";
 
 /// Plain-text file in the OS application-config directory holding one URL.
 const CONFIG_FILE_NAME: &str = "api-endpoint";
 
-fn config_file_contents(app: &tauri::AppHandle) -> Result<Option<String>, String> {
+/// Also used by `scheduler_failover`, which needs the same resolved base
+/// URL to make its own, non-webview requests to the backend.
+pub(crate) fn config_file_contents(app: &tauri::AppHandle) -> Result<Option<String>, String> {
     let Ok(dir) = app.path().app_config_dir() else {
         // No resolvable config directory: nothing is configured, which is a
         // legitimate state rather than a failure.
@@ -85,9 +90,15 @@ pub fn run() {
         .manage(clipboard::ClipboardState::default())
         .manage(selection_capture::SelectionCaptureState::default())
         .manage(tray::TrayState::default())
+        .manage(scheduler_failover::SchedulerFailoverState::default())
         .setup(|app| {
             selection_capture::install(app.handle())?;
             tray::install(app.handle())?;
+            scheduler_failover::install(
+                app.handle(),
+                app.state::<scheduler_failover::SchedulerFailoverState>()
+                    .inner(),
+            );
             Ok(())
         })
         .on_window_event(|window, event| {

@@ -208,13 +208,21 @@ async def finish_attempt(
         Turn(speaker=Speaker(m.speaker), text=m.text) for m in (session.messages if session else [])
     ]
     learner_turns = sum(1 for turn in transcript if turn.speaker is Speaker.LEARNER)
+    learner_characters = sum(len(turn.text) for turn in transcript if turn.speaker is Speaker.LEARNER)
 
-    # Refused before the model is asked. Scoring three messages produces a
-    # confident number the learner will believe because it looks precise.
-    if not can_score(learner_turns):
+    # Refused before the model is asked. Scoring three messages — or four
+    # one-word non-answers — produces a confident number the learner will
+    # believe because it looks precise (issue #213: a real model scored
+    # exactly that gibberish 82/100 on one run).
+    if learner_turns < MIN_LEARNER_TURNS_TO_SCORE:
         evaluation = unscored(
             f"Not enough to judge yet — say at least {MIN_LEARNER_TURNS_TO_SCORE} things "
             "and finish again."
+        )
+    elif not can_score(learner_turns, learner_characters):
+        evaluation = unscored(
+            "Not enough to judge yet — those replies are too short to show what you can do. "
+            "Try writing a bit more and finish again."
         )
     elif provider is None:
         evaluation = unscored("AI is not configured for this deployment, so this cannot be scored.")
