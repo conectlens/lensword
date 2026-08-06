@@ -21,6 +21,9 @@ class ExerciseAnswerRequest(BaseModel):
 
 
 class PronunciationFeedbackRequest(BaseModel):
+    # Speech-to-text output the caller already produced, not audio — this
+    # checks whether the target term appears in it, nothing acoustic
+    # (issue #198 TODO 2; see the router's docstring for the full context).
     word_id: int
     transcript: str = Field(min_length=1, max_length=500)
 
