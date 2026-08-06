@@ -20,6 +20,10 @@ Vite + React + Tailwind frontend, email/password auth, Docker deployment.
 - **MnemoLab** — write and vote on mnemonics for your hardest words
 - **Mind map** — radial synonym/antonym/topic visualization per word
 - **Forced Recall Engine settings** — per-user intensity and trigger configuration
+- **Memory loop** — same-day graduated stabilization for new and weakly acquired
+  words; see [verification and evidence](docs/memory-loop-verification.md)
+- **Browser capture** — Chrome MV3 selected-text capture under `apps/browser/`
+- **MCP server** — stdio server under `apps/mcp/` backed by the authenticated API
 - **Profile** — stats, streak, real badge computation
 - **Admin panel** — real user list/search/suspend/delete and aggregate stats
 

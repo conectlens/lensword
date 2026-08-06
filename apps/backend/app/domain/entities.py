@@ -424,6 +424,20 @@ class RecallSettings:
     # default cannot silently move someone who never opened the settings
     # screen onto a different algorithm mid-deck.
     scheduler: str = "fsrs"
+    # Gates every user-visible behavior added by the Semantic Relatedness
+    # phases (#202-#206). Off by default: ADR 0006 rejects priming outright,
+    # but the knowledge-graph and related-word surfaces those later phases add
+    # are a real scope increase that a user should opt into, not inherit
+    # silently on upgrade.
+    semantic_relatedness_enabled: bool = False
+    # Three independently controllable flags for the AI Learning Diagnosis
+    # epic (#180, ADR 0007), not one. Deterministic diagnosis must not
+    # require AI (issue #181 TODO 1) — a user can run diagnosis without the
+    # coach, or the acquisition loop without either. All default off: with
+    # every flag false, the review request path is byte-identical to today.
+    learning_diagnosis_enabled: bool = False
+    acquisition_loop_enabled: bool = False
+    ai_coach_enabled: bool = False
 
     def set_intensity(self, level: int) -> None:
         if not (1 <= level <= 5):

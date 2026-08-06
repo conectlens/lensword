@@ -124,6 +124,26 @@ depends on this.
       *(Shipped — points at the guide, and states the notification gap up
       front so nobody hosts this without knowing about it.)*
 
+## Memory Loop — Verification
+
+- [x] **2.0** Wire memory-driven reminder eligibility through `ReminderCatalog`
+      using fact-backed due-word counts. *(Shipped.)*
+- [x] **3.0** Add the in-session graduated stabilization surface at
+      `/stabilize`, backed by the acquisition ladder API. *(Shipped.)*
+- [x] **4.0** Add the Chrome MV3 selected-text capture extension under
+      `apps/browser/`. *(Shipped — local unpacked extension; store publication
+      is not claimed.)*
+- [x] **5.0** Add the standalone stdio MCP server under `apps/mcp/`, backed by
+      the authenticated HTTP MCP boundary. *(Shipped — protocol assertions
+      pass; live third-party-client interoperability is not claimed.)*
+- [x] **6.0** Verify the graduated acquisition policy with deterministic
+      scheduler/API/dispatch/persistence/isolation coverage and a reproducible
+      JSON benchmark. *(Shipped — see
+      [Memory Loop Verification](docs/memory-loop-verification.md).)*
+- [ ] **6.1** Measure retention and workload against an FSRS-only control using
+      an opt-in learner cohort. *(Not measurable from this repository's current
+      data; no retention lift is claimed.)*
+
 ## Sequencing notes
 
 - Phase 0 blocks Phases 1 and 2; build it first.
@@ -139,3 +159,15 @@ depends on this.
   [ADR 0004](docs/adr/0004-memory-scheduling-model.md) for the fix, why
   stability is now persisted rather than derived, and the remediation for
   accounts affected before the fix.
+- The Semantic Relatedness track's knowledge graph (#200) is for querying
+  relatedness on demand, not for reordering or pre-exposing the review
+  queue. See [ADR 0006](docs/adr/0006-semantic-relatedness-in-review.md)
+  for why semantic priming and queue reordering are explicitly out of
+  scope, and the evidence on both sides.
+- The AI Learning Diagnosis epic (#180) splits deterministic diagnosis,
+  intervention selection, AI explanation, same-day acquisition scheduling,
+  and FSRS long-term scheduling across five separate owners, and an LLM
+  never determines a retention value, evidence count, or diagnosis
+  confidence. See
+  [ADR 0007](docs/adr/0007-ai-learning-diagnosis-architecture.md) for the
+  boundary and the opt-in flags that gate all of it.

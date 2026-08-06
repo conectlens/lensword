@@ -23,6 +23,8 @@ from app.config import Settings, get_settings
 from app.infrastructure.db import engine
 from app.domain.services.notification_channel import NotificationChannel
 from app.infrastructure.jobs import dev_heartbeat
+from app.infrastructure.jobs.acquisition_dispatch import AcquisitionDispatcher
+from app.infrastructure.jobs.acquisition_dispatch import JOB_ID as ACQUISITION_DISPATCH_JOB_ID
 from app.infrastructure.jobs.claim_maintenance import JOB_ID as PURGE_CLAIMS_JOB_ID, ClaimPurger
 from app.infrastructure.notifications import LogNotificationChannel
 from app.infrastructure.reminders import restore_reminder_jobs
@@ -104,3 +106,23 @@ def register_jobs(
         restore_reminder_jobs(scheduler, session_factory, channel or LogNotificationChannel())
     except Exception:  # noqa: BLE001 - startup must survive a broken reminders table
         logger.exception("reminder jobs could not be restored; starting without them")
+
+    # Polls for due acquisition rungs (#184 TODO 2) rather than a job
+    # registered per ladder: ladders are created and destroyed constantly
+    # as accounts progress, unlike reminders' small, slowly-changing set,
+    # so a poll avoids registering and tearing down a scheduler job on
+    # every rung transition. Five minutes: finer than that adds dispatch
+    # load for no benefit against a ladder whose tightest gap (30 seconds)
+    # nothing here claims to hit precisely — the notification is a nudge,
+    # not the timer the client-side session itself is responsible for.
+    if scheduler.get_job(ACQUISITION_DISPATCH_JOB_ID) is not None:
+        scheduler.remove_job(ACQUISITION_DISPATCH_JOB_ID)
+    scheduler.add_job(
+        AcquisitionDispatcher(session_factory, channel or LogNotificationChannel()),
+        "interval",
+        minutes=5,
+        id=ACQUISITION_DISPATCH_JOB_ID,
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )

@@ -13,6 +13,8 @@ from app.domain.services.knowledge_graph import (
     RELATION_WEIGHT,
     KnowledgeGraph,
     Relation,
+    TopicNote,
+    TopicSuppressionReason,
     WordNode,
     build_edges,
 )
@@ -102,16 +104,45 @@ def test_words_sharing_a_topic_are_joined():
     assert {edges[0].source_id, edges[0].target_id} == {1, 2}
 
 
-def test_an_enormous_topic_is_skipped_rather_than_exploded():
-    """A learner who tags four hundred words "general" would otherwise
-    generate eighty thousand edges that say nothing."""
+def test_an_enormous_topic_is_bounded_rather_than_dropped_entirely():
+    """#203 TODO 3: a learner who tags four hundred words "general" would
+    otherwise generate eighty thousand edges that say nothing — but the old
+    behavior of producing *zero* edges silently discarded a real,
+    if partial, answer. Bounded to the cap's word ids instead."""
     nodes = [_node(i, f"w{i}", topics=("general",)) for i in range(1, 60)]
 
-    assert build_edges(nodes) == []
+    edges = build_edges(nodes)
+
+    # 50-choose-2, not 59-choose-2: capped, not exploded.
+    assert len(edges) == 50 * 49 // 2
+    # Deterministic: the lowest 50 word ids, not an arbitrary/unstable subset.
+    included_ids = {e.source_id for e in edges} | {e.target_id for e in edges}
+    assert included_ids == set(range(1, 51))
+
+
+def test_an_enormous_topic_records_a_bounded_note_when_asked():
+    nodes = [_node(i, f"w{i}", topics=("general",)) for i in range(1, 60)]
+    notes: list[TopicNote] = []
+
+    build_edges(nodes, notes=notes)
+
+    assert notes == [TopicNote("general", 59, TopicSuppressionReason.BOUNDED, 50 * 49 // 2)]
+
+
+def test_a_topic_under_the_cap_produces_no_note():
+    notes: list[TopicNote] = []
+    build_edges([_node(1, "gato", topics=("animals",)), _node(2, "perro", topics=("animals",))], notes=notes)
+    assert notes == []
 
 
 def test_a_topic_with_one_member_produces_no_edge():
     assert build_edges([_node(1, "gato", topics=("animals",))]) == []
+
+
+def test_a_topic_with_one_member_records_why_when_asked():
+    notes: list[TopicNote] = []
+    build_edges([_node(1, "gato", topics=("animals",))], notes=notes)
+    assert notes == [TopicNote("animals", 1, TopicSuppressionReason.TOO_FEW_MEMBERS, 0)]
 
 
 # --- Strength is evidence, not opinion -------------------------------------

@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "LensWord Capture",
+  "description": "Save selected vocabulary to LensWord.",
+  "version": "0.1.0",
+  "permissions": ["contextMenus", "storage", "notifications"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "background": { "service_worker": "service-worker.js", "type": "module" },
+  "action": {
+    "default_title": "LensWord Capture",
+    "default_popup": "popup.html"
+  }
+}

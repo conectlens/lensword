@@ -7,9 +7,10 @@ that no SQLAlchemy type ever leaks past this module.
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import datetime
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.domain.entities import (
@@ -29,6 +30,9 @@ from app.domain.entities import (
     Word,
 )
 from app.domain.services.cefr_progress import MASTERY_STRENGTH
+from app.domain.services.acquisition import AcquisitionScheduler
+from app.domain.services.diagnosis_contracts import AcquisitionState, Diagnosis, DiagnosisEvidence, LearningObservation
+from app.domain.services.knowledge_graph import KnowledgeEdge, Relation
 from app.domain.value_objects import (
     DEFAULT_TIME_ZONE,
     Recurrence,
@@ -62,6 +66,10 @@ from app.infrastructure.models import (
     RoomPlacementModel,
     UserModel,
     WordModel,
+    LearningObservationModel,
+    KnowledgeEdgeModel,
+    DiagnosisModel,
+    AcquisitionEventModel,
 )
 
 logger = logging.getLogger(__name__)
@@ -311,6 +319,10 @@ def _settings_to_domain(m: RecallSettingsModel) -> RecallSettings:
         hide_notification_details=m.hide_notification_details,
         notifications_paused=m.notifications_paused,
         scheduler=m.scheduler,
+        semantic_relatedness_enabled=m.semantic_relatedness_enabled,
+        learning_diagnosis_enabled=m.learning_diagnosis_enabled,
+        acquisition_loop_enabled=m.acquisition_loop_enabled,
+        ai_coach_enabled=m.ai_coach_enabled,
     )
 
 
@@ -373,6 +385,16 @@ def _delete_word_dependents(db: Session, word_ids: list[int]) -> None:
         PracticeExerciseModel,
         MistakeEventModel,
         WordFieldRevisionModel,
+        # #182/#183/#184: all three carry a NOT NULL word_id, so — like
+        # ReviewAttemptModel above — they cannot be dereferenced the way
+        # MistakeEventModel's confused_with_word_id is; they are deleted
+        # with the word. This was missed for the first two when each table
+        # shipped, which SQLite (never enforcing PRAGMA foreign_keys)
+        # would not catch but Postgres would — AcquisitionEventModel is
+        # added here from the start rather than repeating that.
+        LearningObservationModel,
+        DiagnosisModel,
+        AcquisitionEventModel,
     ):
         for row in db.scalars(select(model).where(model.word_id.in_(word_ids))):
             db.delete(row)
@@ -387,6 +409,17 @@ def _delete_word_dependents(db: Session, word_ids: list[int]) -> None:
         select(MistakeEventModel).where(MistakeEventModel.confused_with_word_id.in_(word_ids))
     ):
         row.confused_with_word_id = None
+
+    # A knowledge edge always has two endpoints (#203); unlike the mistake
+    # case above, there is no "keep it with the reference cleared" option
+    # for a relation whose whole meaning is which two words it joins.
+    for row in db.scalars(
+        select(KnowledgeEdgeModel).where(
+            or_(KnowledgeEdgeModel.source_id.in_(word_ids), KnowledgeEdgeModel.target_id.in_(word_ids))
+        )
+    ):
+        db.delete(row)
+
     db.flush()
 
 
@@ -888,6 +921,10 @@ class SqlAlchemyRecallSettingsRepository:
         m.hide_notification_details = settings.hide_notification_details
         m.notifications_paused = settings.notifications_paused
         m.scheduler = settings.scheduler
+        m.semantic_relatedness_enabled = settings.semantic_relatedness_enabled
+        m.learning_diagnosis_enabled = settings.learning_diagnosis_enabled
+        m.acquisition_loop_enabled = settings.acquisition_loop_enabled
+        m.ai_coach_enabled = settings.ai_coach_enabled
         self.db.flush()
         return _settings_to_domain(m)
 
@@ -1589,3 +1626,410 @@ class SqlAlchemyScenarioAttemptRepository:
         attempt.evaluation = evaluation
         self.db.flush()
         return attempt
+
+
+def _learning_observation_to_domain(m: LearningObservationModel) -> LearningObservation:
+    return LearningObservation(
+        observation_id=m.observation_id,
+        word_id=m.word_id,
+        user_id=m.user_id,
+        outcome=ReviewOutcome(m.outcome),
+        session_mode=SessionMode(m.session_mode),
+        observed_at=m.observed_at,
+        operation_id=m.operation_id,
+        attempted_answer=m.attempted_answer,
+        response_time_ms=m.response_time_ms,
+        prompt_direction=m.prompt_direction,
+        hint_used=m.hint_used,
+        answer_format=m.answer_format,
+        modality=m.modality,
+        intervention_plan_ref=m.intervention_plan_ref,
+        self_reported_confidence=m.self_reported_confidence,
+        context_source=m.context_source,
+        schema_version=m.schema_version,
+    )
+
+
+class SqlAlchemyLearningObservationRepository:
+    """Append-only store of learning observations (issue #182).
+
+    No update, no delete-by-id — the same append-only reasoning as
+    MistakeEventRepository and WordRevisionRepository above: a diagnosis
+    built from history that can be silently rewritten cannot be audited.
+    """
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add(self, observation: LearningObservation) -> LearningObservation:
+        model = LearningObservationModel(
+            observation_id=observation.observation_id or uuid.uuid4().hex,
+            # Always populated even when the caller supplied none, so the
+            # (user_id, operation_id) unique constraint always applies —
+            # a legacy caller's observation is still exactly-once, just
+            # under an identity it never chose itself.
+            operation_id=observation.operation_id or uuid.uuid4().hex,
+            user_id=observation.user_id,
+            word_id=observation.word_id,
+            outcome=observation.outcome.value,
+            session_mode=observation.session_mode.value,
+            observed_at=observation.observed_at,
+            attempted_answer=observation.attempted_answer,
+            response_time_ms=observation.response_time_ms,
+            prompt_direction=observation.prompt_direction,
+            hint_used=observation.hint_used,
+            answer_format=observation.answer_format,
+            modality=observation.modality,
+            intervention_plan_ref=observation.intervention_plan_ref,
+            self_reported_confidence=observation.self_reported_confidence,
+            context_source=observation.context_source,
+            schema_version=observation.schema_version,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _learning_observation_to_domain(model)
+
+    def get_by_id(self, user_id: int, observation_id: str) -> LearningObservation | None:
+        stmt = select(LearningObservationModel).where(
+            LearningObservationModel.user_id == user_id,
+            LearningObservationModel.observation_id == observation_id,
+        )
+        model = self.db.scalars(stmt).first()
+        return _learning_observation_to_domain(model) if model else None
+
+    def find_by_operation(self, user_id: int, operation_id: str) -> LearningObservation | None:
+        stmt = select(LearningObservationModel).where(
+            LearningObservationModel.user_id == user_id,
+            LearningObservationModel.operation_id == operation_id,
+        )
+        model = self.db.scalars(stmt).first()
+        return _learning_observation_to_domain(model) if model else None
+
+    def list_for_word(self, user_id: int, word_id: int, limit: int = 500) -> list[LearningObservation]:
+        stmt = (
+            select(LearningObservationModel)
+            .where(LearningObservationModel.user_id == user_id, LearningObservationModel.word_id == word_id)
+            .order_by(LearningObservationModel.observed_at.desc())
+            .limit(limit)
+        )
+        return [_learning_observation_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def list_for_pair(
+        self, user_id: int, word_id_a: int, word_id_b: int, limit: int = 500
+    ) -> list[LearningObservation]:
+        stmt = (
+            select(LearningObservationModel)
+            .where(
+                LearningObservationModel.user_id == user_id,
+                LearningObservationModel.word_id.in_((word_id_a, word_id_b)),
+            )
+            .order_by(LearningObservationModel.observed_at.desc())
+            .limit(limit)
+        )
+        return [_learning_observation_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def list_in_window(
+        self, user_id: int, since: datetime, until: datetime, limit: int = 1000
+    ) -> list[LearningObservation]:
+        stmt = (
+            select(LearningObservationModel)
+            .where(
+                LearningObservationModel.user_id == user_id,
+                LearningObservationModel.observed_at >= since,
+                LearningObservationModel.observed_at <= until,
+            )
+            .order_by(LearningObservationModel.observed_at.desc())
+            .limit(limit)
+        )
+        return [_learning_observation_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def list_by_modality(self, user_id: int, modality: str, limit: int = 500) -> list[LearningObservation]:
+        stmt = (
+            select(LearningObservationModel)
+            .where(LearningObservationModel.user_id == user_id, LearningObservationModel.modality == modality)
+            .order_by(LearningObservationModel.observed_at.desc())
+            .limit(limit)
+        )
+        return [_learning_observation_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def list_by_intervention(
+        self, user_id: int, intervention_plan_ref: str, limit: int = 500
+    ) -> list[LearningObservation]:
+        stmt = (
+            select(LearningObservationModel)
+            .where(
+                LearningObservationModel.user_id == user_id,
+                LearningObservationModel.intervention_plan_ref == intervention_plan_ref,
+            )
+            .order_by(LearningObservationModel.observed_at.desc())
+            .limit(limit)
+        )
+        return [_learning_observation_to_domain(m) for m in self.db.scalars(stmt)]
+
+
+def _knowledge_edge_to_domain(m: KnowledgeEdgeModel) -> KnowledgeEdge:
+    return KnowledgeEdge(
+        source_id=m.source_id,
+        target_id=m.target_id,
+        relation=Relation(m.relation),
+        evidence=m.evidence,
+        occurrences=m.occurrences,
+    )
+
+
+class SqlAlchemyKnowledgeEdgeRepository:
+    """Persisted knowledge-graph edges (issue #138 completion, #203).
+
+    `strength` is stored but never accepted as an argument here — it is
+    `KnowledgeEdge.strength`, a pure function of relation and occurrences,
+    computed fresh from the domain object being written so the column can
+    never drift from what re-deriving it would give.
+    """
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def list_all_for_user(self, user_id: int) -> list[KnowledgeEdge]:
+        stmt = select(KnowledgeEdgeModel).where(KnowledgeEdgeModel.user_id == user_id)
+        return [_knowledge_edge_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def list_related(self, user_id: int, word_id: int, limit: int) -> list[KnowledgeEdge]:
+        stmt = (
+            select(KnowledgeEdgeModel)
+            .where(
+                KnowledgeEdgeModel.user_id == user_id,
+                or_(KnowledgeEdgeModel.source_id == word_id, KnowledgeEdgeModel.target_id == word_id),
+            )
+            .order_by(
+                KnowledgeEdgeModel.strength.desc(), KnowledgeEdgeModel.source_id, KnowledgeEdgeModel.target_id
+            )
+            .limit(limit)
+        )
+        return [_knowledge_edge_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def replace_for_word(self, user_id: int, word_id: int, edges: list[KnowledgeEdge]) -> None:
+        self.db.execute(
+            delete(KnowledgeEdgeModel).where(
+                KnowledgeEdgeModel.user_id == user_id,
+                or_(KnowledgeEdgeModel.source_id == word_id, KnowledgeEdgeModel.target_id == word_id),
+            )
+        )
+        now = utcnow()
+        for edge in edges:
+            # Defensive, not trusting: only ever write rows that actually
+            # touch word_id, regardless of what the caller passed in —
+            # otherwise a caller's bug could silently bump `updated_at` on
+            # an edge between two unrelated words.
+            if word_id not in (edge.source_id, edge.target_id):
+                continue
+            self.db.add(
+                KnowledgeEdgeModel(
+                    user_id=user_id,
+                    source_id=edge.source_id,
+                    target_id=edge.target_id,
+                    relation=edge.relation.value,
+                    strength=edge.strength,
+                    evidence=edge.evidence,
+                    occurrences=edge.occurrences,
+                    updated_at=now,
+                )
+            )
+        self.db.flush()
+
+    def delete_for_word(self, user_id: int, word_id: int) -> None:
+        self.db.execute(
+            delete(KnowledgeEdgeModel).where(
+                KnowledgeEdgeModel.user_id == user_id,
+                or_(KnowledgeEdgeModel.source_id == word_id, KnowledgeEdgeModel.target_id == word_id),
+            )
+        )
+        self.db.flush()
+
+    def replace_all_for_user(self, user_id: int, edges: list[KnowledgeEdge]) -> None:
+        self.db.execute(delete(KnowledgeEdgeModel).where(KnowledgeEdgeModel.user_id == user_id))
+        now = utcnow()
+        for edge in edges:
+            self.db.add(
+                KnowledgeEdgeModel(
+                    user_id=user_id,
+                    source_id=edge.source_id,
+                    target_id=edge.target_id,
+                    relation=edge.relation.value,
+                    strength=edge.strength,
+                    evidence=edge.evidence,
+                    occurrences=edge.occurrences,
+                    updated_at=now,
+                )
+            )
+        self.db.flush()
+
+
+def _evidence_to_json(evidence: tuple[DiagnosisEvidence, ...]) -> list[dict]:
+    return [
+        {"kind": e.kind, "observation_ids": list(e.observation_ids), "weight": e.weight, "description": e.description}
+        for e in evidence
+    ]
+
+
+def _evidence_from_json(payload: list[dict]) -> tuple[DiagnosisEvidence, ...]:
+    return tuple(
+        DiagnosisEvidence(
+            kind=item["kind"],
+            observation_ids=tuple(item["observation_ids"]),
+            weight=item["weight"],
+            description=item["description"],
+        )
+        for item in payload
+    )
+
+
+def _diagnosis_to_domain(m: DiagnosisModel) -> Diagnosis:
+    return Diagnosis(
+        word_id=m.word_id,
+        user_id=m.user_id,
+        outcome=m.outcome,
+        evidence=_evidence_from_json(m.evidence),
+        confidence=m.confidence,
+        rules_version=m.rules_version,
+        diagnosed_at=m.diagnosed_at,
+        sample_size=m.sample_size,
+        competing_hypotheses=tuple(m.competing_hypotheses),
+    )
+
+
+class SqlAlchemyDiagnosisRepository:
+    """Append-only store of deterministic diagnoses (issue #183)."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add(self, diagnosis: Diagnosis) -> Diagnosis:
+        model = DiagnosisModel(
+            user_id=diagnosis.user_id,
+            word_id=diagnosis.word_id,
+            outcome=diagnosis.outcome,
+            evidence=_evidence_to_json(diagnosis.evidence),
+            confidence=diagnosis.confidence,
+            rules_version=diagnosis.rules_version,
+            diagnosed_at=diagnosis.diagnosed_at,
+            sample_size=diagnosis.sample_size,
+            competing_hypotheses=list(diagnosis.competing_hypotheses),
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _diagnosis_to_domain(model)
+
+    def latest_for_word(self, user_id: int, word_id: int) -> Diagnosis | None:
+        stmt = (
+            select(DiagnosisModel)
+            .where(DiagnosisModel.user_id == user_id, DiagnosisModel.word_id == word_id)
+            .order_by(DiagnosisModel.diagnosed_at.desc())
+            .limit(1)
+        )
+        model = self.db.scalars(stmt).first()
+        return _diagnosis_to_domain(model) if model else None
+
+    def list_for_word(self, user_id: int, word_id: int, limit: int = 50) -> list[Diagnosis]:
+        stmt = (
+            select(DiagnosisModel)
+            .where(DiagnosisModel.user_id == user_id, DiagnosisModel.word_id == word_id)
+            .order_by(DiagnosisModel.diagnosed_at.desc())
+            .limit(limit)
+        )
+        return [_diagnosis_to_domain(m) for m in self.db.scalars(stmt)]
+
+
+def _acquisition_state_to_domain(m: AcquisitionEventModel) -> AcquisitionState:
+    return AcquisitionState(
+        word_id=m.word_id,
+        user_id=m.user_id,
+        rung=m.rung,
+        ladder_version=m.ladder_version,
+        started_at=m.started_at,
+        updated_at=m.updated_at,
+        graduated=m.graduated,
+        entry_reason=m.entry_reason,
+        operation_id=m.operation_id,
+    )
+
+
+class SqlAlchemyAcquisitionStateRepository:
+    """Append-only store of ladder transitions (issue #184). `upsert`
+    always inserts a new row; "the current state" `get_for_word` returns
+    is the most recent one — see `AcquisitionEventModel`'s docstring."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_for_word(self, user_id: int, word_id: int) -> AcquisitionState | None:
+        stmt = (
+            select(AcquisitionEventModel)
+            .where(AcquisitionEventModel.user_id == user_id, AcquisitionEventModel.word_id == word_id)
+            .order_by(AcquisitionEventModel.updated_at.desc())
+            .limit(1)
+        )
+        model = self.db.scalars(stmt).first()
+        return _acquisition_state_to_domain(model) if model else None
+
+    def upsert(self, state: AcquisitionState) -> AcquisitionState:
+        if state.operation_id is not None:
+            # #184 TODO 2's "retries do not duplicate observations": a
+            # retried submission with the same operation_id returns the
+            # transition it already produced rather than recording a
+            # second one.
+            existing = self.db.scalars(
+                select(AcquisitionEventModel).where(
+                    AcquisitionEventModel.user_id == state.user_id,
+                    AcquisitionEventModel.operation_id == state.operation_id,
+                )
+            ).first()
+            if existing is not None:
+                return _acquisition_state_to_domain(existing)
+
+        model = AcquisitionEventModel(
+            user_id=state.user_id,
+            word_id=state.word_id,
+            rung=state.rung,
+            ladder_version=state.ladder_version,
+            started_at=state.started_at,
+            updated_at=state.updated_at,
+            graduated=state.graduated,
+            due_at=AcquisitionScheduler().due_at(state),
+            entry_reason=state.entry_reason,
+            operation_id=state.operation_id,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _acquisition_state_to_domain(model)
+
+    def delete_for_word(self, user_id: int, word_id: int) -> None:
+        for row in self.db.scalars(
+            select(AcquisitionEventModel).where(
+                AcquisitionEventModel.user_id == user_id, AcquisitionEventModel.word_id == word_id
+            )
+        ):
+            self.db.delete(row)
+        self.db.flush()
+
+    def list_due(self, now, user_id: int | None = None, limit: int = 500) -> list[AcquisitionState]:
+        # Every word's *current* state (the row with the greatest id within
+        # its (user_id, word_id) group, append-only so id order and
+        # updated_at order agree) is resolved first via the subquery below,
+        # and only that row is checked against due_at/graduated — filtering
+        # the raw table directly would risk matching an old, since-
+        # superseded row that happened to be due when a newer, not-yet-due
+        # transition for the same word should shadow it.
+        group_by = [AcquisitionEventModel.user_id, AcquisitionEventModel.word_id]
+        latest_ids_query = select(func.max(AcquisitionEventModel.id).label("id"))
+        if user_id is not None:
+            latest_ids_query = latest_ids_query.where(AcquisitionEventModel.user_id == user_id)
+        latest_ids = latest_ids_query.group_by(*group_by).subquery()
+
+        stmt = (
+            select(AcquisitionEventModel)
+            .join(latest_ids, AcquisitionEventModel.id == latest_ids.c.id)
+            .where(AcquisitionEventModel.graduated.is_(False), AcquisitionEventModel.due_at <= now)
+            .order_by(AcquisitionEventModel.due_at)
+            .limit(limit)
+        )
+        return [_acquisition_state_to_domain(m) for m in self.db.scalars(stmt)]

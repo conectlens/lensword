@@ -28,6 +28,14 @@ from app.domain.entities import (
     User,
     Word,
 )
+from app.domain.services.diagnosis_contracts import (
+    AcquisitionState,
+    Diagnosis,
+    InterventionOutcome,
+    InterventionPlan,
+    LearningObservation,
+)
+from app.domain.services.knowledge_graph import KnowledgeEdge
 
 
 class UserRepository(Protocol):
@@ -140,3 +148,96 @@ class DesktopNotificationRepository(Protocol):
     def add(self, notification: DesktopNotification) -> DesktopNotification: ...
     def mark_delivered(self, user_id: int, notification_ids: list[int]) -> int: ...
     def purge_delivered_before(self, cutoff: datetime) -> int: ...
+
+
+# AI Learning Diagnosis ports (#180, ADR 0007, issue #181 TODO 2). No
+# implementation exists yet — these name the contract #182's persistence
+# work and #183/#184's engines are written against, so those phases depend
+# on a port rather than deciding their own storage shape ad hoc.
+
+
+class LearningObservationRepository(Protocol):
+    """Append-only: nothing here updates or deletes a recorded observation.
+    A wrong observation is corrected by a later, separate one, the same way
+    `mistake_memory.py` treats mistake history.
+
+    Query methods below cover the five axes issue #182 TODO 4 names: word,
+    pair, time window, modality, and intervention — each account-scoped and
+    limit-bounded, so a diagnosis query can never become an unbounded scan
+    of one user's entire history.
+    """
+
+    def add(self, observation: LearningObservation) -> LearningObservation: ...
+    def get_by_id(self, user_id: int, observation_id: str) -> LearningObservation | None: ...
+    # #182 TODO 1: the idempotency lookup. A caller checks this before
+    # `add`-ing, the same find-before-insert pattern
+    # SubmitSyncOperationsUseCase already uses for sync operations.
+    def find_by_operation(self, user_id: int, operation_id: str) -> LearningObservation | None: ...
+    def list_for_word(self, user_id: int, word_id: int, limit: int = 500) -> list[LearningObservation]: ...
+    def list_for_pair(
+        self, user_id: int, word_id_a: int, word_id_b: int, limit: int = 500
+    ) -> list[LearningObservation]: ...
+    def list_in_window(
+        self, user_id: int, since: datetime, until: datetime, limit: int = 1000
+    ) -> list[LearningObservation]: ...
+    def list_by_modality(self, user_id: int, modality: str, limit: int = 500) -> list[LearningObservation]: ...
+    def list_by_intervention(
+        self, user_id: int, intervention_plan_ref: str, limit: int = 500
+    ) -> list[LearningObservation]: ...
+
+
+class DiagnosisRepository(Protocol):
+    def add(self, diagnosis: Diagnosis) -> Diagnosis: ...
+    def latest_for_word(self, user_id: int, word_id: int) -> Diagnosis | None: ...
+    def list_for_word(self, user_id: int, word_id: int, limit: int = 50) -> list[Diagnosis]: ...
+
+
+class InterventionRepository(Protocol):
+    def add_plan(self, plan: InterventionPlan) -> InterventionPlan: ...
+    def add_outcome(self, outcome: InterventionOutcome) -> InterventionOutcome: ...
+    def list_plans_for_word(self, user_id: int, word_id: int) -> list[InterventionPlan]: ...
+
+
+class AcquisitionStateRepository(Protocol):
+    """Backed by an append-only event table (#184 TODO 2's "immutable
+    acquisition events and a derived current state"): `upsert` never
+    rewrites a row, it inserts a new transition, and `get_for_word` derives
+    "the current state" as the most recent one — the same
+    insert-only-then-read-latest shape `DiagnosisRepository` already uses.
+    """
+
+    def get_for_word(self, user_id: int, word_id: int) -> AcquisitionState | None: ...
+    def upsert(self, state: AcquisitionState) -> AcquisitionState: ...
+    def delete_for_word(self, user_id: int, word_id: int) -> None: ...
+    # Every word whose current ladder is due at or before `now` and not
+    # yet graduated — the dispatch job's and the "due" endpoint's one
+    # query, so due-ness is computed identically by both (TODO 2/3).
+    # `user_id=None` scans every account (the dispatch job's use); a real
+    # id scopes the scan at the query level rather than filtering a
+    # globally-limited page afterward, which could hide a busy account's
+    # own due words behind another account's on a large, shared table.
+    def list_due(self, now, user_id: int | None = None, limit: int = 500) -> list[AcquisitionState]: ...
+
+
+class KnowledgeEdgeRepository(Protocol):
+    """Persisted knowledge-graph edges (issue #138 completion, #203).
+
+    Written on word/mistake mutation, never on read — `replace_for_word`
+    is the one write method, and it touches only rows where the given word
+    is an endpoint. An edge between two *other* words is never read,
+    written, or even considered by a call scoped to a third word.
+    """
+
+    def list_all_for_user(self, user_id: int) -> list[KnowledgeEdge]: ...
+    def list_related(self, user_id: int, word_id: int, limit: int) -> list[KnowledgeEdge]: ...
+    # Atomically replaces every persisted edge touching `word_id` with
+    # `edges` — a delete-then-insert scoped to that word, not the account's
+    # whole graph, so an edge between two unrelated words never gets a new
+    # `updated_at` as a side effect of a third word's edit.
+    def replace_for_word(self, user_id: int, word_id: int, edges: list[KnowledgeEdge]) -> None: ...
+    def delete_for_word(self, user_id: int, word_id: int) -> None: ...
+    # A full-account replace, distinct from replace_for_word: only the
+    # one-off backfill (#203 TODO 7) uses this, since it is computing the
+    # whole account's graph once anyway and looping replace_for_word per
+    # word would mean recomputing that same graph once per word.
+    def replace_all_for_user(self, user_id: int, edges: list[KnowledgeEdge]) -> None: ...

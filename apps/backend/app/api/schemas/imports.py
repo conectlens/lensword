@@ -32,6 +32,11 @@ class ImportPreviewRecord(BaseModel):
     duplicate_of: str | None = None
     provider: str | None = None
     model: str | None = None
+    # AI-only: a raw parsed row never has these (issue #202 TODO 3). Empty
+    # unless enrichment actually ran.
+    synonyms: list[str] = Field(default_factory=list)
+    antonyms: list[str] = Field(default_factory=list)
+    topics: list[str] = Field(default_factory=list)
 
 
 class ImportPreviewResponse(BaseModel):

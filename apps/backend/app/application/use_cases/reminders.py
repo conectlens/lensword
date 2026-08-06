@@ -14,6 +14,7 @@ from app.domain.repositories import (
 )
 from app.domain.services.notification_channel import NotificationChannel
 from app.domain.services.recall_delivery import RecallDeliveryPolicy
+from app.domain.services.reminder_catalog import JobKind, LearnerFacts, ReminderCatalog
 from app.domain.services.reminder_scheduler import ReminderScheduler
 from app.domain.value_objects import DEFAULT_TIME_ZONE, normalize_time_zone, utcnow, zone_for
 
@@ -148,12 +149,14 @@ class DeliverReminderUseCase:
         user_repo: UserRepository,
         settings_repo: RecallSettingsRepository,
         channel: NotificationChannel,
+        word_repo=None,
         clock: Callable[[], datetime] = utcnow,
     ):
         self.reminder_repo = reminder_repo
         self.user_repo = user_repo
         self.settings_repo = settings_repo
         self.channel = channel
+        self.word_repo = word_repo
         self.clock = clock
 
     def execute(self, reminder_id: int) -> None:
@@ -183,7 +186,28 @@ class DeliverReminderUseCase:
         )
         allowed = RecallDeliveryPolicy.decide(settings, now_local)
 
+        # The catalog owns eligibility and the count quoted by the message.
+        # Keep the repository optional for narrow adapters/tests; production
+        # dispatchers provide it so an empty queue cannot produce a false nudge.
+        due_count = None
+        if self.word_repo is not None:
+            due_count = len(self.word_repo.list_due_for_user(reminder.user_id, limit=500, group_id=reminder.group_id))
+            # Existing user-created reminders remain valid even when their
+            # group is temporarily empty. When there is real due work, the
+            # catalog supplies the fact-backed message; an empty group keeps
+            # the established generic reminder behavior.
+            if due_count > 0:
+                decision = ReminderCatalog.decide(
+                    JobKind.DUE_WORDS,
+                    LearnerFacts(due_count=due_count),
+                    now=now_local,
+                )
+                if not decision.should_notify:
+                    return
+
+        message = f"{due_count} words are due for review." if due_count is not None else REMINDER_MESSAGE
+
         # Sorted so delivery order is deterministic rather than dependent on
         # set iteration order, which makes failures reproducible.
         for target in sorted(allowed, key=lambda c: c.value):
-            self.channel.send(user, REMINDER_MESSAGE, target.value)
+            self.channel.send(user, message, target.value)

@@ -1,5 +1,5 @@
 import type {
-  AdminStats, Group, MnemonicNote, ProfileOverview, RecallSettings, Room,
+  AdminStats, AcquisitionState, Group, MnemonicNote, ProfileOverview, RecallSettings, Room,
   SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile, CefrProgress, Prerequisites, RelatedWord, WordRevision, AiState, OllamaProbe, LearningPath, GeneratePathResult, Conversation, ConversationMessage, SendMessageResult, Difficulty, Scenario, ScenarioAttempt, ScenarioVocabulary,
 } from './types'
 import { resolveApiBase } from './runtimeConfig'
@@ -72,6 +72,9 @@ export interface WordInput {
   pronunciation?: string | null
   collocations?: string[]
   tags?: string[]
+  synonyms?: string[]
+  antonyms?: string[]
+  topics?: string[]
   ai_confidence?: number | null
   ai_provider?: string | null
   ai_model?: string | null
@@ -97,7 +100,7 @@ export const extractionApi = {
     request<ExtractVocabularyResult>('/api/v1/extract', { method: 'POST', body: JSON.stringify({ group_id, text, source_language, target_language, min_level }) }),
 }
 
-export interface ImportPreviewRecord { term: string; translations: string[]; definition: string | null; part_of_speech: string | null; cefr_level: string | null; pronunciation: string | null; source_language: string; status: 'ready' | 'ai_cleaned' | 'duplicate'; duplicate_of: string | null; provider: string | null; model: string | null }
+export interface ImportPreviewRecord { term: string; translations: string[]; definition: string | null; part_of_speech: string | null; cefr_level: string | null; pronunciation: string | null; source_language: string; status: 'ready' | 'ai_cleaned' | 'duplicate'; duplicate_of: string | null; provider: string | null; model: string | null; synonyms: string[]; antonyms: string[]; topics: string[] }
 export const importsApi = {
   parseFile: async (file: File) => {
     const data = new FormData(); data.append('file', file)
@@ -244,6 +247,16 @@ export const reviewApi = {
       body: JSON.stringify({ new_words_learned_count }),
     }),
   weeklyProgress: () => request<{ counts_by_day: Record<string, number> }>('/api/v1/review/weekly-progress'),
+}
+
+export const acquisitionApi = {
+  due: (limit = 50) => request<AcquisitionState[]>(`/api/v1/acquisition/due?limit=${limit}`),
+  word: (wordId: number) => request<Word>(`/api/v1/words/${wordId}`),
+  answer: (wordId: number, outcome: ReviewOutcome) =>
+    request<AcquisitionState | null>(`/api/v1/words/${wordId}/acquisition/answer`, {
+      method: 'POST',
+      body: JSON.stringify({ outcome }),
+    }),
 }
 
 // --- MnemoLab ----------------------------------------------------------------

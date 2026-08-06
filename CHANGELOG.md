@@ -397,6 +397,12 @@ releases exist yet).
   as SQLite was the only target. Deleting a group now also removes its rooms,
   placements and reminders. Found by running the new tenant-isolation audit
   against Postgres.
+- Deleting a word with any recorded `learning_observations` or `diagnoses`
+  history (#182, #183) now removes those rows too, instead of leaving them
+  referencing a word that no longer exists. The same class of bug as above,
+  reached again because both tables shipped after the word-deletion cleanup
+  was written and neither was added to it — silently orphaned on SQLite,
+  a `ForeignKeyViolation` on Postgres.
 - Mnemonic endpoints now verify that the requesting account owns the word.
   Previously any authenticated user could read and vote on mnemonics attached
   to another account's words.
@@ -408,6 +414,16 @@ releases exist yet).
   unresponsive.
 - Provider error details returned to the client no longer include the
   configured base URL.
+- AI-generated synonyms, antonyms, and topics are no longer discarded.
+  `enrich_word` already asked for and parsed all four association fields, but
+  `WordInput` and `WordCreateRequest` had no fields to carry three of them, so
+  the only write path was hand-entry through the mind-map sidebar — the
+  knowledge graph (#138, #203) was near-empty in production as a result. A
+  second, quieter defect: the AI's `tags` output was never mapped to the
+  `topics` field the knowledge graph, learning paths, and scenario matching
+  all actually read. `enrich_word` now populates a `topics` field (mirroring
+  `tags`) so every consumer reading `topics` gets real data; `tags` is kept
+  for the callers that already display it. See issue #202.
 
 ### Known limitations
 
@@ -426,6 +442,15 @@ releases exist yet).
   show and acknowledge loop is unit-tested, but observing an actual toast on
   macOS, Windows and Linux needs a packaged build and, on macOS, a signed one
   (ROADMAP 3.1, #65).
+- Words added before the synonyms/antonyms/topics fix above have empty
+  association fields and will not gain them retroactively — the knowledge
+  graph only has real edges for words added or re-enriched afterward. No
+  bulk "enrich my existing deck" action ships with this fix: re-running AI
+  enrichment against every existing word in every account is exactly the
+  kind of unbounded, per-account AI cost this project rate-limits elsewhere
+  (see Security, above), and a naive version would need to be opt-in and
+  rate-limited per group to ship safely — real scope, deliberately deferred
+  rather than bolted on here (issue #202 TODO 6).
 
 - Desktop notifications are queued but not yet shown. The backend records them
   and serves them over the API; no OS toast is drawn until the shell collects

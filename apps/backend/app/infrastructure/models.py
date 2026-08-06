@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.db import Base
@@ -222,6 +222,25 @@ class RecallSettingsModel(Base):
     hide_notification_details: Mapped[bool] = mapped_column(Boolean, default=False)
     notifications_paused: Mapped[bool] = mapped_column(Boolean, default=False)
     scheduler: Mapped[str] = mapped_column(String(16), default="sm2")
+    # server_default matters as much as default here, the same way it does for
+    # time_zone above: a fresh database bootstraps this table from these
+    # models directly (20260730_01), so this column already exists with no
+    # value supplied by the time migration 20260730_14's raw backfill INSERT
+    # runs — that migration's column list predates this field and cannot
+    # name it. Only a real server-side default lets that INSERT succeed.
+    semantic_relatedness_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
+    # Same server_default requirement as semantic_relatedness_enabled above,
+    # for the same reason: 20260730_14's backfill INSERT predates these
+    # fields and cannot name them.
+    learning_diagnosis_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
+    acquisition_loop_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
+    ai_coach_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
 
 class PracticeExerciseModel(Base):
@@ -608,3 +627,184 @@ class ScenarioAttemptModel(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # {scored, scores, summary, goals_met, detail} — validated before storage.
     evaluation: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class LearningObservationModel(Base):
+    """One recall attempt, recorded with enough context to diagnose *why* it
+    went the way it did (AI Learning Diagnosis epic, #180, issue #182).
+
+    Append-only, the same reasoning as MistakeEventModel above: a wrong
+    observation is corrected by a later, separate row, never rewritten —
+    the diagnosis engine (#183) needs the original alongside the
+    correction, not just the corrected version.
+
+    Only written when `RecallSettings.learning_diagnosis_enabled` is true
+    for the account (ADR 0007): with the flag off, review submission never
+    reaches this table at all.
+
+    Indexes cover the five query axes issue #182 TODO 4 names — word, pair
+    (an IN-list against the word index), time window, modality, and
+    intervention — each already scoped by the `user_id` prefix so a query
+    can never cross accounts by construction, not just by a WHERE clause a
+    future edit could drop.
+    """
+
+    __tablename__ = "learning_observations"
+    __table_args__ = (
+        UniqueConstraint("user_id", "operation_id", name="uq_learning_observation_user_operation"),
+        Index("ix_learning_observations_user_word", "user_id", "word_id"),
+        Index("ix_learning_observations_user_observed", "user_id", "observed_at"),
+        Index("ix_learning_observations_user_modality", "user_id", "modality"),
+        Index("ix_learning_observations_user_intervention", "user_id", "intervention_plan_ref"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # The domain contract's `observation_id` — a client-visible, stable
+    # string identity distinct from this row's own primary key.
+    observation_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # Client-generated and stable across retries, mirroring SyncOperationModel
+    # (issue #90). Always populated by the repository even when a legacy
+    # caller supplied none, so the unique constraint above always applies.
+    operation_id: Mapped[str] = mapped_column(String(64))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    word_id: Mapped[int] = mapped_column(ForeignKey("words.id"))
+    outcome: Mapped[str] = mapped_column(String(16))
+    session_mode: Mapped[str] = mapped_column(String(16))
+    observed_at: Mapped[datetime] = mapped_column(DateTime)
+    attempted_answer: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    response_time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    prompt_direction: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    hint_used: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    answer_format: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    modality: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    intervention_plan_ref: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    self_reported_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # A bounded fingerprint/reference, never raw source text — the context
+    # snippet's storage/retention policy itself is issue #182 TODO 3's
+    # scope, filed as a follow-up rather than guessed at here.
+    context_source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    schema_version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+
+
+class KnowledgeEdgeModel(Base):
+    """One relation between two of a learner's own words (issue #138, #203).
+
+    `knowledge_graph.build_edges()` shipped in #138 without a table to put
+    its output in — every read recomputed the whole graph. This is that
+    table, written on word/mistake mutation rather than on read (#203
+    TODO 2).
+
+    Stored with the lower word id as `source_id`, matching
+    `knowledge_graph._add()`'s existing canonical-ordering rule exactly —
+    a relation is one row however it was discovered, never two.
+
+    `strength` is denormalized rather than left to be recomputed from
+    `occurrences` on every read: `KnowledgeEdge.strength` is a pure
+    function of `relation` and `occurrences`, so storing it is never at
+    risk of drifting from what re-deriving it would give, and TODO 1's
+    per-item lookup needs it as a real, indexed, sortable column.
+    """
+
+    __tablename__ = "knowledge_edges"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "source_id", "target_id", "relation", name="uq_knowledge_edge"
+        ),
+        # TODO 1's stated access pattern, plus its mirror: canonical storage
+        # means "edges touching word X" can land X in either column, and a
+        # per-item lookup needs both directions indexed to avoid a
+        # sequential scan regardless of which side X fell on.
+        Index("ix_knowledge_edges_user_source_strength", "user_id", "source_id", "strength"),
+        Index("ix_knowledge_edges_user_target_strength", "user_id", "target_id", "strength"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    source_id: Mapped[int] = mapped_column(ForeignKey("words.id"))
+    target_id: Mapped[int] = mapped_column(ForeignKey("words.id"))
+    relation: Mapped[str] = mapped_column(String(16))
+    strength: Mapped[float] = mapped_column(Float)
+    evidence: Mapped[str] = mapped_column(String(255))
+    occurrences: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    updated_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class DiagnosisModel(Base):
+    """A deterministic engine's conclusion about one word (issue #183).
+
+    Append-only, the same reasoning as every other evidence table in this
+    epic: a correction is a new row, not an edit to an old one — #183 TODO
+    1's requirement that a diagnosis be reproducible depends on the row
+    that was actually shown never silently changing under it.
+
+    Only written when `RecallSettings.learning_diagnosis_enabled` is true
+    (ADR 0007), the same gate #182's learning_observations table uses.
+    """
+
+    __tablename__ = "diagnoses"
+    __table_args__ = (
+        # The read pattern is always "this word's diagnoses, newest first".
+        Index("ix_diagnoses_user_word_diagnosed", "user_id", "word_id", "diagnosed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    word_id: Mapped[int] = mapped_column(ForeignKey("words.id"))
+    outcome: Mapped[str] = mapped_column(String(48))
+    # [{"kind": ..., "observation_ids": [...], "weight": ..., "description": ...}, ...] —
+    # JSON rather than a child table: evidence is read and displayed whole,
+    # never queried by its own fields independently of the diagnosis it
+    # belongs to.
+    evidence: Mapped[list] = mapped_column(JSON)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rules_version: Mapped[int] = mapped_column(Integer)
+    diagnosed_at: Mapped[datetime] = mapped_column(DateTime)
+    sample_size: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    competing_hypotheses: Mapped[list] = mapped_column(JSON, default=list)
+
+
+class AcquisitionEventModel(Base):
+    """One transition of a same-day acquisition ladder (issue #184).
+
+    Append-only, like every other evidence table in this epic — a rung
+    transition is a new row, never an edit to the previous one.
+    `SqlAlchemyAcquisitionStateRepository.upsert()` (the name the #181-era
+    `AcquisitionStateRepository` protocol already committed to) always
+    inserts here; "the current state" is derived by reading the most
+    recent row for (user_id, word_id), the same pattern `DiagnosisModel`
+    uses for "latest diagnosis".
+
+    `due_at` is denormalized rather than recomputed from `rung` and
+    `ladder_version` on every read: it is a pure function of the row's own
+    fields (`AcquisitionScheduler.due_at`), so storing it cannot drift, and
+    the dispatch job's and the "due" endpoint's query both need it as a
+    real, indexed, sortable column rather than a client-side filter over
+    every ladder in the system.
+    """
+
+    __tablename__ = "acquisition_events"
+    __table_args__ = (
+        # Partial-unique in effect only: a NULL operation_id never
+        # conflicts with another NULL on Postgres or SQLite, so a caller
+        # with no idempotency key can still submit multiple transitions —
+        # the same nullable-unique shape learning_observations already uses.
+        UniqueConstraint("user_id", "operation_id", name="uq_acquisition_event_user_operation"),
+        Index("ix_acquisition_events_user_word_updated", "user_id", "word_id", "updated_at"),
+        # The dispatch job's and the due-endpoint's query: every
+        # not-yet-graduated ladder due at or before now, across all users.
+        Index("ix_acquisition_events_due", "graduated", "due_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    word_id: Mapped[int] = mapped_column(ForeignKey("words.id"))
+    rung: Mapped[int] = mapped_column(Integer)
+    ladder_version: Mapped[int] = mapped_column(Integer)
+    started_at: Mapped[datetime] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime)
+    graduated: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    due_at: Mapped[datetime] = mapped_column(DateTime)
+    # Entry reason (#184 TODO 4), null only for rows this account created
+    # before the field existed — never re-derived after the fact.
+    entry_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    operation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)

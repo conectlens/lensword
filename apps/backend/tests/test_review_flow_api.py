@@ -265,6 +265,57 @@ def test_recall_settings_fields_survive_an_unrelated_put(client, auth_headers):
     assert unrelated.json()["intensity"] == 4
 
 
+def test_semantic_relatedness_flag_defaults_off_and_round_trips(client, auth_headers):
+    """ADR 0006 / issue #201 TODO 6: the flag exists, defaults off, and an
+    unrelated save does not reset it — same partial-update contract issue
+    #173 TODO 4 established for the other opt-in fields."""
+    headers = auth_headers()
+
+    defaults = client.get("/api/v1/recall-settings", headers=headers).json()
+    assert defaults["semantic_relatedness_enabled"] is False
+
+    resp = client.put(
+        "/api/v1/recall-settings",
+        json={"semantic_relatedness_enabled": True},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["semantic_relatedness_enabled"] is True
+
+    unrelated = client.put("/api/v1/recall-settings", json={"intensity": 4}, headers=headers)
+    assert unrelated.status_code == 200
+    assert unrelated.json()["semantic_relatedness_enabled"] is True
+    assert unrelated.json()["intensity"] == 4
+
+
+def test_learning_diagnosis_flags_default_off_and_are_independently_controllable(client, auth_headers):
+    """ADR 0007 / issue #181 TODO 1: three flags, not one — deterministic
+    diagnosis must not require the AI coach, so turning one on must not
+    imply or require the others."""
+    headers = auth_headers()
+
+    defaults = client.get("/api/v1/recall-settings", headers=headers).json()
+    assert defaults["learning_diagnosis_enabled"] is False
+    assert defaults["acquisition_loop_enabled"] is False
+    assert defaults["ai_coach_enabled"] is False
+
+    resp = client.put(
+        "/api/v1/recall-settings",
+        json={"learning_diagnosis_enabled": True},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["learning_diagnosis_enabled"] is True
+    # Enabling diagnosis alone leaves the other two untouched, not implied on.
+    assert body["acquisition_loop_enabled"] is False
+    assert body["ai_coach_enabled"] is False
+
+    unrelated = client.put("/api/v1/recall-settings", json={"intensity": 4}, headers=headers)
+    assert unrelated.status_code == 200
+    assert unrelated.json()["learning_diagnosis_enabled"] is True
+
+
 def test_adaptive_practice_exercise_daily_preferences_and_pronunciation(client, auth_headers):
     headers = auth_headers()
     _group, word = _setup_group_with_word(client, headers, term="hola", translation="hello")

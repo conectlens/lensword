@@ -107,13 +107,19 @@ _CEFR_ORDER = {"A1": 1, "A2": 2, "B1": 3, "B2": 4, "C1": 5, "C2": 6}
 
 
 def build_edges(
-    nodes: list[WordNode], confusions: dict[tuple[int, int], int] | None = None
+    nodes: list[WordNode],
+    confusions: dict[tuple[int, int], int] | None = None,
+    notes: list["TopicNote"] | None = None,
 ) -> list[KnowledgeEdge]:
     """Derive every edge from the learner's own vocabulary.
 
     `confusions` maps an ordered word-id pair to how often they were mixed up,
     which is what #134 produces. Absent, the graph is built from the lexical
     fields alone and is simply less informative — not broken.
+
+    `notes` is optional and additive (#203 TODO 3): pass a list to have the
+    topic pass append what it bounded or skipped and why. Every existing
+    caller that omits it is unaffected.
     """
     by_term = {node.term.strip().casefold(): node.word_id for node in nodes}
     seen: dict[tuple[int, int, Relation], KnowledgeEdge] = {}
@@ -134,7 +140,7 @@ def build_edges(
                     continue
                 _add(seen, node.word_id, target, relation, f"listed as a {relation.value}")
 
-    _add_topic_edges(nodes, seen)
+    _add_topic_edges(nodes, seen, notes)
 
     for (first, second), count in (confusions or {}).items():
         if first == second:
@@ -151,12 +157,44 @@ def build_edges(
     return sorted(seen.values(), key=lambda e: (-e.strength, e.source_id, e.target_id))
 
 
-def _add_topic_edges(nodes: list[WordNode], seen: dict) -> None:
+class TopicSuppressionReason(str, Enum):
+    """Why a topic's edges look the way they do — #203 TODO 3.
+
+    Recorded rather than left to be inferred from an edge count that could
+    just as easily mean "nobody shares this topic" as "we bounded it."
+    """
+
+    TOO_FEW_MEMBERS = "too_few_members"
+    # The cap was hit. Edges are still produced — a deterministic subset,
+    # never zero — which is the behavior this reason exists to distinguish
+    # from the old silent-drop.
+    BOUNDED = "bounded"
+
+
+@dataclass(frozen=True)
+class TopicNote:
+    topic: str
+    member_count: int
+    reason: TopicSuppressionReason
+    edges_included: int
+
+
+# Quadratic in the size of a topic, which is why membership is capped: a
+# learner who tags four hundred words "general" would otherwise generate
+# eighty thousand edges that say nothing. Capping at 50 (1,225 possible
+# pairs) keeps the pass bounded without special-casing it away entirely.
+_TOPIC_MEMBER_CAP = 50
+
+
+def _add_topic_edges(nodes: list[WordNode], seen: dict, notes: list[TopicNote] | None = None) -> None:
     """Join words sharing a topic.
 
-    Quadratic in the size of a topic, which is why topics with an implausible
-    number of members are skipped: a learner who tags four hundred words
-    "general" would otherwise generate eighty thousand edges that say nothing.
+    A topic over the cap is bounded to a deterministic subset — sorted by
+    word id, not insertion order, so the same deck always bounds to the
+    same edges regardless of what order its words happen to load in —
+    rather than dropped to zero edges. Nothing is silently discarded: a
+    topic that produced no edges did not have enough members to relate,
+    which `notes` (when supplied) records explicitly.
     """
     by_topic: dict[str, list[WordNode]] = {}
     for node in nodes:
@@ -164,10 +202,19 @@ def _add_topic_edges(nodes: list[WordNode], seen: dict) -> None:
             by_topic.setdefault(topic.strip().casefold(), []).append(node)
 
     for topic, members in by_topic.items():
-        if len(members) < 2 or len(members) > 50:
+        if len(members) < 2:
+            if notes is not None:
+                notes.append(TopicNote(topic, len(members), TopicSuppressionReason.TOO_FEW_MEMBERS, 0))
             continue
-        for index, first in enumerate(members):
-            for second in members[index + 1 :]:
+
+        over_cap = len(members) > _TOPIC_MEMBER_CAP
+        included = sorted(members, key=lambda n: n.word_id)[:_TOPIC_MEMBER_CAP] if over_cap else members
+        if over_cap and notes is not None:
+            pair_count = len(included) * (len(included) - 1) // 2
+            notes.append(TopicNote(topic, len(members), TopicSuppressionReason.BOUNDED, pair_count))
+
+        for index, first in enumerate(included):
+            for second in included[index + 1 :]:
                 _add(seen, first.word_id, second.word_id, Relation.TOPIC, f"both tagged '{topic}'")
 
 
@@ -203,6 +250,16 @@ class KnowledgeGraph:
     def __init__(self, nodes: list[WordNode], edges: list[KnowledgeEdge]):
         self.nodes = {node.word_id: node for node in nodes}
         self.edges = edges
+
+    def __eq__(self, other: object) -> bool:
+        # Value equality rather than the default identity comparison —
+        # needed so a fixture embedding a graph (#183's golden dataset) can
+        # itself be compared for reproducibility. Nothing in a live request
+        # path compares two KnowledgeGraph instances, so this has no
+        # bearing on #203's byte-identical-endpoints guarantee.
+        if not isinstance(other, KnowledgeGraph):
+            return NotImplemented
+        return self.nodes == other.nodes and self.edges == other.edges
 
     def related(self, word_id: int, limit: int = 10) -> list[KnowledgeEdge]:
         """Everything joined to this word, strongest first."""

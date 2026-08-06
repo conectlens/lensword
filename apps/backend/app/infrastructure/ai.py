@@ -513,7 +513,7 @@ class OllamaProvider:
             cefr_level=payload.get("cefr_level") if isinstance(payload.get("cefr_level"), str) else None,
             pronunciation=payload.get("pronunciation") if isinstance(payload.get("pronunciation"), str) else None,
             examples=strings("examples"), synonyms=strings("synonyms"), antonyms=strings("antonyms"),
-            collocations=strings("collocations"), tags=strings("tags"),
+            collocations=strings("collocations"), tags=strings("tags"), topics=strings("tags"),
             mnemonic=payload.get("mnemonic") if isinstance(payload.get("mnemonic"), str) else None,
             category=payload.get("category") if isinstance(payload.get("category"), str) else None,
             confidence=float(confidence) if isinstance(confidence, (int, float)) and 0 <= confidence <= 1 else None,

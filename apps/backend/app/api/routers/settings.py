@@ -44,6 +44,10 @@ def _settings_to_response(s: RecallSettings, time_zone: str) -> RecallSettingsRe
         hide_notification_details=s.hide_notification_details,
         notifications_paused=s.notifications_paused,
         scheduler=s.scheduler,
+        semantic_relatedness_enabled=s.semantic_relatedness_enabled,
+        learning_diagnosis_enabled=s.learning_diagnosis_enabled,
+        acquisition_loop_enabled=s.acquisition_loop_enabled,
+        ai_coach_enabled=s.ai_coach_enabled,
     )
 
 

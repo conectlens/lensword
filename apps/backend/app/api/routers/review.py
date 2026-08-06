@@ -1,7 +1,11 @@
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.deps import (
+    AcquisitionStateRepo,
     CurrentUser,
+    DiagnosisRepo,
+    KnowledgeEdgeRepo,
+    LearningObservationRepo,
     MistakeEventRepo,
     RecallSettingsRepo,
     ReviewSessionRepo,
@@ -21,6 +25,7 @@ from app.api.schemas.review import (
 from app.application.use_cases.review import (
     CompleteReviewSessionUseCase,
     GetWeeklyProgressUseCase,
+    ObservationInput,
     StartReviewSessionUseCase,
     SubmitAnswerUseCase,
 )
@@ -69,17 +74,48 @@ def submit_answer(
     word_repo: WordRepo,
     settings_repo: RecallSettingsRepo,
     mistake_repo: MistakeEventRepo,
+    observation_repo: LearningObservationRepo,
+    edge_repo: KnowledgeEdgeRepo,
+    diagnosis_repo: DiagnosisRepo,
+    acquisition_repo: AcquisitionStateRepo,
 ) -> SubmitAnswerResponse:
     try:
         settings = settings_repo.get_by_user(current_user.id)
         selected_scheduler = _fsrs_scheduler if settings and settings.scheduler == "fsrs" else _scheduler
-        result = SubmitAnswerUseCase(session_repo, word_repo, selected_scheduler, mistake_repo).execute(
+        # ADR 0007: with the flag off, this path never reaches
+        # learning_observations at all — not just "records nothing", the
+        # repository itself is never wired into the use case.
+        diagnosis_enabled = bool(settings and settings.learning_diagnosis_enabled)
+        # #184: a diagnosis-driven ladder entry only matters if a diagnosis
+        # is even being produced this request — gated on both flags, not
+        # just its own, so acquisition_loop_enabled alone (diagnosis off)
+        # cannot trigger entry from a diagnosis that was never computed.
+        acquisition_enabled = diagnosis_enabled and bool(settings and settings.acquisition_loop_enabled)
+        result = SubmitAnswerUseCase(
+            session_repo,
+            word_repo,
+            selected_scheduler,
+            mistake_repo,
+            observation_repo if diagnosis_enabled else None,
+            edge_repo,
+            diagnosis_repo if diagnosis_enabled else None,
+            acquisition_repo if acquisition_enabled else None,
+        ).execute(
             current_user.id,
             session_id,
             payload.word_id,
             payload.outcome,
             payload.response_time_ms,
             payload.attempted_answer,
+            ObservationInput(
+                operation_id=payload.operation_id,
+                prompt_direction=payload.prompt_direction,
+                hint_used=payload.hint_used,
+                answer_format=payload.answer_format,
+                modality=payload.modality,
+                intervention_plan_ref=payload.intervention_plan_ref,
+                self_reported_confidence=payload.self_reported_confidence,
+            ) if diagnosis_enabled else None,
         )
     except (EntityNotFoundError, PermissionDeniedError) as exc:
         _raise_for(exc)
