@@ -52,6 +52,11 @@ def owned(client, two_accounts, db_session):
     owner, _ = two_accounts
     _db = db_session
 
+    # #184: /acquisition/start 403s when this is off, which would be
+    # indistinguishable from a tenant denial in the reachable-by-owner
+    # check below unless the owner actually has the feature enabled.
+    client.put("/api/v1/recall-settings", json={"acquisition_loop_enabled": True}, headers=owner)
+
     group = client.post(
         "/api/v1/groups", json={"name": "Alex Group", "target_language": "Spanish"}, headers=owner
     ).json()
@@ -196,6 +201,11 @@ CROSS_TENANT_CASES = [
     # pattern for someone else's word.
     _case("GET", "/api/v1/words/{word}/diagnosis"),
     _case("GET", "/api/v1/words/{word}/diagnosis/history"),
+    # Graduated acquisition ladder (#184). Same disclosure concern as
+    # diagnosis above, plus a real write surface on /start and /answer.
+    _case("GET", "/api/v1/words/{word}/acquisition"),
+    _case("POST", "/api/v1/words/{word}/acquisition/start"),
+    _case("POST", "/api/v1/words/{word}/acquisition/answer", {"outcome": "correct"}),
     # AI provenance (#140). The history of someone else's card describes
     # their vocabulary, and verification is a claim about their data.
     _case("GET", "/api/v1/words/{word}/history"),

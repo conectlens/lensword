@@ -8,8 +8,10 @@ would produce and persists the result, mirroring how
 """
 from __future__ import annotations
 
+from app.application.use_cases.acquisition import EnterAcquisitionUseCase
 from app.application.use_cases.knowledge_graph import nodes_for
 from app.domain.repositories import (
+    AcquisitionStateRepository,
     DiagnosisRepository,
     KnowledgeEdgeRepository,
     LearningObservationRepository,
@@ -26,11 +28,17 @@ class RunDiagnosisForWordUseCase:
         observation_repo: LearningObservationRepository,
         edge_repo: KnowledgeEdgeRepository,
         diagnosis_repo: DiagnosisRepository,
+        acquisition_repo: AcquisitionStateRepository | None = None,
     ):
         self.word_repo = word_repo
         self.observation_repo = observation_repo
         self.edge_repo = edge_repo
         self.diagnosis_repo = diagnosis_repo
+        # Optional, same gate as everywhere else in this epic: the router
+        # only passes this when acquisition_loop_enabled is true for the
+        # account, so a disabled account's diagnosis never triggers ladder
+        # entry at all (#184 TODO 4).
+        self.acquisition_repo = acquisition_repo
 
     def execute(self, user_id: int, word_id: int):
         word = self.word_repo.get_by_id(word_id)
@@ -55,4 +63,9 @@ class RunDiagnosisForWordUseCase:
             review_state=word.review_state,
         )
         result = diagnose(context)
-        return self.diagnosis_repo.add(result)
+        result = self.diagnosis_repo.add(result)
+
+        if self.acquisition_repo is not None:
+            EnterAcquisitionUseCase(self.acquisition_repo).execute(user_id, word_id, diagnosis=result)
+
+        return result

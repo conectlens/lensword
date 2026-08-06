@@ -24,6 +24,7 @@ from app.infrastructure.repositories import (
     SqlAlchemyLearningObservationRepository,
     SqlAlchemyKnowledgeEdgeRepository,
     SqlAlchemyDiagnosisRepository,
+    SqlAlchemyAcquisitionStateRepository,
     SqlAlchemyMnemonicRepository,
     SqlAlchemyRecallSettingsRepository,
     SqlAlchemyDailySessionPreferenceRepository,
@@ -115,6 +116,10 @@ def get_diagnosis_repository(db: DbSession) -> SqlAlchemyDiagnosisRepository:
     return SqlAlchemyDiagnosisRepository(db)
 
 
+def get_acquisition_state_repository(db: DbSession) -> SqlAlchemyAcquisitionStateRepository:
+    return SqlAlchemyAcquisitionStateRepository(db)
+
+
 def get_learning_path_repository(db: DbSession) -> SqlAlchemyLearningPathRepository:
     return SqlAlchemyLearningPathRepository(db)
 
@@ -195,6 +200,9 @@ LearningObservationRepo = Annotated[
 ]
 KnowledgeEdgeRepo = Annotated[SqlAlchemyKnowledgeEdgeRepository, Depends(get_knowledge_edge_repository)]
 DiagnosisRepo = Annotated[SqlAlchemyDiagnosisRepository, Depends(get_diagnosis_repository)]
+AcquisitionStateRepo = Annotated[
+    SqlAlchemyAcquisitionStateRepository, Depends(get_acquisition_state_repository)
+]
 LearningPathRepo = Annotated[SqlAlchemyLearningPathRepository, Depends(get_learning_path_repository)]
 ConversationRepo = Annotated[SqlAlchemyConversationRepository, Depends(get_conversation_repository)]
 ScenarioAttemptRepo = Annotated[SqlAlchemyScenarioAttemptRepository, Depends(get_scenario_attempt_repository)]
