@@ -796,6 +796,55 @@ class DiagnosisModel(Base):
     competing_hypotheses: Mapped[list] = mapped_column(JSON, default=list)
 
 
+class InterventionPlanModel(Base):
+    """A bounded, testable response to a `Diagnosis` (issue #185).
+
+    Append-only, the same reasoning as `DiagnosisModel` above: a revised
+    plan is a new row, not an edit to the one already shown to a learner.
+    Only written when `RecallSettings.learning_diagnosis_enabled` is true —
+    the same gate #182/#183's tables use, since a plan always requires a
+    `Diagnosis` as input.
+    """
+
+    __tablename__ = "intervention_plans"
+    __table_args__ = (
+        Index("ix_intervention_plans_user_word_planned", "user_id", "word_id", "planned_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    word_id: Mapped[int] = mapped_column(ForeignKey("words.id"))
+    diagnosis_outcome: Mapped[str] = mapped_column(String(48))
+    strategy: Mapped[str] = mapped_column(String(48))
+    policy_version: Mapped[int] = mapped_column(Integer)
+    eligible: Mapped[bool] = mapped_column(Boolean)
+    rationale: Mapped[str] = mapped_column(String(500))
+    planned_at: Mapped[datetime] = mapped_column(DateTime)
+    scheduled_for: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class InterventionOutcomeModel(Base):
+    """Whether a planned intervention actually ran, and what came of it
+    (issue #185) — kept separate from `InterventionPlanModel` so a plan
+    never carried out is a distinct, honest fact rather than an assumed
+    completion, matching `InterventionOutcome`'s own docstring.
+    """
+
+    __tablename__ = "intervention_outcomes"
+    __table_args__ = (
+        Index("ix_intervention_outcomes_user_word_recorded", "user_id", "word_id", "recorded_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    word_id: Mapped[int] = mapped_column(ForeignKey("words.id"))
+    strategy: Mapped[str] = mapped_column(String(48))
+    completed: Mapped[bool] = mapped_column(Boolean)
+    result: Mapped[str] = mapped_column(String(48))
+    recorded_at: Mapped[datetime] = mapped_column(DateTime)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class AcquisitionEventModel(Base):
     """One transition of a same-day acquisition ladder (issue #184).
 

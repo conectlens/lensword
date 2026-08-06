@@ -35,6 +35,8 @@ from app.domain.services.diagnosis_contracts import (
     AcquisitionState,
     Diagnosis,
     DiagnosisEvidence,
+    InterventionOutcome,
+    InterventionPlan,
     LearningObservation,
     ObservationCorrection,
     ObservationCorrectionReason,
@@ -77,6 +79,8 @@ from app.infrastructure.models import (
     ObservationCorrectionModel,
     KnowledgeEdgeModel,
     DiagnosisModel,
+    InterventionPlanModel,
+    InterventionOutcomeModel,
     AcquisitionEventModel,
 )
 
@@ -422,6 +426,8 @@ def _delete_word_dependents(db: Session, word_ids: list[int]) -> None:
         # added here from the start rather than repeating that.
         LearningObservationModel,
         DiagnosisModel,
+        InterventionPlanModel,
+        InterventionOutcomeModel,
         AcquisitionEventModel,
     ):
         for row in db.scalars(select(model).where(model.word_id.in_(word_ids))):
@@ -2135,6 +2141,78 @@ class SqlAlchemyDiagnosisRepository:
             .limit(limit)
         )
         return [_diagnosis_to_domain(m) for m in self.db.scalars(stmt)]
+
+
+def _intervention_plan_to_domain(m: InterventionPlanModel) -> InterventionPlan:
+    return InterventionPlan(
+        word_id=m.word_id,
+        user_id=m.user_id,
+        diagnosis_outcome=m.diagnosis_outcome,
+        strategy=m.strategy,
+        policy_version=m.policy_version,
+        eligible=m.eligible,
+        rationale=m.rationale,
+        planned_at=m.planned_at,
+        scheduled_for=m.scheduled_for,
+    )
+
+
+def _intervention_outcome_to_domain(m: InterventionOutcomeModel) -> InterventionOutcome:
+    return InterventionOutcome(
+        word_id=m.word_id,
+        user_id=m.user_id,
+        strategy=m.strategy,
+        completed=m.completed,
+        result=m.result,
+        recorded_at=m.recorded_at,
+        completed_at=m.completed_at,
+    )
+
+
+class SqlAlchemyInterventionRepository:
+    """Append-only store of intervention plans and their outcomes (issue
+    #185) — the same shape `SqlAlchemyDiagnosisRepository` above uses."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add_plan(self, plan: InterventionPlan) -> InterventionPlan:
+        model = InterventionPlanModel(
+            user_id=plan.user_id,
+            word_id=plan.word_id,
+            diagnosis_outcome=plan.diagnosis_outcome,
+            strategy=plan.strategy,
+            policy_version=plan.policy_version,
+            eligible=plan.eligible,
+            rationale=plan.rationale,
+            planned_at=plan.planned_at,
+            scheduled_for=plan.scheduled_for,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _intervention_plan_to_domain(model)
+
+    def add_outcome(self, outcome: InterventionOutcome) -> InterventionOutcome:
+        model = InterventionOutcomeModel(
+            user_id=outcome.user_id,
+            word_id=outcome.word_id,
+            strategy=outcome.strategy,
+            completed=outcome.completed,
+            result=outcome.result,
+            recorded_at=outcome.recorded_at,
+            completed_at=outcome.completed_at,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _intervention_outcome_to_domain(model)
+
+    def list_plans_for_word(self, user_id: int, word_id: int) -> list[InterventionPlan]:
+        stmt = (
+            select(InterventionPlanModel)
+            .where(InterventionPlanModel.user_id == user_id, InterventionPlanModel.word_id == word_id)
+            .order_by(InterventionPlanModel.planned_at.desc())
+        )
+        return [_intervention_plan_to_domain(m) for m in self.db.scalars(stmt)]
 
 
 def _acquisition_state_to_domain(m: AcquisitionEventModel) -> AcquisitionState:

@@ -4,6 +4,7 @@ from app.api.deps import (
     AcquisitionStateRepo,
     CurrentUser,
     DiagnosisRepo,
+    InterventionRepo,
     KnowledgeEdgeRepo,
     LearningObservationRepo,
     MistakeEventRepo,
@@ -103,6 +104,7 @@ def submit_answer(
     edge_repo: KnowledgeEdgeRepo,
     diagnosis_repo: DiagnosisRepo,
     acquisition_repo: AcquisitionStateRepo,
+    intervention_repo: InterventionRepo,
 ) -> SubmitAnswerResponse:
     try:
         settings = settings_repo.get_by_user(current_user.id)
@@ -125,6 +127,7 @@ def submit_answer(
             edge_repo,
             diagnosis_repo if diagnosis_enabled else None,
             acquisition_repo if acquisition_enabled else None,
+            intervention_repo if diagnosis_enabled else None,
         ).execute(
             current_user.id,
             session_id,

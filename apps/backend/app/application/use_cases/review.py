@@ -179,6 +179,7 @@ class SubmitAnswerUseCase:
         edge_repo=None,
         diagnosis_repo=None,
         acquisition_repo=None,
+        intervention_repo=None,
     ):
         self.session_repo = session_repo
         self.word_repo = word_repo
@@ -205,6 +206,11 @@ class SubmitAnswerUseCase:
         # is true, so a diagnosis-driven ladder entry only ever happens for
         # an account that opted in — same gate, one level further out.
         self.acquisition_repo = acquisition_repo
+        # #185: not behind its own flag — a plan always requires a
+        # Diagnosis as input, so the router passes this whenever
+        # learning_diagnosis_enabled is true, the same gate diagnosis_repo
+        # already uses.
+        self.intervention_repo = intervention_repo
 
     def execute(
         self,
@@ -246,7 +252,8 @@ class SubmitAnswerUseCase:
         if self.diagnosis_repo is None or self.observation_repo is None or self.edge_repo is None:
             return
         RunDiagnosisForWordUseCase(
-            self.word_repo, self.observation_repo, self.edge_repo, self.diagnosis_repo, self.acquisition_repo
+            self.word_repo, self.observation_repo, self.edge_repo, self.diagnosis_repo,
+            self.acquisition_repo, self.intervention_repo,
         ).execute(user_id, word_id)
 
     def _record_observation(
