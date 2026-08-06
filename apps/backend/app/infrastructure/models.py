@@ -231,6 +231,12 @@ class RecallSettingsModel(Base):
     semantic_relatedness_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=false()
     )
+    contrast_cards_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
+    contrast_min_stability: Mapped[float] = mapped_column(
+        Float, default=21.0, server_default="21.0"
+    )
     # Same server_default requirement as semantic_relatedness_enabled above,
     # for the same reason: 20260730_14's backfill INSERT predates these
     # fields and cannot name them.
