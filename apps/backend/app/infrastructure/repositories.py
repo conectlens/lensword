@@ -423,6 +423,103 @@ def _delete_word_dependents(db: Session, word_ids: list[int]) -> None:
     db.flush()
 
 
+def _delete_group_dependents(db: Session, group_id: int) -> None:
+    """Remove every row that references this group: its words (and each
+    word's own dependants via `_delete_word_dependents`), rooms and their
+    placements, and reminders. Does not delete the group row itself, so
+    callers can run this ahead of a bulk delete (e.g. the owning account)
+    that will remove the group separately.
+
+    A learning path or conversation's `group_id` is optional — a goal or a
+    tutoring session can be about a language studied across several groups,
+    not pinned to one — so losing the group it happened to reference is not
+    losing anything the path/conversation means. The reference is cleared
+    rather than the row deleted, the same choice already made for
+    `MistakeEventModel.confused_with_word_id`, and for the same two reasons:
+    the row still has a life of its own, and leaving the id in place would
+    be a dangling foreign key on Postgres the moment this group is gone.
+    """
+    for path in db.scalars(select(LearningPathModel).where(LearningPathModel.group_id == group_id)):
+        path.group_id = None
+    for conversation in db.scalars(
+        select(ConversationSessionModel).where(ConversationSessionModel.group_id == group_id)
+    ):
+        conversation.group_id = None
+    word_ids = list(db.scalars(select(WordModel.id).where(WordModel.group_id == group_id)))
+    _delete_word_dependents(db, word_ids)
+    for room in db.scalars(select(RoomModel).where(RoomModel.group_id == group_id)):
+        for placement in list(room.placements):
+            db.delete(placement)
+        db.delete(room)
+    for reminder in db.scalars(select(ReminderModel).where(ReminderModel.group_id == group_id)):
+        db.delete(reminder)
+    for word in db.scalars(select(WordModel).where(WordModel.group_id == group_id)):
+        db.delete(word)
+
+
+def _delete_user_dependents(db: Session, user_id: int) -> None:
+    """Remove every row that references this account, directly or through
+    an owned group/word, so the account row can be deleted without
+    orphaning data — silently on SQLite, a `ForeignKeyViolation` on
+    Postgres, the same bug class `_delete_word_dependents` and
+    `_delete_group_dependents` exist to close off at the word/group level.
+
+    Dependants are removed explicitly rather than through
+    `UserModel`'s `cascade="all, delete-orphan"` relationships (`groups`,
+    `rooms`, `review_sessions`): those only cascade one level, and several
+    of the tables below (learning observations, diagnoses, acquisition
+    events, knowledge edges) are not declared as relationships at all, so
+    an ORM-only cascade would still leave them behind.
+
+    Rooms, reminders, mistakes and practice exercises are not deleted by
+    `user_id` here: every use case that creates one requires group or word
+    ownership first (`_require_group_owner`/`_require_word_owner`), so they
+    are always reachable through the owned-group loop below — a room and
+    reminder through their `group_id`, a mistake or practice exercise
+    through their (NOT NULL) `word_id` via `_delete_word_dependents`.
+    """
+    for group_id in list(db.scalars(select(GroupModel.id).where(GroupModel.owner_id == user_id))):
+        _delete_group_dependents(db, group_id)
+        db.delete(db.get(GroupModel, group_id))
+
+    for review_session in db.scalars(select(ReviewSessionModel).where(ReviewSessionModel.user_id == user_id)):
+        for attempt in db.scalars(
+            select(ReviewAttemptModel).where(ReviewAttemptModel.session_id == review_session.id)
+        ):
+            db.delete(attempt)
+        db.delete(review_session)
+
+    for path in db.scalars(select(LearningPathModel).where(LearningPathModel.user_id == user_id)):
+        for milestone in db.scalars(select(PathMilestoneModel).where(PathMilestoneModel.path_id == path.id)):
+            db.delete(milestone)
+        db.delete(path)
+
+    for conversation in db.scalars(
+        select(ConversationSessionModel).where(ConversationSessionModel.user_id == user_id)
+    ):
+        for attempt in db.scalars(
+            select(ScenarioAttemptModel).where(ScenarioAttemptModel.session_id == conversation.id)
+        ):
+            db.delete(attempt)
+        for message in db.scalars(
+            select(ConversationMessageModel).where(ConversationMessageModel.session_id == conversation.id)
+        ):
+            db.delete(message)
+        db.delete(conversation)
+
+    for model in (
+        RecallSettingsModel,
+        DailySessionPreferenceModel,
+        WeeklyLearningReportModel,
+        DesktopNotificationModel,
+        SyncOperationModel,
+    ):
+        for row in db.scalars(select(model).where(model.user_id == user_id)):
+            db.delete(row)
+
+    db.flush()
+
+
 class SqlAlchemyUserRepository:
     def __init__(self, db: Session):
         self.db = db
@@ -457,6 +554,7 @@ class SqlAlchemyUserRepository:
     def delete(self, user_id: int) -> None:
         m = self.db.get(UserModel, user_id)
         if m is not None:
+            _delete_user_dependents(self.db, user_id)
             self.db.delete(m)
             self.db.flush()
 
@@ -507,18 +605,7 @@ class SqlAlchemyGroupRepository:
         m = self.db.get(GroupModel, group_id)
         if m is None:
             return
-        # Depth first: placements reference both a room and a word, so both
-        # sides have to go before either parent can.
-        word_ids = list(self.db.scalars(select(WordModel.id).where(WordModel.group_id == group_id)))
-        _delete_word_dependents(self.db, word_ids)
-        for room in self.db.scalars(select(RoomModel).where(RoomModel.group_id == group_id)):
-            for placement in list(room.placements):
-                self.db.delete(placement)
-            self.db.delete(room)
-        for reminder in self.db.scalars(select(ReminderModel).where(ReminderModel.group_id == group_id)):
-            self.db.delete(reminder)
-        for word in self.db.scalars(select(WordModel).where(WordModel.group_id == group_id)):
-            self.db.delete(word)
+        _delete_group_dependents(self.db, group_id)
         self.db.delete(m)
         self.db.flush()
 
