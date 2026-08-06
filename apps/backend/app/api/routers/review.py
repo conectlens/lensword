@@ -22,12 +22,15 @@ from app.api.schemas.review import (
     SubmitAnswerResponse,
     WeeklyProgressResponse,
 )
+from app.application.use_cases.knowledge_graph import graph_for_user
 from app.application.use_cases.review import (
+    MULTIPLE_CHOICE_MODES,
     CompleteReviewSessionUseCase,
     GetWeeklyProgressUseCase,
     ObservationInput,
     StartReviewSessionUseCase,
     SubmitAnswerUseCase,
+    build_mcq_options_for_words,
 )
 from app.domain.exceptions import EntityNotFoundError, NoWordsDueError, PermissionDeniedError
 from app.domain.services.spaced_repetition import FSRSScheduler, SpacedRepetitionScheduler
@@ -55,6 +58,8 @@ def start_session(
     session_repo: ReviewSessionRepo,
     word_repo: WordRepo,
     mistake_repo: MistakeEventRepo,
+    settings_repo: RecallSettingsRepo,
+    edge_repo: KnowledgeEdgeRepo,
 ) -> StartReviewSessionResponse:
     try:
         session, words = StartReviewSessionUseCase(session_repo, word_repo, mistake_repo).execute(
@@ -62,7 +67,27 @@ def start_session(
         )
     except NoWordsDueError as exc:
         _raise_for(exc)
-    return StartReviewSessionResponse(session_id=session.id, mode=session.mode, words=[word_to_response(w) for w in words])
+
+    # #205: only a multiple-choice mode needs options at all, and only with
+    # the relatedness flag on — everything else stays byte-identical to
+    # before this field existed, matching ADR 0007's "no flag, no branch"
+    # discipline for every other opt-in surface in this router.
+    settings = settings_repo.get_by_user(current_user.id)
+    mcq_selections = {}
+    if payload.mode in MULTIPLE_CHOICE_MODES and bool(settings and settings.semantic_relatedness_enabled):
+        all_words = word_repo.list_all_for_user(current_user.id)
+        graph = graph_for_user(all_words, edge_repo, current_user.id)
+        mcq_selections = build_mcq_options_for_words(words, all_words, graph)
+
+    responses = []
+    for word in words:
+        response = word_to_response(word)
+        selection = mcq_selections.get(word.id)
+        if selection is not None:
+            response.mcq_options = selection.options
+        responses.append(response)
+
+    return StartReviewSessionResponse(session_id=session.id, mode=session.mode, words=responses)
 
 
 @router.post("/sessions/{session_id}/answers", response_model=SubmitAnswerResponse)
