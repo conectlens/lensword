@@ -331,6 +331,10 @@ def _settings_to_domain(m: RecallSettingsModel) -> RecallSettings:
         learning_diagnosis_enabled=m.learning_diagnosis_enabled,
         acquisition_loop_enabled=m.acquisition_loop_enabled,
         ai_coach_enabled=m.ai_coach_enabled,
+        ai_companion_enabled=m.ai_companion_enabled,
+        companion_sampling_enabled=m.companion_sampling_enabled,
+        companion_remote_enabled=m.companion_remote_enabled,
+        companion_multimodal_enabled=m.companion_multimodal_enabled,
     )
 
 
@@ -1042,6 +1046,10 @@ class SqlAlchemyRecallSettingsRepository:
         m.learning_diagnosis_enabled = settings.learning_diagnosis_enabled
         m.acquisition_loop_enabled = settings.acquisition_loop_enabled
         m.ai_coach_enabled = settings.ai_coach_enabled
+        m.ai_companion_enabled = settings.ai_companion_enabled
+        m.companion_sampling_enabled = settings.companion_sampling_enabled
+        m.companion_remote_enabled = settings.companion_remote_enabled
+        m.companion_multimodal_enabled = settings.companion_multimodal_enabled
         self.db.flush()
         return _settings_to_domain(m)
 

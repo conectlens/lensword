@@ -316,6 +316,36 @@ def test_learning_diagnosis_flags_default_off_and_are_independently_controllable
     assert unrelated.json()["learning_diagnosis_enabled"] is True
 
 
+def test_ai_companion_flags_default_off_and_are_independently_controllable(client, auth_headers):
+    """ADR 0008 / issue #191 TODO 3: four flags, not one — remote and
+    multimodal access are each their own opt-in, not implied by turning the
+    companion on at all."""
+    headers = auth_headers()
+
+    defaults = client.get("/api/v1/recall-settings", headers=headers).json()
+    assert defaults["ai_companion_enabled"] is False
+    assert defaults["companion_sampling_enabled"] is False
+    assert defaults["companion_remote_enabled"] is False
+    assert defaults["companion_multimodal_enabled"] is False
+
+    resp = client.put(
+        "/api/v1/recall-settings",
+        json={"ai_companion_enabled": True},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ai_companion_enabled"] is True
+    # Enabling the companion alone leaves the other three untouched.
+    assert body["companion_sampling_enabled"] is False
+    assert body["companion_remote_enabled"] is False
+    assert body["companion_multimodal_enabled"] is False
+
+    unrelated = client.put("/api/v1/recall-settings", json={"intensity": 4}, headers=headers)
+    assert unrelated.status_code == 200
+    assert unrelated.json()["ai_companion_enabled"] is True
+
+
 def test_adaptive_practice_exercise_daily_preferences_and_pronunciation(client, auth_headers):
     headers = auth_headers()
     _group, word = _setup_group_with_word(client, headers, term="hola", translation="hello")
