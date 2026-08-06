@@ -75,6 +75,28 @@ def test_suggest_mnemonic_returns_generated_text():
     assert result == "Think 'you-BIK-wit-us'"
 
 
+def _enrich(provider: OllamaProvider, term: str = "prestar"):
+    return asyncio.run(provider.enrich_word(term, "English", "Spanish"))
+
+
+def test_enrich_word_maps_the_ais_tags_output_onto_topics_too():
+    """Issue #202 TODO 5: the AI is asked for "tags", but the knowledge
+    graph, learning paths, and scenario matching all read `Word.topics` —
+    not `Word.tags`. `enrich_word` must populate both from the same parsed
+    value rather than leaving `topics` empty."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"response": json.dumps({"tags": ["finance", "favors"]})},
+        )
+
+    enrichment = _enrich(_provider(handler))
+
+    assert enrichment.tags == ["finance", "favors"]
+    assert enrichment.topics == ["finance", "favors"]
+
+
 def test_extract_normalizes_a_single_nested_candidate_and_keeps_target_examples():
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.read())

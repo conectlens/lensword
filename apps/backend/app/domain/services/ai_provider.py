@@ -45,6 +45,14 @@ class WordEnrichment:
     antonyms: list[str] = field(default_factory=list)
     collocations: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
+    # Deliberately the same values as `tags` (issue #202 TODO 5): the AI is
+    # asked for "tags", but the knowledge graph, learning paths, and
+    # scenario matching all read `Word.topics`, not `Word.tags`. Rather than
+    # rename the AI's own contract, this field is populated from the same
+    # parsed value so every downstream consumer can read `topics` and get
+    # real data instead of an empty list. `tags` is kept for the callers
+    # that already display it.
+    topics: list[str] = field(default_factory=list)
     mnemonic: str | None = None
     category: str | None = None
     confidence: float | None = None

@@ -72,6 +72,9 @@ export interface WordInput {
   pronunciation?: string | null
   collocations?: string[]
   tags?: string[]
+  synonyms?: string[]
+  antonyms?: string[]
+  topics?: string[]
   ai_confidence?: number | null
   ai_provider?: string | null
   ai_model?: string | null
@@ -97,7 +100,7 @@ export const extractionApi = {
     request<ExtractVocabularyResult>('/api/v1/extract', { method: 'POST', body: JSON.stringify({ group_id, text, source_language, target_language, min_level }) }),
 }
 
-export interface ImportPreviewRecord { term: string; translations: string[]; definition: string | null; part_of_speech: string | null; cefr_level: string | null; pronunciation: string | null; source_language: string; status: 'ready' | 'ai_cleaned' | 'duplicate'; duplicate_of: string | null; provider: string | null; model: string | null }
+export interface ImportPreviewRecord { term: string; translations: string[]; definition: string | null; part_of_speech: string | null; cefr_level: string | null; pronunciation: string | null; source_language: string; status: 'ready' | 'ai_cleaned' | 'duplicate'; duplicate_of: string | null; provider: string | null; model: string | null; synonyms: string[]; antonyms: string[]; topics: string[] }
 export const importsApi = {
   parseFile: async (file: File) => {
     const data = new FormData(); data.append('file', file)
