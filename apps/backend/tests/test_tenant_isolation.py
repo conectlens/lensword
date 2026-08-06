@@ -191,6 +191,11 @@ CROSS_TENANT_CASES = [
     # relates to.
     _case("GET", "/api/v1/words/{word}/prerequisites"),
     _case("GET", "/api/v1/words/{word}/related"),
+    # Deterministic diagnosis (#183). Read-only, but the same disclosure
+    # concern as the graph endpoints above: it names a specific failure
+    # pattern for someone else's word.
+    _case("GET", "/api/v1/words/{word}/diagnosis"),
+    _case("GET", "/api/v1/words/{word}/diagnosis/history"),
     # AI provenance (#140). The history of someone else's card describes
     # their vocabulary, and verification is a claim about their data.
     _case("GET", "/api/v1/words/{word}/history"),

@@ -117,11 +117,19 @@ class Diagnosis:
     """A conclusion reached by deterministic rules (#183) from observed
     evidence — never by asking a model what it thinks is wrong.
 
-    `outcome` is `DIAGNOSIS_UNKNOWN` or `DIAGNOSIS_INSUFFICIENT_EVIDENCE`
-    until #183 ships its closed taxonomy; this contract does not itself
-    constrain which strings are valid, since that closed set is explicitly
-    owned elsewhere. `confidence` is deterministic, derived from the
-    evidence's own weights — not a number an LLM was asked to produce.
+    `outcome` is one of #183's closed `DiagnosisCategory` values (or the
+    `DIAGNOSIS_UNKNOWN`/`DIAGNOSIS_INSUFFICIENT_EVIDENCE` sentinels this
+    contract already defined ahead of that taxonomy); this contract does
+    not itself constrain which strings are valid, since that closed set is
+    owned in `diagnosis_engine.py`, not here. `confidence` is
+    deterministic, derived from the evidence's own weights — not a number
+    an LLM was asked to produce.
+
+    `sample_size` and `competing_hypotheses` are #183 TODO 1's own
+    requirements ("sample size... and competing hypotheses"), added here
+    rather than kept only on the engine's intermediate candidate type —
+    added after the contract's first version (schema_version-style
+    additive change, matching how #182 extended this same dataclass).
     """
 
     word_id: int
@@ -131,6 +139,12 @@ class Diagnosis:
     confidence: float | None
     rules_version: int
     diagnosed_at: datetime
+    sample_size: int = 0
+    # Other outcomes the winning rule's own evidence could also have
+    # supported, named by the rule rather than inferred after the fact —
+    # #183 TODO 1's "prevent multiple rules from silently claiming the
+    # same evidence as independent proof."
+    competing_hypotheses: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.confidence is not None and not 0.0 <= self.confidence <= 1.0:

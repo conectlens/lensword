@@ -30,7 +30,7 @@ from app.domain.entities import (
     Word,
 )
 from app.domain.services.cefr_progress import MASTERY_STRENGTH
-from app.domain.services.diagnosis_contracts import LearningObservation
+from app.domain.services.diagnosis_contracts import Diagnosis, DiagnosisEvidence, LearningObservation
 from app.domain.services.knowledge_graph import KnowledgeEdge, Relation
 from app.domain.value_objects import (
     DEFAULT_TIME_ZONE,
@@ -67,6 +67,7 @@ from app.infrastructure.models import (
     WordModel,
     LearningObservationModel,
     KnowledgeEdgeModel,
+    DiagnosisModel,
 )
 
 logger = logging.getLogger(__name__)
@@ -382,6 +383,13 @@ def _delete_word_dependents(db: Session, word_ids: list[int]) -> None:
         PracticeExerciseModel,
         MistakeEventModel,
         WordFieldRevisionModel,
+        # #182/#183: both carry a NOT NULL word_id, so — like ReviewAttemptModel
+        # above — they cannot be dereferenced the way MistakeEventModel's
+        # confused_with_word_id is; they are deleted with the word. This was
+        # missed when each table shipped, which SQLite (never enforcing
+        # PRAGMA foreign_keys) would not catch but Postgres would.
+        LearningObservationModel,
+        DiagnosisModel,
     ):
         for row in db.scalars(select(model).where(model.word_id.in_(word_ids))):
             db.delete(row)
@@ -1849,3 +1857,78 @@ class SqlAlchemyKnowledgeEdgeRepository:
                 )
             )
         self.db.flush()
+
+
+def _evidence_to_json(evidence: tuple[DiagnosisEvidence, ...]) -> list[dict]:
+    return [
+        {"kind": e.kind, "observation_ids": list(e.observation_ids), "weight": e.weight, "description": e.description}
+        for e in evidence
+    ]
+
+
+def _evidence_from_json(payload: list[dict]) -> tuple[DiagnosisEvidence, ...]:
+    return tuple(
+        DiagnosisEvidence(
+            kind=item["kind"],
+            observation_ids=tuple(item["observation_ids"]),
+            weight=item["weight"],
+            description=item["description"],
+        )
+        for item in payload
+    )
+
+
+def _diagnosis_to_domain(m: DiagnosisModel) -> Diagnosis:
+    return Diagnosis(
+        word_id=m.word_id,
+        user_id=m.user_id,
+        outcome=m.outcome,
+        evidence=_evidence_from_json(m.evidence),
+        confidence=m.confidence,
+        rules_version=m.rules_version,
+        diagnosed_at=m.diagnosed_at,
+        sample_size=m.sample_size,
+        competing_hypotheses=tuple(m.competing_hypotheses),
+    )
+
+
+class SqlAlchemyDiagnosisRepository:
+    """Append-only store of deterministic diagnoses (issue #183)."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add(self, diagnosis: Diagnosis) -> Diagnosis:
+        model = DiagnosisModel(
+            user_id=diagnosis.user_id,
+            word_id=diagnosis.word_id,
+            outcome=diagnosis.outcome,
+            evidence=_evidence_to_json(diagnosis.evidence),
+            confidence=diagnosis.confidence,
+            rules_version=diagnosis.rules_version,
+            diagnosed_at=diagnosis.diagnosed_at,
+            sample_size=diagnosis.sample_size,
+            competing_hypotheses=list(diagnosis.competing_hypotheses),
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _diagnosis_to_domain(model)
+
+    def latest_for_word(self, user_id: int, word_id: int) -> Diagnosis | None:
+        stmt = (
+            select(DiagnosisModel)
+            .where(DiagnosisModel.user_id == user_id, DiagnosisModel.word_id == word_id)
+            .order_by(DiagnosisModel.diagnosed_at.desc())
+            .limit(1)
+        )
+        model = self.db.scalars(stmt).first()
+        return _diagnosis_to_domain(model) if model else None
+
+    def list_for_word(self, user_id: int, word_id: int, limit: int = 50) -> list[Diagnosis]:
+        stmt = (
+            select(DiagnosisModel)
+            .where(DiagnosisModel.user_id == user_id, DiagnosisModel.word_id == word_id)
+            .order_by(DiagnosisModel.diagnosed_at.desc())
+            .limit(limit)
+        )
+        return [_diagnosis_to_domain(m) for m in self.db.scalars(stmt)]

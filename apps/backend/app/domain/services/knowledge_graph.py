@@ -251,6 +251,16 @@ class KnowledgeGraph:
         self.nodes = {node.word_id: node for node in nodes}
         self.edges = edges
 
+    def __eq__(self, other: object) -> bool:
+        # Value equality rather than the default identity comparison —
+        # needed so a fixture embedding a graph (#183's golden dataset) can
+        # itself be compared for reproducibility. Nothing in a live request
+        # path compares two KnowledgeGraph instances, so this has no
+        # bearing on #203's byte-identical-endpoints guarantee.
+        if not isinstance(other, KnowledgeGraph):
+            return NotImplemented
+        return self.nodes == other.nodes and self.edges == other.edges
+
     def related(self, word_id: int, limit: int = 10) -> list[KnowledgeEdge]:
         """Everything joined to this word, strongest first."""
         touching = [e for e in self.edges if word_id in (e.source_id, e.target_id)]
