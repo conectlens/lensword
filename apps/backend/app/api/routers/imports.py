@@ -4,14 +4,48 @@ import json
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
-from app.api.deps import CurrentUser, GroupRepo, KnowledgeEdgeRepo, MistakeEventRepo, OptionalAIProvider, WordRepo, rate_limit_import_upload, rate_limit_import_url
+from app.api.deps import CurrentUser, GroupRepo, KnowledgeEdgeRepo, MistakeEventRepo, OptionalAIProvider, RecallSettingsRepo, WordRepo, rate_limit_import_upload, rate_limit_import_url
 from app.api.schemas.imports import ImportCommitRequest, ImportParseResponse, ImportPreviewRecord, ImportPreviewRequest, ImportPreviewResponse, ImportRecordRequest, ImportUrlRequest
 from app.application.use_cases.vocabulary import AddWordUseCase, WordInput, _require_group_owner
 from app.domain.exceptions import AIProviderUnavailableError, EntityNotFoundError, PermissionDeniedError
 from app.domain.services.documents import DocumentStructureError, DocumentTooLargeError
+from app.domain.services.knowledge_graph import WordNode
+from app.domain.services.semantic_diversity import order_for_diversity
 from app.domain.services.url_safety import UrlRejected
 from app.infrastructure.document_parsers import detect_media_type, parse_document
 from app.infrastructure.url_fetch import UrlFetchFailed, fetch_document
+
+
+def _order_preview_for_diversity(records: list[ImportPreviewRecord], existing_words) -> tuple[list[ImportPreviewRecord], bool]:
+    """Issue #204: keep semantically related candidates apart in the preview
+    order, and defer any that overlap vocabulary the account already
+    studies. Duplicates are excluded from candidacy — they're skipped at
+    commit regardless — and kept at the end in their original order.
+    """
+    orderable = [r for r in records if r.status != 'duplicate']
+    duplicates = [r for r in records if r.status == 'duplicate']
+    if not orderable:
+        return records, False
+
+    candidates = [
+        WordNode(word_id=i, term=r.term, synonyms=tuple(r.synonyms), antonyms=tuple(r.antonyms), topics=tuple(r.topics))
+        for i, r in enumerate(orderable)
+    ]
+    recently_studied = [
+        WordNode(word_id=1_000_000 + i, term=w.term, synonyms=tuple(w.synonyms), antonyms=tuple(w.antonyms), topics=tuple(w.topics))
+        for i, w in enumerate(existing_words)
+    ]
+    result = order_for_diversity(candidates, recently_studied=recently_studied)
+
+    reordered: list[ImportPreviewRecord] = []
+    for position in result.order:
+        record = orderable[position]
+        if position in result.deferred_for_recent_study:
+            record = record.model_copy(update={'deferred_reason': 'Related to vocabulary you already study'})
+        reordered.append(record)
+
+    applied = [r.term for r in reordered] != [r.term for r in orderable]
+    return [*reordered, *duplicates], applied
 
 router = APIRouter(prefix='/api/v1/imports', tags=['vocabulary import'])
 
@@ -105,7 +139,14 @@ async def parse_file(_user: CurrentUser, file: UploadFile = File(...)) -> Import
 
 
 @router.post('/preview', response_model=ImportPreviewResponse)
-async def preview(payload: ImportPreviewRequest, current_user: CurrentUser, group_repo: GroupRepo, provider: OptionalAIProvider) -> ImportPreviewResponse:
+async def preview(
+    payload: ImportPreviewRequest,
+    current_user: CurrentUser,
+    group_repo: GroupRepo,
+    provider: OptionalAIProvider,
+    settings_repo: RecallSettingsRepo,
+    word_repo: WordRepo,
+) -> ImportPreviewResponse:
     try: group = _require_group_owner(group_repo, payload.group_id, current_user.id)
     except EntityNotFoundError as exc: raise HTTPException(404, str(exc)) from exc
     except PermissionDeniedError as exc: raise HTTPException(403, str(exc)) from exc
@@ -133,7 +174,13 @@ async def preview(payload: ImportPreviewRequest, current_user: CurrentUser, grou
                 metadata = {'provider': enriched.provider, 'model': enriched.model}; cleaned = True
             except AIProviderUnavailableError: pass
         records.append(ImportPreviewRecord(**values, source_language=_language(payload.source_language, record.term), status='ai_cleaned' if cleaned else 'ready', **metadata))
-    return ImportPreviewResponse(records=records)
+    settings = settings_repo.get_by_user(current_user.id)
+    applied = False
+    if settings and settings.semantic_relatedness_enabled:
+        existing_words = word_repo.list_all_for_user(current_user.id)
+        records, applied = _order_preview_for_diversity(records, existing_words)
+
+    return ImportPreviewResponse(records=records, diversity_ordering_applied=applied)
 
 
 @router.post('/commit', status_code=status.HTTP_201_CREATED)
