@@ -278,3 +278,36 @@ defaulting to English) is fixed and confirmed. The two remaining gaps
 capability limits this project's prompt-engineering lever cannot pull
 past — worth knowing, not worth re-litigating with more prompt tweaks
 against the same model.
+
+## Follow-up: role-play scoring gate re-verified, new finding (issue #213)
+
+Item 3 above was addressed with a content-aware gate: scoring now also
+requires a minimum total character count across the learner's turns
+(`MIN_LEARNER_CHARACTERS_TO_SCORE`, `app/domain/services/scenarios.py`),
+not just the existing turn-count minimum — the exact "queso" / "no se" /
+"mmm" / "banana carro azul" transcript that scored 82/100 against a real
+model is now refused before the model is ever asked, deterministically,
+regardless of what that model would have said. Confirmed against the real
+model with the gate bypassed on purpose: asked anyway, the strengthened
+evaluation prompt (an explicit instruction to return no scores for
+low-effort content) brought the score down from the original 82 to 15 and
+produced an honest "learner struggled" summary instead of a fabricated
+success narrative — better, but still incorrectly claimed two goals were
+met that were not. This confirms the character gate, not the prompt
+alone, is what actually closes this defect; the prompt change is a
+secondary safety net for content that clears the gate but is still weak.
+
+**New finding, out of scope for #213**: verifying a *good* attempt (a
+genuine 4-turn restaurant order, well over the character floor) surfaced
+a different, pre-existing reliability gap. In 2 of 3 runs, the model
+returned `scores` with the right dimension keys but the wrong shape
+inside them — nested per-word or per-criterion sub-objects
+(`{"vocabulary": {"table": {"score": 90, ...}, "menu": {...}}}`) instead
+of the expected `{"vocabulary": {"score": N, "comment": "..."}}` —  which
+`validate_evaluation` correctly refuses as unusable rather than
+misreading, but means a well-executed, substantial attempt can still come
+back unscored for reasons that have nothing to do with effort or content.
+Not something a low-effort gate can fix, and not what #213 asked for;
+worth its own issue if this keeps happening (a stricter schema
+instruction or a few-shot example in the prompt would be the first things
+to try).
