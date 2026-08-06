@@ -27,7 +27,7 @@ class _Planner:
         self.error = error
         self.calls = 0
 
-    async def generate_learning_path(self, goal, target_language, max_milestones):
+    async def generate_learning_path(self, goal, target_language, max_milestones, min_milestones):
         self.calls += 1
         if self.error:
             raise self.error
