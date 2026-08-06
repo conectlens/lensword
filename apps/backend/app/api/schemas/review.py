@@ -28,6 +28,21 @@ class SubmitAnswerRequest(BaseModel):
     # and the mistake is still recorded — just without the confusion pair,
     # which cannot be inferred from an outcome alone.
     attempted_answer: str | None = None
+    # Everything below is #182's richer telemetry, all optional so an
+    # existing client stays valid unmodified. None of it is read unless
+    # the account has learning_diagnosis_enabled on (ADR 0007).
+    #
+    # Client-generated and stable across retries — the same idempotency
+    # contract issue #90's sync submission already uses.
+    operation_id: str | None = Field(default=None, max_length=64)
+    prompt_direction: str | None = Field(default=None, max_length=32)
+    hint_used: bool = False
+    answer_format: str | None = Field(default=None, max_length=32)
+    modality: str | None = Field(default=None, max_length=32)
+    intervention_plan_ref: str | None = Field(default=None, max_length=64)
+    # Only ever the learner's own stated confidence — never populated from
+    # an AI guess (ADR 0007).
+    self_reported_confidence: float | None = Field(default=None, ge=0, le=1)
 
 
 class SubmitAnswerResponse(BaseModel):

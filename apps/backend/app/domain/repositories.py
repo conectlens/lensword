@@ -158,11 +158,31 @@ class DesktopNotificationRepository(Protocol):
 class LearningObservationRepository(Protocol):
     """Append-only: nothing here updates or deletes a recorded observation.
     A wrong observation is corrected by a later, separate one, the same way
-    `mistake_memory.py` treats mistake history."""
+    `mistake_memory.py` treats mistake history.
+
+    Query methods below cover the five axes issue #182 TODO 4 names: word,
+    pair, time window, modality, and intervention — each account-scoped and
+    limit-bounded, so a diagnosis query can never become an unbounded scan
+    of one user's entire history.
+    """
 
     def add(self, observation: LearningObservation) -> LearningObservation: ...
-    def list_for_word(self, user_id: int, word_id: int, limit: int = 500) -> list[LearningObservation]: ...
     def get_by_id(self, user_id: int, observation_id: str) -> LearningObservation | None: ...
+    # #182 TODO 1: the idempotency lookup. A caller checks this before
+    # `add`-ing, the same find-before-insert pattern
+    # SubmitSyncOperationsUseCase already uses for sync operations.
+    def find_by_operation(self, user_id: int, operation_id: str) -> LearningObservation | None: ...
+    def list_for_word(self, user_id: int, word_id: int, limit: int = 500) -> list[LearningObservation]: ...
+    def list_for_pair(
+        self, user_id: int, word_id_a: int, word_id_b: int, limit: int = 500
+    ) -> list[LearningObservation]: ...
+    def list_in_window(
+        self, user_id: int, since: datetime, until: datetime, limit: int = 1000
+    ) -> list[LearningObservation]: ...
+    def list_by_modality(self, user_id: int, modality: str, limit: int = 500) -> list[LearningObservation]: ...
+    def list_by_intervention(
+        self, user_id: int, intervention_plan_ref: str, limit: int = 500
+    ) -> list[LearningObservation]: ...
 
 
 class DiagnosisRepository(Protocol):

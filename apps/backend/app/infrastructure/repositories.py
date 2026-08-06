@@ -7,6 +7,7 @@ that no SQLAlchemy type ever leaks past this module.
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import datetime
 
 from sqlalchemy import func, or_, select
@@ -29,6 +30,7 @@ from app.domain.entities import (
     Word,
 )
 from app.domain.services.cefr_progress import MASTERY_STRENGTH
+from app.domain.services.diagnosis_contracts import LearningObservation
 from app.domain.value_objects import (
     DEFAULT_TIME_ZONE,
     Recurrence,
@@ -62,6 +64,7 @@ from app.infrastructure.models import (
     RoomPlacementModel,
     UserModel,
     WordModel,
+    LearningObservationModel,
 )
 
 logger = logging.getLogger(__name__)
@@ -1597,3 +1600,142 @@ class SqlAlchemyScenarioAttemptRepository:
         attempt.evaluation = evaluation
         self.db.flush()
         return attempt
+
+
+def _learning_observation_to_domain(m: LearningObservationModel) -> LearningObservation:
+    return LearningObservation(
+        observation_id=m.observation_id,
+        word_id=m.word_id,
+        user_id=m.user_id,
+        outcome=ReviewOutcome(m.outcome),
+        session_mode=SessionMode(m.session_mode),
+        observed_at=m.observed_at,
+        operation_id=m.operation_id,
+        attempted_answer=m.attempted_answer,
+        response_time_ms=m.response_time_ms,
+        prompt_direction=m.prompt_direction,
+        hint_used=m.hint_used,
+        answer_format=m.answer_format,
+        modality=m.modality,
+        intervention_plan_ref=m.intervention_plan_ref,
+        self_reported_confidence=m.self_reported_confidence,
+        context_source=m.context_source,
+        schema_version=m.schema_version,
+    )
+
+
+class SqlAlchemyLearningObservationRepository:
+    """Append-only store of learning observations (issue #182).
+
+    No update, no delete-by-id — the same append-only reasoning as
+    MistakeEventRepository and WordRevisionRepository above: a diagnosis
+    built from history that can be silently rewritten cannot be audited.
+    """
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add(self, observation: LearningObservation) -> LearningObservation:
+        model = LearningObservationModel(
+            observation_id=observation.observation_id or uuid.uuid4().hex,
+            # Always populated even when the caller supplied none, so the
+            # (user_id, operation_id) unique constraint always applies —
+            # a legacy caller's observation is still exactly-once, just
+            # under an identity it never chose itself.
+            operation_id=observation.operation_id or uuid.uuid4().hex,
+            user_id=observation.user_id,
+            word_id=observation.word_id,
+            outcome=observation.outcome.value,
+            session_mode=observation.session_mode.value,
+            observed_at=observation.observed_at,
+            attempted_answer=observation.attempted_answer,
+            response_time_ms=observation.response_time_ms,
+            prompt_direction=observation.prompt_direction,
+            hint_used=observation.hint_used,
+            answer_format=observation.answer_format,
+            modality=observation.modality,
+            intervention_plan_ref=observation.intervention_plan_ref,
+            self_reported_confidence=observation.self_reported_confidence,
+            context_source=observation.context_source,
+            schema_version=observation.schema_version,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _learning_observation_to_domain(model)
+
+    def get_by_id(self, user_id: int, observation_id: str) -> LearningObservation | None:
+        stmt = select(LearningObservationModel).where(
+            LearningObservationModel.user_id == user_id,
+            LearningObservationModel.observation_id == observation_id,
+        )
+        model = self.db.scalars(stmt).first()
+        return _learning_observation_to_domain(model) if model else None
+
+    def find_by_operation(self, user_id: int, operation_id: str) -> LearningObservation | None:
+        stmt = select(LearningObservationModel).where(
+            LearningObservationModel.user_id == user_id,
+            LearningObservationModel.operation_id == operation_id,
+        )
+        model = self.db.scalars(stmt).first()
+        return _learning_observation_to_domain(model) if model else None
+
+    def list_for_word(self, user_id: int, word_id: int, limit: int = 500) -> list[LearningObservation]:
+        stmt = (
+            select(LearningObservationModel)
+            .where(LearningObservationModel.user_id == user_id, LearningObservationModel.word_id == word_id)
+            .order_by(LearningObservationModel.observed_at.desc())
+            .limit(limit)
+        )
+        return [_learning_observation_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def list_for_pair(
+        self, user_id: int, word_id_a: int, word_id_b: int, limit: int = 500
+    ) -> list[LearningObservation]:
+        stmt = (
+            select(LearningObservationModel)
+            .where(
+                LearningObservationModel.user_id == user_id,
+                LearningObservationModel.word_id.in_((word_id_a, word_id_b)),
+            )
+            .order_by(LearningObservationModel.observed_at.desc())
+            .limit(limit)
+        )
+        return [_learning_observation_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def list_in_window(
+        self, user_id: int, since: datetime, until: datetime, limit: int = 1000
+    ) -> list[LearningObservation]:
+        stmt = (
+            select(LearningObservationModel)
+            .where(
+                LearningObservationModel.user_id == user_id,
+                LearningObservationModel.observed_at >= since,
+                LearningObservationModel.observed_at <= until,
+            )
+            .order_by(LearningObservationModel.observed_at.desc())
+            .limit(limit)
+        )
+        return [_learning_observation_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def list_by_modality(self, user_id: int, modality: str, limit: int = 500) -> list[LearningObservation]:
+        stmt = (
+            select(LearningObservationModel)
+            .where(LearningObservationModel.user_id == user_id, LearningObservationModel.modality == modality)
+            .order_by(LearningObservationModel.observed_at.desc())
+            .limit(limit)
+        )
+        return [_learning_observation_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def list_by_intervention(
+        self, user_id: int, intervention_plan_ref: str, limit: int = 500
+    ) -> list[LearningObservation]:
+        stmt = (
+            select(LearningObservationModel)
+            .where(
+                LearningObservationModel.user_id == user_id,
+                LearningObservationModel.intervention_plan_ref == intervention_plan_ref,
+            )
+            .order_by(LearningObservationModel.observed_at.desc())
+            .limit(limit)
+        )
+        return [_learning_observation_to_domain(m) for m in self.db.scalars(stmt)]

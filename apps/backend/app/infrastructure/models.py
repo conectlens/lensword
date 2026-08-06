@@ -627,3 +627,60 @@ class ScenarioAttemptModel(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # {scored, scores, summary, goals_met, detail} — validated before storage.
     evaluation: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class LearningObservationModel(Base):
+    """One recall attempt, recorded with enough context to diagnose *why* it
+    went the way it did (AI Learning Diagnosis epic, #180, issue #182).
+
+    Append-only, the same reasoning as MistakeEventModel above: a wrong
+    observation is corrected by a later, separate row, never rewritten —
+    the diagnosis engine (#183) needs the original alongside the
+    correction, not just the corrected version.
+
+    Only written when `RecallSettings.learning_diagnosis_enabled` is true
+    for the account (ADR 0007): with the flag off, review submission never
+    reaches this table at all.
+
+    Indexes cover the five query axes issue #182 TODO 4 names — word, pair
+    (an IN-list against the word index), time window, modality, and
+    intervention — each already scoped by the `user_id` prefix so a query
+    can never cross accounts by construction, not just by a WHERE clause a
+    future edit could drop.
+    """
+
+    __tablename__ = "learning_observations"
+    __table_args__ = (
+        UniqueConstraint("user_id", "operation_id", name="uq_learning_observation_user_operation"),
+        Index("ix_learning_observations_user_word", "user_id", "word_id"),
+        Index("ix_learning_observations_user_observed", "user_id", "observed_at"),
+        Index("ix_learning_observations_user_modality", "user_id", "modality"),
+        Index("ix_learning_observations_user_intervention", "user_id", "intervention_plan_ref"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # The domain contract's `observation_id` — a client-visible, stable
+    # string identity distinct from this row's own primary key.
+    observation_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # Client-generated and stable across retries, mirroring SyncOperationModel
+    # (issue #90). Always populated by the repository even when a legacy
+    # caller supplied none, so the unique constraint above always applies.
+    operation_id: Mapped[str] = mapped_column(String(64))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    word_id: Mapped[int] = mapped_column(ForeignKey("words.id"))
+    outcome: Mapped[str] = mapped_column(String(16))
+    session_mode: Mapped[str] = mapped_column(String(16))
+    observed_at: Mapped[datetime] = mapped_column(DateTime)
+    attempted_answer: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    response_time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    prompt_direction: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    hint_used: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    answer_format: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    modality: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    intervention_plan_ref: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    self_reported_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # A bounded fingerprint/reference, never raw source text — the context
+    # snippet's storage/retention policy itself is issue #182 TODO 3's
+    # scope, filed as a follow-up rather than guessed at here.
+    context_source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    schema_version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")

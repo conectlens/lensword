@@ -1,3 +1,4 @@
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -18,6 +19,7 @@ from app.domain.repositories import (
     WordRepository,
 )
 from app.domain.services.ai_provider import AIProvider
+from app.domain.services.diagnosis_contracts import LearningObservation
 from app.domain.services.spaced_repetition import Scheduler
 from app.domain.services.mistake_memory import (
     RecordedMistake,
@@ -25,7 +27,7 @@ from app.domain.services.mistake_memory import (
     select_for_session,
 )
 from app.domain.services.weakness import categorise
-from app.domain.value_objects import ReviewOutcome, SessionMode
+from app.domain.value_objects import ReviewOutcome, SessionMode, utcnow
 
 
 class StartReviewSessionUseCase:
@@ -107,6 +109,25 @@ class AnswerResult:
     was_new_word: bool
 
 
+@dataclass(frozen=True, slots=True)
+class ObservationInput:
+    """Optional richer telemetry for one answer (#182, ADR 0007).
+
+    `None` (the default in `execute`) for every caller that predates this —
+    a legacy client's answer still schedules and records a mistake exactly
+    as before; it just produces no `LearningObservation`, the same "no new
+    branch taken" guarantee ADR 0007 states for the feature disabled.
+    """
+
+    operation_id: str | None = None
+    prompt_direction: str | None = None
+    hint_used: bool = False
+    answer_format: str | None = None
+    modality: str | None = None
+    intervention_plan_ref: str | None = None
+    self_reported_confidence: float | None = None
+
+
 class SubmitAnswerUseCase:
     def __init__(
         self,
@@ -114,6 +135,7 @@ class SubmitAnswerUseCase:
         word_repo: WordRepository,
         scheduler: Scheduler,
         mistake_repo=None,
+        observation_repo=None,
     ):
         self.session_repo = session_repo
         self.word_repo = word_repo
@@ -122,6 +144,11 @@ class SubmitAnswerUseCase:
         # about scheduling — keeps working. Recording a mistake is bookkeeping
         # beside the review, not part of it.
         self.mistake_repo = mistake_repo
+        # Optional and, unlike mistake_repo, deliberately not wired by
+        # default even where a caller could: the router only passes this
+        # when `learning_diagnosis_enabled` is true for the account, so a
+        # disabled account's request path never reaches this table at all.
+        self.observation_repo = observation_repo
 
     def execute(
         self,
@@ -131,6 +158,7 @@ class SubmitAnswerUseCase:
         outcome: ReviewOutcome,
         response_time_ms: int | None,
         attempted_answer: str | None = None,
+        observation: ObservationInput | None = None,
     ) -> AnswerResult:
         session = self.session_repo.get_by_id(session_id)
         if session is None:
@@ -150,9 +178,53 @@ class SubmitAnswerUseCase:
         self.word_repo.update(word)
 
         self._record_mistake(user_id, word, outcome, attempted_answer)
+        self._record_observation(
+            user_id, session, word_id, outcome, response_time_ms, attempted_answer, observation
+        )
 
         became_learned = was_new_word and outcome == ReviewOutcome.CORRECT
         return AnswerResult(word=word, was_new_word=became_learned)
+
+    def _record_observation(
+        self,
+        user_id: int,
+        session: ReviewSession,
+        word_id: int,
+        outcome: ReviewOutcome,
+        response_time_ms: int | None,
+        attempted_answer: str | None,
+        observation: ObservationInput | None,
+    ) -> None:
+        if self.observation_repo is None:
+            return
+
+        telemetry = observation or ObservationInput()
+        if telemetry.operation_id is not None:
+            # #182 TODO 1: a retry after a lost response must not record a
+            # second observation for the same submission.
+            existing = self.observation_repo.find_by_operation(user_id, telemetry.operation_id)
+            if existing is not None:
+                return
+
+        self.observation_repo.add(
+            LearningObservation(
+                observation_id=uuid.uuid4().hex,
+                word_id=word_id,
+                user_id=user_id,
+                outcome=outcome,
+                session_mode=session.mode,
+                observed_at=utcnow(),
+                operation_id=telemetry.operation_id,
+                attempted_answer=attempted_answer,
+                response_time_ms=response_time_ms,
+                prompt_direction=telemetry.prompt_direction,
+                hint_used=telemetry.hint_used,
+                answer_format=telemetry.answer_format,
+                modality=telemetry.modality,
+                intervention_plan_ref=telemetry.intervention_plan_ref,
+                self_reported_confidence=telemetry.self_reported_confidence,
+            )
+        )
 
     def _record_mistake(
         self, user_id: int, word: Word, outcome: ReviewOutcome, attempted_answer: str | None
