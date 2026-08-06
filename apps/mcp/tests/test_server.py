@@ -1,7 +1,7 @@
 import io
 import json
 
-from lensword_mcp.server import MCPServer, StdioMCPServer
+from lensword_mcp.server import BackendError, MCPServer, StdioMCPServer
 from lensword_mcp.companion_workflows import (
     CompanionLoopBudget,
     CompanionLoopState,
@@ -31,6 +31,11 @@ class FakeBackend:
     def invoke(self, name, arguments):
         self.calls.append((name, arguments))
         return {"words": [{"term": "hola"}]}
+
+    def resource(self, uri):
+        if uri == "lensword://other-user/profile":
+            raise BackendError(404, "Resource not found")
+        return {"uri": uri, "items": [{"term": "hola"}]}
 
 
 def test_lifecycle_and_tool_call_are_mcp_json_rpc_messages():
@@ -94,3 +99,35 @@ def test_elicitation_cannot_request_secrets_and_is_bounded():
         [ElicitationField("target_language", "Which language are you learning?")]
     )
     assert fields[0].name == "target_language"
+
+
+def test_resources_templates_prompts_and_completion_are_exposed_after_initialize():
+    server = MCPServer(FakeBackend())
+    server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-11-25"}})
+    server.handle({"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+    resources = server.handle({"jsonrpc": "2.0", "id": 2, "method": "resources/list"})
+    assert len(resources["result"]["resources"]) >= 9
+    read = server.handle({"jsonrpc": "2.0", "id": 3, "method": "resources/read", "params": {"uri": "lensword://me/profile"}})
+    assert read["result"]["contents"][0]["uri"] == "lensword://me/profile"
+    assert "hola" in read["result"]["contents"][0]["text"]
+
+    templates = server.handle({"jsonrpc": "2.0", "id": 4, "method": "resources/templates/list"})
+    assert any(item["uriTemplate"] == "lensword://words/{word_id}" for item in templates["result"]["resourceTemplates"])
+    prompts = server.handle({"jsonrpc": "2.0", "id": 5, "method": "prompts/list"})
+    assert {item["name"] for item in prompts["result"]["prompts"]} >= {"daily_check_in", "explain_word"}
+    prompt = server.handle({"jsonrpc": "2.0", "id": 6, "method": "prompts/get", "params": {"name": "daily_check_in", "arguments": {"duration": "10"}}})
+    assert "Do not invent diagnoses" in prompt["result"]["messages"][0]["content"]["text"]
+
+    completion = server.handle({"jsonrpc": "2.0", "id": 7, "method": "completion/complete", "params": {"argument": {"name": "target_language", "value": "sp"}}})
+    assert completion["result"]["completion"]["values"] == ["Spanish"]
+
+
+def test_resource_read_rejects_unbounded_or_unknown_uris():
+    server = MCPServer(FakeBackend())
+    server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-11-25"}})
+    server.handle({"jsonrpc": "2.0", "method": "notifications/initialized"})
+    unknown = server.handle({"jsonrpc": "2.0", "id": 2, "method": "resources/read", "params": {"uri": "lensword://other-user/profile"}})
+    assert unknown["error"]["code"] == -32003
+    too_long = server.handle({"jsonrpc": "2.0", "id": 3, "method": "resources/read", "params": {"uri": "x" * 513}})
+    assert too_long["error"]["code"] == -32602
