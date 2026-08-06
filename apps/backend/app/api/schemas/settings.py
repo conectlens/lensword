@@ -25,6 +25,8 @@ class RecallSettingsResponse(BaseModel):
     notifications_paused: bool
     scheduler: str
     semantic_relatedness_enabled: bool
+    contrast_cards_enabled: bool
+    contrast_min_stability: float
     learning_diagnosis_enabled: bool
     acquisition_loop_enabled: bool
     ai_coach_enabled: bool
@@ -60,6 +62,8 @@ class RecallSettingsUpdateRequest(BaseModel):
     notifications_paused: bool = False
     scheduler: str = Field(default="sm2", pattern="^(sm2|fsrs)$")
     semantic_relatedness_enabled: bool = False
+    contrast_cards_enabled: bool = False
+    contrast_min_stability: float = Field(default=21.0, ge=0, le=3650)
     learning_diagnosis_enabled: bool = False
     acquisition_loop_enabled: bool = False
     ai_coach_enabled: bool = False

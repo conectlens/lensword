@@ -23,6 +23,7 @@ from app.infrastructure.models import (
     DesktopNotificationModel,
     DiagnosisModel,
     GroupModel,
+    InterventionPlanModel,
     LearningObservationModel,
     LearningPathModel,
     MnemonicNoteModel,
@@ -231,6 +232,42 @@ def test_deleting_a_word_with_an_acquisition_ladder_succeeds_and_leaves_no_refer
 
     assert response.status_code == 204, response.text
     assert db_session.query(AcquisitionEventModel).filter_by(word_id=word["id"]).count() == 0
+
+
+def test_deleting_a_word_with_an_intervention_plan_succeeds_and_leaves_no_references(
+    client, auth_headers, db_session
+):
+    """#185: intervention_plans also carries a NOT NULL word_id — added to
+    the cleanup list from the start, same reasoning as AcquisitionEventModel
+    above."""
+    headers = auth_headers()
+    _enable_diagnosis(client, headers)
+    group = client.post(
+        "/api/v1/groups", json={"name": "G", "target_language": "Spanish"}, headers=headers
+    ).json()
+    target = client.post(
+        f"/api/v1/groups/{group['id']}/words",
+        json={"term": "libre", "target_language": "Spanish", "translations": ["free"]},
+        headers=headers,
+    ).json()
+    client.post(
+        f"/api/v1/groups/{group['id']}/words",
+        json={"term": "libro", "target_language": "Spanish", "translations": ["book"]},
+        headers=headers,
+    )
+    session = client.post("/api/v1/review/sessions", json={"mode": "standard"}, headers=headers).json()
+    for _ in range(2):
+        client.post(
+            f"/api/v1/review/sessions/{session['session_id']}/answers",
+            json={"word_id": target["id"], "outcome": "incorrect", "attempted_answer": "libro"},
+            headers=headers,
+        )
+    assert db_session.query(InterventionPlanModel).filter_by(word_id=target["id"]).count() == 1
+
+    response = client.delete(f"/api/v1/words/{target['id']}", headers=headers)
+
+    assert response.status_code == 204, response.text
+    assert db_session.query(InterventionPlanModel).filter_by(word_id=target["id"]).count() == 0
 
 
 def test_deleting_a_word_with_a_corrected_observation_succeeds_and_leaves_no_references(

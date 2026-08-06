@@ -59,7 +59,11 @@ def owned(client, two_accounts, db_session):
     # below — with it off, no observation is ever recorded to correct.
     client.put(
         "/api/v1/recall-settings",
-        json={"acquisition_loop_enabled": True, "learning_diagnosis_enabled": True},
+        json={
+            "acquisition_loop_enabled": True,
+            "learning_diagnosis_enabled": True,
+            "ai_companion_enabled": True,
+        },
         headers=owner,
     )
 
@@ -152,6 +156,27 @@ def owned(client, two_accounts, db_session):
     conversation = SqlAlchemyConversationRepository(_db).start(
         user_id=owner_id, target_language="Spanish", difficulty="steady"
     )
+
+    companion_session = client.post(
+        "/api/v1/companion/sessions",
+        json={"connection_id": "audit-client", "client_id": "audit-host"},
+        headers=owner,
+    ).json()
+    companion_activity = client.post(
+        f"/api/v1/companion/sessions/{companion_session['id']}/activities",
+        json={
+            "activity_type": "recall",
+            "prompt": "Recall correr.",
+            "expected_evaluation": {"kind": "presence"},
+            "operation_id": "audit-activity",
+        },
+        headers=owner,
+    ).json()
+    companion_task = client.post(
+        f"/api/v1/companion/sessions/{companion_session['id']}/tasks",
+        json={"task_type": "extraction", "total_units": 3, "operation_id": "audit-task"},
+        headers=owner,
+    ).json()
     # Seeded directly: starting an attempt needs no AI provider, and this audit
     # deliberately does not stand one up.
     from app.infrastructure.repositories import SqlAlchemyScenarioAttemptRepository
@@ -188,6 +213,9 @@ def owned(client, two_accounts, db_session):
         "conversation": conversation.id,
         "attempt": scenario_attempt.id,
         "observation": observation,
+        "companion_session": companion_session["id"],
+        "companion_activity": companion_activity["id"],
+        "companion_task": companion_task["id"],
     }
 
 
@@ -281,6 +309,29 @@ CROSS_TENANT_CASES = [
     # Reports
     _case("GET", "/api/v1/reports/weekly/{report}"),
     _case("POST", "/api/v1/reports/weekly/{report}/narration"),
+    # Companion sessions, measurable activities, and durable tasks. All are
+    # owner-scoped even though their identifiers are opaque strings.
+    _case("GET", "/api/v1/companion/sessions/{companion_session}"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/turns", {"role": "user", "content": "hola"}),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/pause"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/resume"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/finish"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/revoke"),
+    _case("GET", "/api/v1/companion/sessions/{companion_session}/export"),
+    _case("DELETE", "/api/v1/companion/sessions/{companion_session}/content"),
+    _case("GET", "/api/v1/companion/sessions/{companion_session}/activities/{companion_activity}"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/activities/{companion_activity}/response", {"response": "correr"}),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/activities/{companion_activity}/finish"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/activities", {
+        "activity_type": "recall", "prompt": "Recall correr.",
+    }),
+    _case("GET", "/api/v1/companion/sessions/{companion_session}/tasks"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/tasks", {"task_type": "extraction", "total_units": 2}),
+    _case("GET", "/api/v1/companion/sessions/{companion_session}/tasks/{companion_task}"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/tasks/{companion_task}/start"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/tasks/{companion_task}/progress", {"completed_units": 1}),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/tasks/{companion_task}/complete", {"result": {}}),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/tasks/{companion_task}/cancel"),
 ]
 
 

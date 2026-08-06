@@ -31,10 +31,20 @@ from app.domain.entities import (
 )
 from app.domain.services.cefr_progress import MASTERY_STRENGTH
 from app.domain.services.acquisition import AcquisitionScheduler
+from app.domain.services.companion_sessions import (
+    CompanionSession,
+    CompanionSessionStatus,
+    CompanionTurn,
+    CompanionTurnRole,
+)
+from app.domain.services.companion_activities import ActivityStatus, ActivityType, LearningActivity
+from app.domain.services.companion_tasks import CompanionTask, CompanionTaskStatus, CompanionTaskType
 from app.domain.services.diagnosis_contracts import (
     AcquisitionState,
     Diagnosis,
     DiagnosisEvidence,
+    InterventionOutcome,
+    InterventionPlan,
     LearningObservation,
     ObservationCorrection,
     ObservationCorrectionReason,
@@ -77,7 +87,13 @@ from app.infrastructure.models import (
     ObservationCorrectionModel,
     KnowledgeEdgeModel,
     DiagnosisModel,
+    InterventionPlanModel,
+    InterventionOutcomeModel,
     AcquisitionEventModel,
+    CompanionSessionModel,
+    CompanionTurnModel,
+    CompanionActivityModel,
+    CompanionTaskModel,
 )
 
 logger = logging.getLogger(__name__)
@@ -328,6 +344,8 @@ def _settings_to_domain(m: RecallSettingsModel) -> RecallSettings:
         notifications_paused=m.notifications_paused,
         scheduler=m.scheduler,
         semantic_relatedness_enabled=m.semantic_relatedness_enabled,
+        contrast_cards_enabled=m.contrast_cards_enabled,
+        contrast_min_stability=m.contrast_min_stability,
         learning_diagnosis_enabled=m.learning_diagnosis_enabled,
         acquisition_loop_enabled=m.acquisition_loop_enabled,
         ai_coach_enabled=m.ai_coach_enabled,
@@ -422,6 +440,8 @@ def _delete_word_dependents(db: Session, word_ids: list[int]) -> None:
         # added here from the start rather than repeating that.
         LearningObservationModel,
         DiagnosisModel,
+        InterventionPlanModel,
+        InterventionOutcomeModel,
         AcquisitionEventModel,
     ):
         for row in db.scalars(select(model).where(model.word_id.in_(word_ids))):
@@ -1043,6 +1063,8 @@ class SqlAlchemyRecallSettingsRepository:
         m.notifications_paused = settings.notifications_paused
         m.scheduler = settings.scheduler
         m.semantic_relatedness_enabled = settings.semantic_relatedness_enabled
+        m.contrast_cards_enabled = settings.contrast_cards_enabled
+        m.contrast_min_stability = settings.contrast_min_stability
         m.learning_diagnosis_enabled = settings.learning_diagnosis_enabled
         m.acquisition_loop_enabled = settings.acquisition_loop_enabled
         m.ai_coach_enabled = settings.ai_coach_enabled
@@ -2135,6 +2157,390 @@ class SqlAlchemyDiagnosisRepository:
             .limit(limit)
         )
         return [_diagnosis_to_domain(m) for m in self.db.scalars(stmt)]
+
+
+def _intervention_plan_to_domain(m: InterventionPlanModel) -> InterventionPlan:
+    return InterventionPlan(
+        word_id=m.word_id,
+        user_id=m.user_id,
+        diagnosis_outcome=m.diagnosis_outcome,
+        strategy=m.strategy,
+        policy_version=m.policy_version,
+        eligible=m.eligible,
+        rationale=m.rationale,
+        planned_at=m.planned_at,
+        scheduled_for=m.scheduled_for,
+    )
+
+
+def _intervention_outcome_to_domain(m: InterventionOutcomeModel) -> InterventionOutcome:
+    return InterventionOutcome(
+        word_id=m.word_id,
+        user_id=m.user_id,
+        strategy=m.strategy,
+        completed=m.completed,
+        result=m.result,
+        recorded_at=m.recorded_at,
+        completed_at=m.completed_at,
+    )
+
+
+class SqlAlchemyInterventionRepository:
+    """Append-only store of intervention plans and their outcomes (issue
+    #185) — the same shape `SqlAlchemyDiagnosisRepository` above uses."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add_plan(self, plan: InterventionPlan) -> InterventionPlan:
+        model = InterventionPlanModel(
+            user_id=plan.user_id,
+            word_id=plan.word_id,
+            diagnosis_outcome=plan.diagnosis_outcome,
+            strategy=plan.strategy,
+            policy_version=plan.policy_version,
+            eligible=plan.eligible,
+            rationale=plan.rationale,
+            planned_at=plan.planned_at,
+            scheduled_for=plan.scheduled_for,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _intervention_plan_to_domain(model)
+
+    def add_outcome(self, outcome: InterventionOutcome) -> InterventionOutcome:
+        model = InterventionOutcomeModel(
+            user_id=outcome.user_id,
+            word_id=outcome.word_id,
+            strategy=outcome.strategy,
+            completed=outcome.completed,
+            result=outcome.result,
+            recorded_at=outcome.recorded_at,
+            completed_at=outcome.completed_at,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _intervention_outcome_to_domain(model)
+
+    def list_plans_for_word(self, user_id: int, word_id: int) -> list[InterventionPlan]:
+        stmt = (
+            select(InterventionPlanModel)
+            .where(InterventionPlanModel.user_id == user_id, InterventionPlanModel.word_id == word_id)
+            .order_by(InterventionPlanModel.planned_at.desc())
+        )
+        return [_intervention_plan_to_domain(m) for m in self.db.scalars(stmt)]
+
+
+def _companion_session_to_domain(m: CompanionSessionModel) -> CompanionSession:
+    return CompanionSession(
+        id=m.id,
+        user_id=m.user_id,
+        connection_id=m.connection_id,
+        client_id=m.client_id,
+        goal=m.goal,
+        language=m.language,
+        group_id=m.group_id,
+        difficulty=m.difficulty,
+        active_activity=m.active_activity,
+        consent_snapshot=dict(m.consent_snapshot or {}),
+        summary=m.summary,
+        status=CompanionSessionStatus(m.status),
+        revision=m.revision,
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+    )
+
+
+def _companion_turn_to_domain(m: CompanionTurnModel) -> CompanionTurn:
+    return CompanionTurn(
+        id=m.id,
+        session_id=m.session_id,
+        role=CompanionTurnRole(m.role),
+        content=m.content,
+        activity_id=m.activity_id,
+        operation_id=m.operation_id,
+        created_at=m.created_at,
+    )
+
+
+class SqlAlchemyCompanionSessionRepository:
+    """Tenant-scoped persistence for normalized companion sessions (#193)."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add(self, session: CompanionSession) -> CompanionSession:
+        model = CompanionSessionModel(
+            id=session.id,
+            user_id=session.user_id,
+            connection_id=session.connection_id,
+            client_id=session.client_id,
+            goal=session.goal,
+            language=session.language,
+            group_id=session.group_id,
+            difficulty=session.difficulty,
+            active_activity=session.active_activity,
+            consent_snapshot=session.consent_snapshot,
+            summary=session.summary,
+            status=session.status.value,
+            revision=session.revision,
+            created_at=session.created_at,
+            updated_at=session.updated_at,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _companion_session_to_domain(model)
+
+    def get(self, user_id: int, session_id: str) -> CompanionSession | None:
+        model = self.db.scalar(
+            select(CompanionSessionModel).where(
+                CompanionSessionModel.id == session_id,
+                CompanionSessionModel.user_id == user_id,
+            )
+        )
+        return _companion_session_to_domain(model) if model else None
+
+    def update(self, session: CompanionSession) -> CompanionSession:
+        model = self.db.scalar(
+            select(CompanionSessionModel).where(
+                CompanionSessionModel.id == session.id,
+                CompanionSessionModel.user_id == session.user_id,
+            )
+        )
+        if model is None:
+            raise ValueError("Companion session not found")
+        model.goal = session.goal
+        model.language = session.language
+        model.group_id = session.group_id
+        model.difficulty = session.difficulty
+        model.active_activity = session.active_activity
+        model.consent_snapshot = session.consent_snapshot
+        model.summary = session.summary
+        model.status = session.status.value
+        model.revision = session.revision
+        model.updated_at = session.updated_at
+        self.db.flush()
+        return _companion_session_to_domain(model)
+
+    def list_turns(self, user_id: int, session_id: str, limit: int = 100) -> list[CompanionTurn]:
+        if self.get(user_id, session_id) is None:
+            return []
+        stmt = (
+            select(CompanionTurnModel)
+            .join(CompanionSessionModel, CompanionSessionModel.id == CompanionTurnModel.session_id)
+            .where(CompanionSessionModel.id == session_id, CompanionSessionModel.user_id == user_id)
+            .order_by(CompanionTurnModel.created_at.asc(), CompanionTurnModel.id.asc())
+            .limit(min(max(limit, 1), 100))
+        )
+        return [_companion_turn_to_domain(model) for model in self.db.scalars(stmt)]
+
+    def add_turn(self, turn: CompanionTurn) -> CompanionTurn:
+        model = CompanionTurnModel(
+            session_id=turn.session_id,
+            role=turn.role.value,
+            content=turn.content,
+            activity_id=turn.activity_id,
+            operation_id=turn.operation_id,
+            created_at=turn.created_at,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _companion_turn_to_domain(model)
+
+    def find_turn_by_operation(self, user_id: int, session_id: str, operation_id: str) -> CompanionTurn | None:
+        model = self.db.scalar(
+            select(CompanionTurnModel)
+            .join(CompanionSessionModel, CompanionSessionModel.id == CompanionTurnModel.session_id)
+            .where(
+                CompanionSessionModel.id == session_id,
+                CompanionSessionModel.user_id == user_id,
+                CompanionTurnModel.operation_id == operation_id,
+            )
+        )
+        return _companion_turn_to_domain(model) if model else None
+
+    def delete_content(self, user_id: int, session_id: str) -> None:
+        session = self.db.scalar(
+            select(CompanionSessionModel).where(
+                CompanionSessionModel.id == session_id,
+                CompanionSessionModel.user_id == user_id,
+            )
+        )
+        if session is None:
+            return
+        self.db.query(CompanionTurnModel).filter(CompanionTurnModel.session_id == session_id).delete()
+        session.summary = "[content deleted]"
+        session.revision += 1
+        session.updated_at = utcnow()
+        self.db.flush()
+
+
+def _companion_activity_to_domain(m: CompanionActivityModel) -> LearningActivity:
+    return LearningActivity(
+        id=m.id,
+        session_id=m.session_id,
+        user_id=m.user_id,
+        activity_type=ActivityType(m.activity_type),
+        prompt=m.prompt,
+        expected_evaluation=dict(m.expected_evaluation or {}),
+        status=ActivityStatus(m.status),
+        response=m.response,
+        result=dict(m.result) if m.result is not None else None,
+        operation_id=m.operation_id,
+        started_at=m.started_at,
+        updated_at=m.updated_at,
+        revision=m.revision,
+    )
+
+
+class SqlAlchemyCompanionActivityRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add(self, activity: LearningActivity) -> LearningActivity:
+        model = CompanionActivityModel(
+            id=activity.id,
+            session_id=activity.session_id,
+            user_id=activity.user_id,
+            activity_type=activity.activity_type.value,
+            prompt=activity.prompt,
+            expected_evaluation=activity.expected_evaluation,
+            status=activity.status.value,
+            response=activity.response,
+            result=activity.result,
+            operation_id=activity.operation_id,
+            started_at=activity.started_at,
+            updated_at=activity.updated_at,
+            revision=activity.revision,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _companion_activity_to_domain(model)
+
+    def get(self, user_id: int, session_id: str, activity_id: str) -> LearningActivity | None:
+        model = self.db.scalar(
+            select(CompanionActivityModel).where(
+                CompanionActivityModel.id == activity_id,
+                CompanionActivityModel.session_id == session_id,
+                CompanionActivityModel.user_id == user_id,
+            )
+        )
+        return _companion_activity_to_domain(model) if model else None
+
+    def update(self, activity: LearningActivity) -> LearningActivity:
+        model = self.db.get(CompanionActivityModel, activity.id)
+        if model is None or model.user_id != activity.user_id or model.session_id != activity.session_id:
+            raise ValueError("Companion activity not found")
+        model.status = activity.status.value
+        model.response = activity.response
+        model.result = activity.result
+        model.updated_at = activity.updated_at
+        model.revision = activity.revision
+        self.db.flush()
+        return _companion_activity_to_domain(model)
+
+    def find_by_operation(self, user_id: int, session_id: str, operation_id: str) -> LearningActivity | None:
+        model = self.db.scalar(
+            select(CompanionActivityModel).where(
+                CompanionActivityModel.user_id == user_id,
+                CompanionActivityModel.session_id == session_id,
+                CompanionActivityModel.operation_id == operation_id,
+            )
+        )
+        return _companion_activity_to_domain(model) if model else None
+
+
+def _companion_task_to_domain(m: CompanionTaskModel) -> CompanionTask:
+    return CompanionTask(
+        id=m.id,
+        session_id=m.session_id,
+        user_id=m.user_id,
+        task_type=CompanionTaskType(m.task_type),
+        status=CompanionTaskStatus(m.status),
+        total_units=m.total_units,
+        completed_units=m.completed_units,
+        result=dict(m.result) if m.result is not None else None,
+        error=m.error,
+        operation_id=m.operation_id,
+        expires_at=m.expires_at,
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+        revision=m.revision,
+    )
+
+
+class SqlAlchemyCompanionTaskRepository:
+    """Owner/session-scoped durable task state (#197)."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add(self, task: CompanionTask) -> CompanionTask:
+        model = CompanionTaskModel(
+            id=task.id,
+            session_id=task.session_id,
+            user_id=task.user_id,
+            task_type=task.task_type.value,
+            status=task.status.value,
+            total_units=task.total_units,
+            completed_units=task.completed_units,
+            result=task.result,
+            error=task.error,
+            operation_id=task.operation_id,
+            expires_at=task.expires_at,
+            created_at=task.created_at,
+            updated_at=task.updated_at,
+            revision=task.revision,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _companion_task_to_domain(model)
+
+    def get(self, user_id: int, session_id: str, task_id: str) -> CompanionTask | None:
+        model = self.db.scalar(
+            select(CompanionTaskModel).where(
+                CompanionTaskModel.id == task_id,
+                CompanionTaskModel.session_id == session_id,
+                CompanionTaskModel.user_id == user_id,
+            )
+        )
+        return _companion_task_to_domain(model) if model else None
+
+    def update(self, task: CompanionTask) -> CompanionTask:
+        model = self.db.get(CompanionTaskModel, task.id)
+        if model is None or model.user_id != task.user_id or model.session_id != task.session_id:
+            raise ValueError("Companion task not found")
+        model.status = task.status.value
+        model.completed_units = task.completed_units
+        model.result = task.result
+        model.error = task.error
+        model.expires_at = task.expires_at
+        model.updated_at = task.updated_at
+        model.revision = task.revision
+        self.db.flush()
+        return _companion_task_to_domain(model)
+
+    def list_for_session(self, user_id: int, session_id: str, limit: int = 50) -> list[CompanionTask]:
+        stmt = (
+            select(CompanionTaskModel)
+            .where(
+                CompanionTaskModel.user_id == user_id,
+                CompanionTaskModel.session_id == session_id,
+            )
+            .order_by(CompanionTaskModel.created_at.desc(), CompanionTaskModel.id.desc())
+            .limit(min(max(limit, 1), 100))
+        )
+        return [_companion_task_to_domain(model) for model in self.db.scalars(stmt)]
+
+    def find_by_operation(self, user_id: int, session_id: str, operation_id: str) -> CompanionTask | None:
+        model = self.db.scalar(
+            select(CompanionTaskModel).where(
+                CompanionTaskModel.user_id == user_id,
+                CompanionTaskModel.session_id == session_id,
+                CompanionTaskModel.operation_id == operation_id,
+            )
+        )
+        return _companion_task_to_domain(model) if model else None
 
 
 def _acquisition_state_to_domain(m: AcquisitionEventModel) -> AcquisitionState:

@@ -231,6 +231,12 @@ class RecallSettingsModel(Base):
     semantic_relatedness_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=false()
     )
+    contrast_cards_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
+    contrast_min_stability: Mapped[float] = mapped_column(
+        Float, default=21.0, server_default="21.0"
+    )
     # Same server_default requirement as semantic_relatedness_enabled above,
     # for the same reason: 20260730_14's backfill INSERT predates these
     # fields and cannot name them.
@@ -794,6 +800,153 @@ class DiagnosisModel(Base):
     diagnosed_at: Mapped[datetime] = mapped_column(DateTime)
     sample_size: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     competing_hypotheses: Mapped[list] = mapped_column(JSON, default=list)
+
+
+class InterventionPlanModel(Base):
+    """A bounded, testable response to a `Diagnosis` (issue #185).
+
+    Append-only, the same reasoning as `DiagnosisModel` above: a revised
+    plan is a new row, not an edit to the one already shown to a learner.
+    Only written when `RecallSettings.learning_diagnosis_enabled` is true —
+    the same gate #182/#183's tables use, since a plan always requires a
+    `Diagnosis` as input.
+    """
+
+    __tablename__ = "intervention_plans"
+    __table_args__ = (
+        Index("ix_intervention_plans_user_word_planned", "user_id", "word_id", "planned_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    word_id: Mapped[int] = mapped_column(ForeignKey("words.id"))
+    diagnosis_outcome: Mapped[str] = mapped_column(String(48))
+    strategy: Mapped[str] = mapped_column(String(48))
+    policy_version: Mapped[int] = mapped_column(Integer)
+    eligible: Mapped[bool] = mapped_column(Boolean)
+    rationale: Mapped[str] = mapped_column(String(500))
+    planned_at: Mapped[datetime] = mapped_column(DateTime)
+    scheduled_for: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class InterventionOutcomeModel(Base):
+    """Whether a planned intervention actually ran, and what came of it
+    (issue #185) — kept separate from `InterventionPlanModel` so a plan
+    never carried out is a distinct, honest fact rather than an assumed
+    completion, matching `InterventionOutcome`'s own docstring.
+    """
+
+    __tablename__ = "intervention_outcomes"
+    __table_args__ = (
+        Index("ix_intervention_outcomes_user_word_recorded", "user_id", "word_id", "recorded_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    word_id: Mapped[int] = mapped_column(ForeignKey("words.id"))
+    strategy: Mapped[str] = mapped_column(String(48))
+    completed: Mapped[bool] = mapped_column(Boolean)
+    result: Mapped[str] = mapped_column(String(48))
+    recorded_at: Mapped[datetime] = mapped_column(DateTime)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class CompanionSessionModel(Base):
+    """Provider-neutral companion session state (issue #193).
+
+    No provider memory, chain-of-thought, credentials, or opaque tool state is
+    represented here. Turns are normalized in the separate table below.
+    """
+
+    __tablename__ = "companion_sessions"
+    __table_args__ = (
+        Index("ix_companion_sessions_user_updated", "user_id", "updated_at"),
+        Index("ix_companion_sessions_user_connection", "user_id", "connection_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    connection_id: Mapped[str] = mapped_column(String(128))
+    client_id: Mapped[str] = mapped_column(String(128))
+    goal: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    language: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id"), nullable=True)
+    difficulty: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    active_activity: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    consent_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
+class CompanionTurnModel(Base):
+    """Normalized user/assistant turns for a companion session."""
+
+    __tablename__ = "companion_turns"
+    __table_args__ = (
+        UniqueConstraint("session_id", "operation_id", name="uq_companion_turn_session_operation"),
+        Index("ix_companion_turns_session_created", "session_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[str] = mapped_column(ForeignKey("companion_sessions.id", ondelete="CASCADE"), index=True)
+    role: Mapped[str] = mapped_column(String(16))
+    content: Mapped[str] = mapped_column(Text)
+    activity_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    operation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
+class CompanionActivityModel(Base):
+    """An explicitly started, measurable companion activity (#194)."""
+
+    __tablename__ = "companion_activities"
+    __table_args__ = (
+        UniqueConstraint("session_id", "operation_id", name="uq_companion_activity_session_operation"),
+        Index("ix_companion_activities_session_updated", "session_id", "updated_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    session_id: Mapped[str] = mapped_column(ForeignKey("companion_sessions.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    activity_type: Mapped[str] = mapped_column(String(32))
+    prompt: Mapped[str] = mapped_column(Text)
+    expected_evaluation: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    response: Mapped[str | None] = mapped_column(Text, nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    operation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime)
+    revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+
+class CompanionTaskModel(Base):
+    """Durable owner-scoped long-running companion task state (#197)."""
+
+    __tablename__ = "companion_tasks"
+    __table_args__ = (
+        UniqueConstraint("session_id", "operation_id", name="uq_companion_task_session_operation"),
+        Index("ix_companion_tasks_session_updated", "session_id", "updated_at"),
+        Index("ix_companion_tasks_expiry_status", "expires_at", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    session_id: Mapped[str] = mapped_column(ForeignKey("companion_sessions.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    task_type: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    total_units: Mapped[int] = mapped_column(Integer)
+    completed_units: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    operation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime)
+    revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
 
 class AcquisitionEventModel(Base):
