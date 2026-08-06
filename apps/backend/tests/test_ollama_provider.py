@@ -97,6 +97,36 @@ def test_enrich_word_maps_the_ais_tags_output_onto_topics_too():
     assert enrichment.topics == ["finance", "favors"]
 
 
+def test_enrich_word_logs_a_warning_when_cefr_level_is_missing(caplog):
+    """Issue #214: the prompt asks for a best-effort cefr_level on every
+    word, and llama3.2 does not reliably comply (see the real-model test
+    below). Prompting alone cannot guarantee compliance from a model that
+    ignores the instruction, so the fix here is visibility — a null level
+    is flagged rather than silently accepted as though the field were
+    genuinely optional."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"response": json.dumps({"translations": ["prestar"]})})
+
+    with caplog.at_level(logging.WARNING):
+        enrichment = _enrich(_provider(handler), term="lend")
+
+    assert enrichment.cefr_level is None
+    assert "cefr_level" in caplog.text
+    assert "lend" in caplog.text
+
+
+def test_enrich_word_does_not_log_when_cefr_level_is_present(caplog):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"response": json.dumps({"cefr_level": "B1"})})
+
+    with caplog.at_level(logging.WARNING):
+        enrichment = _enrich(_provider(handler))
+
+    assert enrichment.cefr_level == "B1"
+    assert "cefr_level" not in caplog.text
+
+
 def test_extract_normalizes_a_single_nested_candidate_and_keeps_target_examples():
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.read())
@@ -448,3 +478,46 @@ def test_evaluate_scenario_integration_against_real_ollama():
 
     assert isinstance(result, dict)
     assert isinstance(result.get("scores"), dict)
+
+
+@pytest.mark.skipif(
+    not _ollama_model_available("llama3.2"),
+    reason="Ollama isn't running locally on :11434, or the 'llama3.2' model isn't pulled",
+)
+def test_enrich_word_localizes_examples_and_collocations_against_real_ollama():
+    """Issue #214, found during #166's real-model pass: `definitions` reliably
+    respected target_language, but examples, collocations, category and tags
+    frequently did not. Same word ("ubiquitous") and target language (French)
+    docs/ai-model-verification.md's own enrichment step used, for direct
+    comparability.
+
+    cefr_level is deliberately not asserted here: three manual runs against
+    the real model after strengthening the prompt (see enrich_word's system
+    prompt) still came back null on two of three, with no further prompt
+    wording moving that number — llama3.2 does not reliably comply with that
+    specific instruction, prompt engineering alone will not fix it, and a
+    flaky assertion here would only teach people to ignore this test's
+    failures. See test_enrich_word_logs_a_warning_when_cefr_level_is_missing
+    below for the fix this issue actually asks for on that front: flagging
+    the omission (logged), not guaranteeing it away.
+
+    max_output_tokens is raised here to sidestep issue #211's unrelated
+    truncation defect (the project default of 200 cuts a JSON response with
+    this many fields off mid-string) — that failure mode would make this
+    test's assertions meaningless by giving the model no room to answer
+    fully, and fixing it is out of scope for this issue.
+    """
+    provider = OllamaProvider(max_output_tokens=900)
+
+    result = asyncio.run(provider.enrich_word("ubiquitous", "English", "French"))
+
+    for example in result.examples:
+        assert "ubiquitous" not in example.lower(), f"English headword left untranslated in: {example!r}"
+
+    # The exact, verbatim English collocations the original bug report
+    # observed for this word — a regression guard for that specific defect,
+    # not a general language classifier (none is available here).
+    known_bad = {"everywhere", "all over the place"}
+    assert not (known_bad & {c.lower() for c in result.collocations}), (
+        f"collocations came back in English, unchanged from the reported bug: {result.collocations!r}"
+    )
