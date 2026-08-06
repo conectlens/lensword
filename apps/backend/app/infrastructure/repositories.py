@@ -332,6 +332,8 @@ def _settings_to_domain(m: RecallSettingsModel) -> RecallSettings:
         notifications_paused=m.notifications_paused,
         scheduler=m.scheduler,
         semantic_relatedness_enabled=m.semantic_relatedness_enabled,
+        contrast_cards_enabled=m.contrast_cards_enabled,
+        contrast_min_stability=m.contrast_min_stability,
         learning_diagnosis_enabled=m.learning_diagnosis_enabled,
         acquisition_loop_enabled=m.acquisition_loop_enabled,
         ai_coach_enabled=m.ai_coach_enabled,
@@ -1049,6 +1051,8 @@ class SqlAlchemyRecallSettingsRepository:
         m.notifications_paused = settings.notifications_paused
         m.scheduler = settings.scheduler
         m.semantic_relatedness_enabled = settings.semantic_relatedness_enabled
+        m.contrast_cards_enabled = settings.contrast_cards_enabled
+        m.contrast_min_stability = settings.contrast_min_stability
         m.learning_diagnosis_enabled = settings.learning_diagnosis_enabled
         m.acquisition_loop_enabled = settings.acquisition_loop_enabled
         m.ai_coach_enabled = settings.ai_coach_enabled

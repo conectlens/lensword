@@ -288,6 +288,32 @@ def test_semantic_relatedness_flag_defaults_off_and_round_trips(client, auth_hea
     assert unrelated.json()["intensity"] == 4
 
 
+def test_contrast_cards_have_an_independent_opt_in_and_provisional_threshold(client, auth_headers):
+    headers = auth_headers()
+    defaults = client.get("/api/v1/recall-settings", headers=headers).json()
+    assert defaults["contrast_cards_enabled"] is False
+    assert defaults["contrast_min_stability"] == 21.0
+
+    enabled = client.put(
+        "/api/v1/recall-settings",
+        json={
+            "semantic_relatedness_enabled": True,
+            "contrast_cards_enabled": True,
+            "contrast_min_stability": 35,
+        },
+        headers=headers,
+    )
+    assert enabled.status_code == 200
+    assert enabled.json()["semantic_relatedness_enabled"] is True
+    assert enabled.json()["contrast_cards_enabled"] is True
+    assert enabled.json()["contrast_min_stability"] == 35.0
+
+    unrelated = client.put("/api/v1/recall-settings", json={"intensity": 4}, headers=headers)
+    assert unrelated.status_code == 200
+    assert unrelated.json()["contrast_cards_enabled"] is True
+    assert unrelated.json()["contrast_min_stability"] == 35.0
+
+
 def test_learning_diagnosis_flags_default_off_and_are_independently_controllable(client, auth_headers):
     """ADR 0007 / issue #181 TODO 1: three flags, not one — deterministic
     diagnosis must not require the AI coach, so turning one on must not
