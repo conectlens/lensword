@@ -496,7 +496,15 @@ class OllamaProvider:
         self, term: str, source_language: str | None, target_language: str
     ) -> WordEnrichment:
         payload = await self._json_generation(
-            "Return JSON only. Enrich one vocabulary word for a learner. Examples must be in the target language. "
+            "Return JSON only. Enrich one vocabulary word for a learner studying target_language. Follow "
+            "every rule below:\n"
+            "1. Write examples, collocations, category and tags entirely in target_language — every one "
+            "of these four fields, not just examples.\n"
+            "2. Never leave the source-language headword untranslated inside them, and never invent a "
+            "target_language-looking word that does not actually exist; use the real word.\n"
+            "3. cefr_level is required, not optional: pick your best single-level estimate — A1, A2, B1, "
+            "B2, C1 or C2 — for every word, even a rare or difficult one. Only use null for a word that is "
+            "not really a word (e.g. a typo).\n"
             "Use keys: translations, definitions, part_of_speech, cefr_level, pronunciation, examples, synonyms, "
             "antonyms, collocations, tags, mnemonic, category, confidence.",
             f"{DATA_BLOCK_BEGIN}\nterm: {_as_data(term, self._term_max_chars)}\n"
@@ -507,6 +515,12 @@ class OllamaProvider:
             value = payload.get(key, [])
             return [item.strip() for item in value if isinstance(item, str) and item.strip()] if isinstance(value, list) else []
         confidence = payload.get("confidence")
+        if not isinstance(payload.get("cefr_level"), str):
+            # Flagged rather than silently accepted (issue #214): the prompt
+            # explicitly asks for a best-effort estimate, so a model that
+            # still omits one is worth knowing about, not just a shrug this
+            # word "has no level" — a fact this domain does not believe.
+            logger.warning("Ollama enrichment for %r returned no cefr_level", term)
         return WordEnrichment(
             term=term.strip(), target_language=target_language, translations=strings("translations"),
             definitions=strings("definitions"), part_of_speech=payload.get("part_of_speech") if isinstance(payload.get("part_of_speech"), str) else None,

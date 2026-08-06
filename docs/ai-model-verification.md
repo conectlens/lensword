@@ -238,3 +238,43 @@ not only injection):
 4. **Enrichment does not reliably localize examples, collocations, category
    or CEFR level into the requested target language**, even when the core
    definition does.
+
+## Follow-up: enrichment localization re-verified (issue #214)
+
+Item 4 above was addressed by making `enrich_word`'s prompt name
+target-language and CEFR-level requirements explicitly, per-field, rather
+than once generally (`app/infrastructure/ai.py`). Re-run against the same
+model, the same word ("ubiquitous"), the same target language (French),
+three times, with `max_output_tokens` raised to sidestep issue #211's
+unrelated truncation defect (still unfixed as of this note):
+
+- **Examples and collocations were in French, correctly, on all three
+  runs** — no repeat of the literal English `"everywhere"` /
+  `"all over the place"` collocations, and no run left the raw English
+  headword "ubiquitous" untranslated inside an example. Genuine
+  improvement, confirmed rather than assumed.
+- **The model still sometimes invents a French-looking word rather than
+  using the real one** — "ubiquile", "ubiquue", "ubiquitaire" all appeared
+  across the three runs, never the actual French word (*omniprésent*).
+  Naming this explicitly in the prompt ("never invent a target_language-
+  looking word that does not actually exist; use the real word") did not
+  eliminate it. This looks like a knowledge limitation of a 3B-parameter
+  local model rather than an instruction-following gap — prompting can ask
+  a model to comply with a rule, not to know a fact it doesn't have.
+  Unresolved; a larger model would be the next thing to try, not a
+  different prompt.
+- **`cefr_level` came back null on two of the three runs**, even after
+  strengthening the instruction from a soft ask to an explicit numbered
+  rule ("required, not optional... for every word, even a rare or
+  difficult one"). No prompt wording tried moved this number. Per this
+  issue's own proposed fix #2, the response was to flag the omission
+  (`logger.warning`, covered by a deterministic unit test) rather than
+  keep chasing a guarantee prompting cannot reliably produce from this
+  model.
+
+Net: the *reliably fixable* part of this defect (fields silently
+defaulting to English) is fixed and confirmed. The two remaining gaps
+(invented lookalike words, inconsistent CEFR compliance) are model
+capability limits this project's prompt-engineering lever cannot pull
+past — worth knowing, not worth re-litigating with more prompt tweaks
+against the same model.
