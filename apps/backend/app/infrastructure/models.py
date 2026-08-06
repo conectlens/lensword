@@ -684,3 +684,46 @@ class LearningObservationModel(Base):
     # scope, filed as a follow-up rather than guessed at here.
     context_source: Mapped[str | None] = mapped_column(String(64), nullable=True)
     schema_version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+
+
+class KnowledgeEdgeModel(Base):
+    """One relation between two of a learner's own words (issue #138, #203).
+
+    `knowledge_graph.build_edges()` shipped in #138 without a table to put
+    its output in — every read recomputed the whole graph. This is that
+    table, written on word/mistake mutation rather than on read (#203
+    TODO 2).
+
+    Stored with the lower word id as `source_id`, matching
+    `knowledge_graph._add()`'s existing canonical-ordering rule exactly —
+    a relation is one row however it was discovered, never two.
+
+    `strength` is denormalized rather than left to be recomputed from
+    `occurrences` on every read: `KnowledgeEdge.strength` is a pure
+    function of `relation` and `occurrences`, so storing it is never at
+    risk of drifting from what re-deriving it would give, and TODO 1's
+    per-item lookup needs it as a real, indexed, sortable column.
+    """
+
+    __tablename__ = "knowledge_edges"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "source_id", "target_id", "relation", name="uq_knowledge_edge"
+        ),
+        # TODO 1's stated access pattern, plus its mirror: canonical storage
+        # means "edges touching word X" can land X in either column, and a
+        # per-item lookup needs both directions indexed to avoid a
+        # sequential scan regardless of which side X fell on.
+        Index("ix_knowledge_edges_user_source_strength", "user_id", "source_id", "strength"),
+        Index("ix_knowledge_edges_user_target_strength", "user_id", "target_id", "strength"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    source_id: Mapped[int] = mapped_column(ForeignKey("words.id"))
+    target_id: Mapped[int] = mapped_column(ForeignKey("words.id"))
+    relation: Mapped[str] = mapped_column(String(16))
+    strength: Mapped[float] = mapped_column(Float)
+    evidence: Mapped[str] = mapped_column(String(255))
+    occurrences: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    updated_at: Mapped[datetime] = mapped_column(DateTime)

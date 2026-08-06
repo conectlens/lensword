@@ -1,6 +1,13 @@
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.deps import CurrentUser, GroupRepo, WordRepo, WordRevisionRepo
+from app.api.deps import (
+    CurrentUser,
+    GroupRepo,
+    KnowledgeEdgeRepo,
+    MistakeEventRepo,
+    WordRepo,
+    WordRevisionRepo,
+)
 from app.api.mappers import word_to_response
 from app.api.schemas.vocabulary import (
     BulkWordEditRequest,
@@ -50,9 +57,11 @@ def update_word(
     word_repo: WordRepo,
     group_repo: GroupRepo,
     revision_repo: WordRevisionRepo,
+    edge_repo: KnowledgeEdgeRepo,
+    mistake_repo: MistakeEventRepo,
 ) -> WordResponse:
     try:
-        word = UpdateWordUseCase(word_repo, group_repo, revision_repo).execute(
+        word = UpdateWordUseCase(word_repo, group_repo, revision_repo, edge_repo, mistake_repo).execute(
             current_user.id,
             word_id,
             WordInput(
@@ -88,9 +97,11 @@ def update_associations(
     current_user: CurrentUser,
     word_repo: WordRepo,
     group_repo: GroupRepo,
+    edge_repo: KnowledgeEdgeRepo,
+    mistake_repo: MistakeEventRepo,
 ) -> WordResponse:
     try:
-        word = UpdateWordAssociationsUseCase(word_repo, group_repo).execute(
+        word = UpdateWordAssociationsUseCase(word_repo, group_repo, edge_repo, mistake_repo).execute(
             current_user.id,
             word_id,
             add=[(e.kind, e.value) for e in payload.add],

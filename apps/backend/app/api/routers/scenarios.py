@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.api.deps import (
     ConversationRepo,
     CurrentUser,
-    MistakeEventRepo,
+    KnowledgeEdgeRepo,
     OptionalAIProvider,
     ScenarioAttemptRepo,
     WordRepo,
@@ -25,9 +25,9 @@ from app.api.schemas.scenarios import (
     ScenarioVocabularyResponse,
     StartAttemptRequest,
 )
+from app.application.use_cases.knowledge_graph import graph_for_user
 from app.domain.exceptions import AIProviderUnavailableError
 from app.domain.services.conversation import Speaker, Turn
-from app.domain.services.knowledge_graph import KnowledgeGraph, WordNode, build_edges
 from app.domain.services.scenarios import (
     CATALOG,
     MIN_LEARNER_TURNS_TO_SCORE,
@@ -72,7 +72,7 @@ def scenario_vocabulary(
     scenario_key: str,
     current_user: CurrentUser,
     word_repo: WordRepo,
-    mistake_repo: MistakeEventRepo,
+    edge_repo: KnowledgeEdgeRepo,
 ) -> ScenarioVocabularyResponse:
     """Words worth revising before a scenario (issue #144).
 
@@ -98,7 +98,7 @@ def scenario_vocabulary(
     ]
     on_topic_ids = {word.id for word in on_topic}
 
-    graph = _graph_for(words, _confusions(mistake_repo, current_user.id))
+    graph = graph_for_user(words, edge_repo, current_user.id)
     related_ids: dict[int, float] = {}
     for word in on_topic:
         for edge in graph.related(word.id, limit=10):
@@ -139,32 +139,6 @@ def _word_brief(word) -> dict:
         "translations": list(word.translations)[:3],
         "cefr_level": word.cefr_level,
     }
-
-
-def _confusions(mistake_repo, user_id: int) -> dict:
-    counts: dict = {}
-    for row in mistake_repo.list_for_user(user_id):
-        if row.confused_with_word_id is None or row.confused_with_word_id == row.word_id:
-            continue
-        key = (min(row.word_id, row.confused_with_word_id), max(row.word_id, row.confused_with_word_id))
-        counts[key] = counts.get(key, 0) + row.occurrence_count
-    return counts
-
-
-def _graph_for(words, confusions) -> KnowledgeGraph:
-    nodes = [
-        WordNode(
-            word_id=word.id,
-            term=word.term,
-            synonyms=tuple(word.synonyms),
-            antonyms=tuple(word.antonyms),
-            topics=tuple(word.topics),
-            collocations=tuple(word.collocations),
-            cefr_level=word.cefr_level,
-        )
-        for word in words
-    ]
-    return KnowledgeGraph(nodes, build_edges(nodes, confusions))
 
 
 @router.post("/attempts", response_model=ScenarioAttemptResponse, status_code=status.HTTP_201_CREATED)

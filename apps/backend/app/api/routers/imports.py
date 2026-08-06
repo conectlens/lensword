@@ -4,7 +4,7 @@ import json
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
-from app.api.deps import CurrentUser, GroupRepo, OptionalAIProvider, WordRepo, rate_limit_import_upload, rate_limit_import_url
+from app.api.deps import CurrentUser, GroupRepo, KnowledgeEdgeRepo, MistakeEventRepo, OptionalAIProvider, WordRepo, rate_limit_import_upload, rate_limit_import_url
 from app.api.schemas.imports import ImportCommitRequest, ImportParseResponse, ImportPreviewRecord, ImportPreviewRequest, ImportPreviewResponse, ImportRecordRequest, ImportUrlRequest
 from app.application.use_cases.vocabulary import AddWordUseCase, WordInput, _require_group_owner
 from app.domain.exceptions import AIProviderUnavailableError, EntityNotFoundError, PermissionDeniedError
@@ -137,10 +137,17 @@ async def preview(payload: ImportPreviewRequest, current_user: CurrentUser, grou
 
 
 @router.post('/commit', status_code=status.HTTP_201_CREATED)
-def commit(payload: ImportCommitRequest, current_user: CurrentUser, group_repo: GroupRepo, word_repo: WordRepo) -> dict[str, int]:
+def commit(
+    payload: ImportCommitRequest,
+    current_user: CurrentUser,
+    group_repo: GroupRepo,
+    word_repo: WordRepo,
+    edge_repo: KnowledgeEdgeRepo,
+    mistake_repo: MistakeEventRepo,
+) -> dict[str, int]:
     added = 0
     for record in payload.records:
         if record.status == 'duplicate': continue
-        AddWordUseCase(word_repo, group_repo).execute(current_user.id, payload.group_id, WordInput(term=record.term, target_language=_require_group_owner(group_repo, payload.group_id, current_user.id).target_language, translations=record.translations, definition=record.definition, part_of_speech=record.part_of_speech, cefr_level=record.cefr_level, pronunciation=record.pronunciation, synonyms=record.synonyms, antonyms=record.antonyms, topics=record.topics, ai_provider=record.provider, ai_model=record.model))
+        AddWordUseCase(word_repo, group_repo, edge_repo, mistake_repo).execute(current_user.id, payload.group_id, WordInput(term=record.term, target_language=_require_group_owner(group_repo, payload.group_id, current_user.id).target_language, translations=record.translations, definition=record.definition, part_of_speech=record.part_of_speech, cefr_level=record.cefr_level, pronunciation=record.pronunciation, synonyms=record.synonyms, antonyms=record.antonyms, topics=record.topics, ai_provider=record.provider, ai_model=record.model))
         added += 1
     return {'added': added}

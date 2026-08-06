@@ -35,6 +35,7 @@ from app.domain.services.diagnosis_contracts import (
     InterventionPlan,
     LearningObservation,
 )
+from app.domain.services.knowledge_graph import KnowledgeEdge
 
 
 class UserRepository(Protocol):
@@ -201,3 +202,27 @@ class AcquisitionStateRepository(Protocol):
     def get_for_word(self, user_id: int, word_id: int) -> AcquisitionState | None: ...
     def upsert(self, state: AcquisitionState) -> AcquisitionState: ...
     def delete_for_word(self, user_id: int, word_id: int) -> None: ...
+
+
+class KnowledgeEdgeRepository(Protocol):
+    """Persisted knowledge-graph edges (issue #138 completion, #203).
+
+    Written on word/mistake mutation, never on read — `replace_for_word`
+    is the one write method, and it touches only rows where the given word
+    is an endpoint. An edge between two *other* words is never read,
+    written, or even considered by a call scoped to a third word.
+    """
+
+    def list_all_for_user(self, user_id: int) -> list[KnowledgeEdge]: ...
+    def list_related(self, user_id: int, word_id: int, limit: int) -> list[KnowledgeEdge]: ...
+    # Atomically replaces every persisted edge touching `word_id` with
+    # `edges` — a delete-then-insert scoped to that word, not the account's
+    # whole graph, so an edge between two unrelated words never gets a new
+    # `updated_at` as a side effect of a third word's edit.
+    def replace_for_word(self, user_id: int, word_id: int, edges: list[KnowledgeEdge]) -> None: ...
+    def delete_for_word(self, user_id: int, word_id: int) -> None: ...
+    # A full-account replace, distinct from replace_for_word: only the
+    # one-off backfill (#203 TODO 7) uses this, since it is computing the
+    # whole account's graph once anyway and looping replace_for_word per
+    # word would mean recomputing that same graph once per word.
+    def replace_all_for_user(self, user_id: int, edges: list[KnowledgeEdge]) -> None: ...

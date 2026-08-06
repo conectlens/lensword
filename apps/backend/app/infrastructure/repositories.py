@@ -10,7 +10,7 @@ import logging
 import uuid
 from datetime import datetime
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.domain.entities import (
@@ -31,6 +31,7 @@ from app.domain.entities import (
 )
 from app.domain.services.cefr_progress import MASTERY_STRENGTH
 from app.domain.services.diagnosis_contracts import LearningObservation
+from app.domain.services.knowledge_graph import KnowledgeEdge, Relation
 from app.domain.value_objects import (
     DEFAULT_TIME_ZONE,
     Recurrence,
@@ -65,6 +66,7 @@ from app.infrastructure.models import (
     UserModel,
     WordModel,
     LearningObservationModel,
+    KnowledgeEdgeModel,
 )
 
 logger = logging.getLogger(__name__)
@@ -394,6 +396,17 @@ def _delete_word_dependents(db: Session, word_ids: list[int]) -> None:
         select(MistakeEventModel).where(MistakeEventModel.confused_with_word_id.in_(word_ids))
     ):
         row.confused_with_word_id = None
+
+    # A knowledge edge always has two endpoints (#203); unlike the mistake
+    # case above, there is no "keep it with the reference cleared" option
+    # for a relation whose whole meaning is which two words it joins.
+    for row in db.scalars(
+        select(KnowledgeEdgeModel).where(
+            or_(KnowledgeEdgeModel.source_id.in_(word_ids), KnowledgeEdgeModel.target_id.in_(word_ids))
+        )
+    ):
+        db.delete(row)
+
     db.flush()
 
 
@@ -1739,3 +1752,100 @@ class SqlAlchemyLearningObservationRepository:
             .limit(limit)
         )
         return [_learning_observation_to_domain(m) for m in self.db.scalars(stmt)]
+
+
+def _knowledge_edge_to_domain(m: KnowledgeEdgeModel) -> KnowledgeEdge:
+    return KnowledgeEdge(
+        source_id=m.source_id,
+        target_id=m.target_id,
+        relation=Relation(m.relation),
+        evidence=m.evidence,
+        occurrences=m.occurrences,
+    )
+
+
+class SqlAlchemyKnowledgeEdgeRepository:
+    """Persisted knowledge-graph edges (issue #138 completion, #203).
+
+    `strength` is stored but never accepted as an argument here — it is
+    `KnowledgeEdge.strength`, a pure function of relation and occurrences,
+    computed fresh from the domain object being written so the column can
+    never drift from what re-deriving it would give.
+    """
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def list_all_for_user(self, user_id: int) -> list[KnowledgeEdge]:
+        stmt = select(KnowledgeEdgeModel).where(KnowledgeEdgeModel.user_id == user_id)
+        return [_knowledge_edge_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def list_related(self, user_id: int, word_id: int, limit: int) -> list[KnowledgeEdge]:
+        stmt = (
+            select(KnowledgeEdgeModel)
+            .where(
+                KnowledgeEdgeModel.user_id == user_id,
+                or_(KnowledgeEdgeModel.source_id == word_id, KnowledgeEdgeModel.target_id == word_id),
+            )
+            .order_by(
+                KnowledgeEdgeModel.strength.desc(), KnowledgeEdgeModel.source_id, KnowledgeEdgeModel.target_id
+            )
+            .limit(limit)
+        )
+        return [_knowledge_edge_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def replace_for_word(self, user_id: int, word_id: int, edges: list[KnowledgeEdge]) -> None:
+        self.db.execute(
+            delete(KnowledgeEdgeModel).where(
+                KnowledgeEdgeModel.user_id == user_id,
+                or_(KnowledgeEdgeModel.source_id == word_id, KnowledgeEdgeModel.target_id == word_id),
+            )
+        )
+        now = utcnow()
+        for edge in edges:
+            # Defensive, not trusting: only ever write rows that actually
+            # touch word_id, regardless of what the caller passed in —
+            # otherwise a caller's bug could silently bump `updated_at` on
+            # an edge between two unrelated words.
+            if word_id not in (edge.source_id, edge.target_id):
+                continue
+            self.db.add(
+                KnowledgeEdgeModel(
+                    user_id=user_id,
+                    source_id=edge.source_id,
+                    target_id=edge.target_id,
+                    relation=edge.relation.value,
+                    strength=edge.strength,
+                    evidence=edge.evidence,
+                    occurrences=edge.occurrences,
+                    updated_at=now,
+                )
+            )
+        self.db.flush()
+
+    def delete_for_word(self, user_id: int, word_id: int) -> None:
+        self.db.execute(
+            delete(KnowledgeEdgeModel).where(
+                KnowledgeEdgeModel.user_id == user_id,
+                or_(KnowledgeEdgeModel.source_id == word_id, KnowledgeEdgeModel.target_id == word_id),
+            )
+        )
+        self.db.flush()
+
+    def replace_all_for_user(self, user_id: int, edges: list[KnowledgeEdge]) -> None:
+        self.db.execute(delete(KnowledgeEdgeModel).where(KnowledgeEdgeModel.user_id == user_id))
+        now = utcnow()
+        for edge in edges:
+            self.db.add(
+                KnowledgeEdgeModel(
+                    user_id=user_id,
+                    source_id=edge.source_id,
+                    target_id=edge.target_id,
+                    relation=edge.relation.value,
+                    strength=edge.strength,
+                    evidence=edge.evidence,
+                    occurrences=edge.occurrences,
+                    updated_at=now,
+                )
+            )
+        self.db.flush()
