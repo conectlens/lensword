@@ -31,6 +31,12 @@ from app.domain.entities import (
 )
 from app.domain.services.cefr_progress import MASTERY_STRENGTH
 from app.domain.services.acquisition import AcquisitionScheduler
+from app.domain.services.companion_sessions import (
+    CompanionSession,
+    CompanionSessionStatus,
+    CompanionTurn,
+    CompanionTurnRole,
+)
 from app.domain.services.diagnosis_contracts import (
     AcquisitionState,
     Diagnosis,
@@ -82,6 +88,8 @@ from app.infrastructure.models import (
     InterventionPlanModel,
     InterventionOutcomeModel,
     AcquisitionEventModel,
+    CompanionSessionModel,
+    CompanionTurnModel,
 )
 
 logger = logging.getLogger(__name__)
@@ -2213,6 +2221,150 @@ class SqlAlchemyInterventionRepository:
             .order_by(InterventionPlanModel.planned_at.desc())
         )
         return [_intervention_plan_to_domain(m) for m in self.db.scalars(stmt)]
+
+
+def _companion_session_to_domain(m: CompanionSessionModel) -> CompanionSession:
+    return CompanionSession(
+        id=m.id,
+        user_id=m.user_id,
+        connection_id=m.connection_id,
+        client_id=m.client_id,
+        goal=m.goal,
+        language=m.language,
+        group_id=m.group_id,
+        difficulty=m.difficulty,
+        active_activity=m.active_activity,
+        consent_snapshot=dict(m.consent_snapshot or {}),
+        summary=m.summary,
+        status=CompanionSessionStatus(m.status),
+        revision=m.revision,
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+    )
+
+
+def _companion_turn_to_domain(m: CompanionTurnModel) -> CompanionTurn:
+    return CompanionTurn(
+        id=m.id,
+        session_id=m.session_id,
+        role=CompanionTurnRole(m.role),
+        content=m.content,
+        activity_id=m.activity_id,
+        operation_id=m.operation_id,
+        created_at=m.created_at,
+    )
+
+
+class SqlAlchemyCompanionSessionRepository:
+    """Tenant-scoped persistence for normalized companion sessions (#193)."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add(self, session: CompanionSession) -> CompanionSession:
+        model = CompanionSessionModel(
+            id=session.id,
+            user_id=session.user_id,
+            connection_id=session.connection_id,
+            client_id=session.client_id,
+            goal=session.goal,
+            language=session.language,
+            group_id=session.group_id,
+            difficulty=session.difficulty,
+            active_activity=session.active_activity,
+            consent_snapshot=session.consent_snapshot,
+            summary=session.summary,
+            status=session.status.value,
+            revision=session.revision,
+            created_at=session.created_at,
+            updated_at=session.updated_at,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _companion_session_to_domain(model)
+
+    def get(self, user_id: int, session_id: str) -> CompanionSession | None:
+        model = self.db.scalar(
+            select(CompanionSessionModel).where(
+                CompanionSessionModel.id == session_id,
+                CompanionSessionModel.user_id == user_id,
+            )
+        )
+        return _companion_session_to_domain(model) if model else None
+
+    def update(self, session: CompanionSession) -> CompanionSession:
+        model = self.db.scalar(
+            select(CompanionSessionModel).where(
+                CompanionSessionModel.id == session.id,
+                CompanionSessionModel.user_id == session.user_id,
+            )
+        )
+        if model is None:
+            raise ValueError("Companion session not found")
+        model.goal = session.goal
+        model.language = session.language
+        model.group_id = session.group_id
+        model.difficulty = session.difficulty
+        model.active_activity = session.active_activity
+        model.consent_snapshot = session.consent_snapshot
+        model.summary = session.summary
+        model.status = session.status.value
+        model.revision = session.revision
+        model.updated_at = session.updated_at
+        self.db.flush()
+        return _companion_session_to_domain(model)
+
+    def list_turns(self, user_id: int, session_id: str, limit: int = 100) -> list[CompanionTurn]:
+        if self.get(user_id, session_id) is None:
+            return []
+        stmt = (
+            select(CompanionTurnModel)
+            .join(CompanionSessionModel, CompanionSessionModel.id == CompanionTurnModel.session_id)
+            .where(CompanionSessionModel.id == session_id, CompanionSessionModel.user_id == user_id)
+            .order_by(CompanionTurnModel.created_at.asc(), CompanionTurnModel.id.asc())
+            .limit(min(max(limit, 1), 100))
+        )
+        return [_companion_turn_to_domain(model) for model in self.db.scalars(stmt)]
+
+    def add_turn(self, turn: CompanionTurn) -> CompanionTurn:
+        model = CompanionTurnModel(
+            session_id=turn.session_id,
+            role=turn.role.value,
+            content=turn.content,
+            activity_id=turn.activity_id,
+            operation_id=turn.operation_id,
+            created_at=turn.created_at,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _companion_turn_to_domain(model)
+
+    def find_turn_by_operation(self, user_id: int, session_id: str, operation_id: str) -> CompanionTurn | None:
+        model = self.db.scalar(
+            select(CompanionTurnModel)
+            .join(CompanionSessionModel, CompanionSessionModel.id == CompanionTurnModel.session_id)
+            .where(
+                CompanionSessionModel.id == session_id,
+                CompanionSessionModel.user_id == user_id,
+                CompanionTurnModel.operation_id == operation_id,
+            )
+        )
+        return _companion_turn_to_domain(model) if model else None
+
+    def delete_content(self, user_id: int, session_id: str) -> None:
+        session = self.db.scalar(
+            select(CompanionSessionModel).where(
+                CompanionSessionModel.id == session_id,
+                CompanionSessionModel.user_id == user_id,
+            )
+        )
+        if session is None:
+            return
+        self.db.query(CompanionTurnModel).filter(CompanionTurnModel.session_id == session_id).delete()
+        session.summary = "[content deleted]"
+        session.revision += 1
+        session.updated_at = utcnow()
+        self.db.flush()
 
 
 def _acquisition_state_to_domain(m: AcquisitionEventModel) -> AcquisitionState:
