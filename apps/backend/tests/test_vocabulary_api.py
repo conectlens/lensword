@@ -65,6 +65,80 @@ def test_add_word_to_group_and_list_it(client, auth_headers):
     assert group_after["word_count"] == 1
 
 
+def test_add_word_persists_synonyms_antonyms_and_topics(client, auth_headers):
+    """Issue #202 TODO 0/1: the AI already produces these three fields;
+    WordInput and WordCreateRequest had nowhere to put them, so hand-entry
+    through the mind-map sidebar was the only write path. This asserts a
+    normal create-word request now round-trips all three."""
+    headers = auth_headers()
+    group = client.post(
+        "/api/v1/groups", json={"name": "Spanish Nouns", "target_language": "Spanish"}, headers=headers
+    ).json()
+
+    resp = client.post(
+        f"/api/v1/groups/{group['id']}/words",
+        json={
+            "term": "prestar",
+            "target_language": "Spanish",
+            "translations": ["to lend"],
+            "synonyms": ["fiar"],
+            "antonyms": ["pedir prestado"],
+            "topics": ["finance", "favors"],
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 201
+    word = resp.json()
+    assert word["synonyms"] == ["fiar"]
+    assert word["antonyms"] == ["pedir prestado"]
+    assert word["topics"] == ["finance", "favors"]
+
+    fetched = client.get(f"/api/v1/words/{word['id']}", headers=headers).json()
+    assert fetched["synonyms"] == ["fiar"]
+    assert fetched["topics"] == ["finance", "favors"]
+
+
+def test_updating_a_word_without_naming_associations_leaves_them_intact(client, auth_headers, db_session):
+    """Issue #202 TODO 2: UpdateWordUseCase follows the existing collocations
+    pattern exactly — omitting a field in the WordInput passed to the use
+    case (`None`) must not clear it, while explicitly passing `[]` does.
+    Driven through the use case directly, since it is the caller that can
+    tell "unset" apart from "empty" — the full-replacement PUT endpoint
+    always supplies a concrete list, matching how collocations/tags already
+    behave there."""
+    from app.application.use_cases.vocabulary import UpdateWordUseCase, WordInput
+    from app.domain.value_objects import SupportedLanguage
+    from app.infrastructure.repositories import SqlAlchemyGroupRepository, SqlAlchemyUserRepository, SqlAlchemyWordRepository
+
+    headers = auth_headers()
+    group = client.post(
+        "/api/v1/groups", json={"name": "G", "target_language": "Spanish"}, headers=headers
+    ).json()
+    word = client.post(
+        f"/api/v1/groups/{group['id']}/words",
+        json={"term": "grande", "target_language": "Spanish", "translations": ["big"], "synonyms": ["enorme"]},
+        headers=headers,
+    ).json()
+
+    owner_id = SqlAlchemyUserRepository(db_session).get_by_email("alex@example.com").id
+    word_repo = SqlAlchemyWordRepository(db_session)
+    group_repo = SqlAlchemyGroupRepository(db_session)
+
+    UpdateWordUseCase(word_repo, group_repo).execute(
+        owner_id,
+        word["id"],
+        WordInput(term="grande", target_language=SupportedLanguage.SPANISH, translations=["big"]),
+    )
+    assert word_repo.get_by_id(word["id"]).synonyms == ["enorme"]
+
+    UpdateWordUseCase(word_repo, group_repo).execute(
+        owner_id,
+        word["id"],
+        WordInput(term="grande", target_language=SupportedLanguage.SPANISH, translations=["big"], synonyms=[]),
+    )
+    assert word_repo.get_by_id(word["id"]).synonyms == []
+
+
 def test_update_word(client, auth_headers):
     headers = auth_headers()
     group = client.post(

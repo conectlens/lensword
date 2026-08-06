@@ -125,6 +125,11 @@ async def preview(payload: ImportPreviewRequest, current_user: CurrentUser, grou
                 values['part_of_speech'] = values['part_of_speech'] or enriched.part_of_speech
                 values['cefr_level'] = values['cefr_level'] or enriched.cefr_level
                 values['pronunciation'] = values['pronunciation'] or enriched.pronunciation
+                # Unlike the fields above, a raw parsed row never carries
+                # these — there is nothing to prefer over the AI's output.
+                values['synonyms'] = enriched.synonyms
+                values['antonyms'] = enriched.antonyms
+                values['topics'] = enriched.topics
                 metadata = {'provider': enriched.provider, 'model': enriched.model}; cleaned = True
             except AIProviderUnavailableError: pass
         records.append(ImportPreviewRecord(**values, source_language=_language(payload.source_language, record.term), status='ai_cleaned' if cleaned else 'ready', **metadata))
@@ -136,6 +141,6 @@ def commit(payload: ImportCommitRequest, current_user: CurrentUser, group_repo: 
     added = 0
     for record in payload.records:
         if record.status == 'duplicate': continue
-        AddWordUseCase(word_repo, group_repo).execute(current_user.id, payload.group_id, WordInput(term=record.term, target_language=_require_group_owner(group_repo, payload.group_id, current_user.id).target_language, translations=record.translations, definition=record.definition, part_of_speech=record.part_of_speech, cefr_level=record.cefr_level, pronunciation=record.pronunciation, ai_provider=record.provider, ai_model=record.model))
+        AddWordUseCase(word_repo, group_repo).execute(current_user.id, payload.group_id, WordInput(term=record.term, target_language=_require_group_owner(group_repo, payload.group_id, current_user.id).target_language, translations=record.translations, definition=record.definition, part_of_speech=record.part_of_speech, cefr_level=record.cefr_level, pronunciation=record.pronunciation, synonyms=record.synonyms, antonyms=record.antonyms, topics=record.topics, ai_provider=record.provider, ai_model=record.model))
         added += 1
     return {'added': added}

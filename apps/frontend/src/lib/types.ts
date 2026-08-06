@@ -93,6 +93,7 @@ export interface WordEnrichment {
   antonyms: string[]
   collocations: string[]
   tags: string[]
+  topics: string[]
   mnemonic: string | null
   category: string | null
   confidence: number | null

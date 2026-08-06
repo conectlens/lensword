@@ -124,6 +124,9 @@ class WordInput:
     pronunciation: str | None = None
     collocations: list[str] | None = None
     tags: list[str] | None = None
+    synonyms: list[str] | None = None
+    antonyms: list[str] | None = None
+    topics: list[str] | None = None
     ai_confidence: float | None = None
     ai_provider: str | None = None
     ai_model: str | None = None
@@ -149,6 +152,9 @@ class AddWordUseCase:
             pronunciation=data.pronunciation,
             collocations=list(data.collocations or []),
             tags=list(data.tags or []),
+            synonyms=list(data.synonyms or []),
+            antonyms=list(data.antonyms or []),
+            topics=list(data.topics or []),
             ai_confidence=data.ai_confidence,
             ai_provider=data.ai_provider,
             ai_model=data.ai_model,
@@ -191,6 +197,9 @@ class UpdateWordUseCase:
         if data.pronunciation is not None: word.pronunciation = data.pronunciation
         if data.collocations is not None: word.collocations = list(data.collocations)
         if data.tags is not None: word.tags = list(data.tags)
+        if data.synonyms is not None: word.synonyms = list(data.synonyms)
+        if data.antonyms is not None: word.antonyms = list(data.antonyms)
+        if data.topics is not None: word.topics = list(data.topics)
         if data.ai_confidence is not None: word.ai_confidence = data.ai_confidence
         if data.ai_provider is not None: word.ai_provider = data.ai_provider
         if data.ai_model is not None: word.ai_model = data.ai_model

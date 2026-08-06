@@ -22,6 +22,7 @@ class WordEnrichmentResponse(BaseModel):
     antonyms: list[str]
     collocations: list[str]
     tags: list[str]
+    topics: list[str]
     mnemonic: str | None
     category: str | None
     confidence: float | None
