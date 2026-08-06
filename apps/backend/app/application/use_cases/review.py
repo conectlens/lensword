@@ -22,6 +22,8 @@ from app.domain.repositories import (
 )
 from app.domain.services.ai_provider import AIProvider
 from app.domain.services.diagnosis_contracts import LearningObservation
+from app.domain.services.distractors import DistractorSelection, select_distractors
+from app.domain.services.knowledge_graph import KnowledgeGraph
 from app.domain.services.spaced_repetition import Scheduler
 from app.domain.services.mistake_memory import (
     RecordedMistake,
@@ -30,6 +32,42 @@ from app.domain.services.mistake_memory import (
 )
 from app.domain.services.weakness import categorise
 from app.domain.value_objects import ReviewOutcome, SessionMode, utcnow
+
+# Presentation modes that show multiple choice rather than a typed answer
+# (#205). Shared between the router (deciding whether to compute options at
+# all) and anywhere else that needs the same list.
+MULTIPLE_CHOICE_MODES = frozenset({SessionMode.WALKING, SessionMode.NIGHT, SessionMode.BREAK})
+
+
+def build_mcq_options_for_words(
+    words: list[Word],
+    all_words: list[Word],
+    graph: KnowledgeGraph,
+    count: int = 2,
+) -> dict[int, DistractorSelection]:
+    """Multiple-choice options for a set of due words, drawn from the
+    account's full vocabulary rather than just this session's queue — the
+    fix for the "None of the above" defect (#205 TODO 5), which came from
+    the old frontend-only selector only having the small already-loaded
+    queue to pick from.
+    """
+    if not all_words:
+        return {}
+    average_strength = sum(w.review_state.strength for w in all_words) / len(all_words)
+    selections: dict[int, DistractorSelection] = {}
+    for word in words:
+        if word.id is None or not word.translations:
+            continue
+        selections[word.id] = select_distractors(
+            target=word,
+            correct_answer=word.translations[0],
+            candidate_words=all_words,
+            graph=graph,
+            review_state=word.review_state,
+            account_average_strength=average_strength,
+            count=count,
+        )
+    return selections
 
 
 class StartReviewSessionUseCase:

@@ -66,6 +66,11 @@ class WordResponse(BaseModel):
     # What an offline edit must name as base_revision to reconcile without a
     # conflict later (issue #90).
     revision: int
+    # Multiple-choice options for this card, correct answer included and
+    # shuffled in — set only for a multiple-choice session mode with #205's
+    # relatedness flag on; every other caller leaves this unset, so the
+    # field is additive rather than a contract change for existing clients.
+    mcq_options: list[str] | None = None
 
 
 class WordCreateRequest(BaseModel):
