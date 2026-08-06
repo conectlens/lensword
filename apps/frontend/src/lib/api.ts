@@ -1,5 +1,5 @@
 import type {
-  AdminStats, Group, MnemonicNote, ProfileOverview, RecallSettings, Room,
+  AdminStats, AcquisitionState, Group, MnemonicNote, ProfileOverview, RecallSettings, Room,
   SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile, CefrProgress, Prerequisites, RelatedWord, WordRevision, AiState, OllamaProbe, LearningPath, GeneratePathResult, Conversation, ConversationMessage, SendMessageResult, Difficulty, Scenario, ScenarioAttempt, ScenarioVocabulary,
 } from './types'
 import { resolveApiBase } from './runtimeConfig'
@@ -247,6 +247,16 @@ export const reviewApi = {
       body: JSON.stringify({ new_words_learned_count }),
     }),
   weeklyProgress: () => request<{ counts_by_day: Record<string, number> }>('/api/v1/review/weekly-progress'),
+}
+
+export const acquisitionApi = {
+  due: (limit = 50) => request<AcquisitionState[]>(`/api/v1/acquisition/due?limit=${limit}`),
+  word: (wordId: number) => request<Word>(`/api/v1/words/${wordId}`),
+  answer: (wordId: number, outcome: ReviewOutcome) =>
+    request<AcquisitionState | null>(`/api/v1/words/${wordId}/acquisition/answer`, {
+      method: 'POST',
+      body: JSON.stringify({ outcome }),
+    }),
 }
 
 // --- MnemoLab ----------------------------------------------------------------

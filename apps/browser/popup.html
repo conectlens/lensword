@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>LensWord Capture</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main>
+      <h1>LensWord Capture</h1>
+      <label>API URL<input id="api-url" type="url" required></label>
+      <label>Access token<input id="token" type="password" autocomplete="off"></label>
+      <label>Group ID<input id="group-id" type="number" min="1" required></label>
+      <button id="save" type="button">Save settings</button>
+      <p id="status" role="status"></p>
+      <p class="hint">Select a word on any page, right-click it, then choose “Save to LensWord”.</p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

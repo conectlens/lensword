@@ -53,6 +53,9 @@ export function DashboardPage() {
           <Button size="lg" variant="secondary" icon="refresh" onClick={() => navigate('/review?mode=mistakes')}>
             Review my mistakes
           </Button>
+          <Button size="lg" variant="secondary" icon="psychology" onClick={() => navigate('/stabilize')}>
+            Stabilize words
+          </Button>
         </div>
       </div>
 
