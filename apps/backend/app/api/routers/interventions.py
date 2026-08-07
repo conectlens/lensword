@@ -6,20 +6,86 @@ endpoint: it only ever happens as a side effect of `RunDiagnosisForWordUseCase`
 (review answer submission), the same "no separate write path" pattern
 diagnoses and knowledge edges already follow.
 """
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api.deps import CurrentUser, InterventionRepo, WordRepo
-from app.api.schemas.interventions import ChooseAlternativeRequest, InterventionPlanResponse
+from app.api.deps import (
+    CurrentUser,
+    DbSession,
+    DiagnosisRepo,
+    InterventionRepo,
+    OptionalAIProvider,
+    WordRepo,
+    rate_limit_ai,
+)
+from app.api.schemas.interventions import (
+    ChooseAlternativeRequest,
+    InterventionExplanationDisabled,
+    InterventionExplanationOk,
+    InterventionExplanationRejected,
+    InterventionExplanationResponse,
+    InterventionExplanationUnavailable,
+    InterventionPlanResponse,
+)
 from app.application.use_cases.intervention import (
     ChooseAlternativeInterventionUseCase,
+    ExplainInterventionUseCase,
     ListActiveInterventionPlansUseCase,
     PostponeInterventionPlanUseCase,
     RejectInterventionPlanUseCase,
 )
+from app.config import get_effective_ai_settings
 from app.domain.exceptions import EntityNotFoundError, ValidationError
+from app.domain.services.ai_cache import AIResponseCache, CacheKey
+from app.domain.services.companion_coach import CoachContent, CoachRequest
 from app.domain.services.diagnosis_contracts import InterventionPlan
+from app.domain.value_objects import utcnow
 
 router = APIRouter(prefix="/api/v1/words/{word_id}/interventions", tags=["diagnosis"])
+
+# One cache per process, shared across requests but never across users — the
+# same #139 reasoning app/api/routers/ai.py's own `_cache` uses. A plan's
+# generated content is worth reusing within a sitting; it is not worth
+# reusing across a model or policy change, which is why both are part of
+# the key (#187 TODO 5).
+_coach_cache = AIResponseCache()
+
+
+def _coach_cache_key(user_id: int, plan: InterventionPlan, request: CoachRequest) -> CacheKey:
+    settings = get_effective_ai_settings()
+    return CacheKey.build(
+        user_id=user_id,
+        provider=settings.ai_provider or "none",
+        model=settings.ollama_model or "none",
+        operation="coach_explain",
+        payload={
+            "plan_id": plan.id,
+            "policy_version": plan.policy_version,
+            "content_type": request.intervention_type,
+            # The evidence itself, not just its count — a plan whose
+            # underlying evidence changed (e.g. a later diagnosis re-ran)
+            # must not serve a stale answer just because the plan id
+            # matched.
+            "evidence": [(item.evidence_id, item.fact) for item in request.evidence],
+        },
+    )
+
+
+def _explanation_response(
+    outcome: str, content: CoachContent, detail: str | None
+) -> InterventionExplanationResponse:
+    fields = {
+        "text": content.text,
+        "evidence_ids": list(content.evidence_ids),
+        "content_type": content.content_type,
+        "editable": content.editable,
+    }
+    if outcome == "disabled":
+        return InterventionExplanationDisabled(**fields)
+    if outcome == "unavailable":
+        return InterventionExplanationUnavailable(detail=detail or "", **fields)
+    if outcome == "rejected":
+        return InterventionExplanationRejected(detail=detail or "", **fields)
+    return InterventionExplanationOk(provider=content.provider, model=content.model, **fields)
 
 
 def _response(p: InterventionPlan) -> InterventionPlanResponse:
@@ -52,6 +118,64 @@ def list_active_interventions(
     _require_owned_word(word_repo, current_user.id, word_id)
     plans = ListActiveInterventionPlansUseCase(intervention_repo).execute(current_user.id, word_id)
     return [_response(p) for p in plans]
+
+
+@router.post(
+    "/{plan_id}/explain",
+    response_model=InterventionExplanationResponse,
+    dependencies=[Depends(rate_limit_ai)],
+)
+async def explain_intervention(
+    word_id: int,
+    plan_id: int,
+    current_user: CurrentUser,
+    word_repo: WordRepo,
+    intervention_repo: InterventionRepo,
+    diagnosis_repo: DiagnosisRepo,
+    ai_provider: OptionalAIProvider,
+    db: DbSession,
+) -> InterventionExplanationResponse:
+    """Issue #187 TODO 2: evidence-grounded, AI-generated content for an
+    existing plan — contrast exercise / prerequisite lesson / mnemonic
+    alternatives / plain explanation, chosen by the plan's own `strategy`,
+    never by the caller. Nothing here is written back to the plan (see
+    `InterventionPlan`'s docstring: this epic's facts are append-only) — the
+    response is what the learner edits or rejects client-side.
+
+    `async def` so a slow generation waits on the event loop, and the
+    pooled DB connection is released with `db.close()` before that await —
+    the same reason and the same pattern `mnemonics.py`'s `suggest_mnemonic`
+    documents (#187 TODO 5): the engine's connection pool is far smaller
+    than the number of requests a hung provider can pile up.
+    """
+    _require_owned_word(word_repo, current_user.id, word_id)
+    try:
+        plan = _get_plan_or_404(intervention_repo, current_user.id, word_id, plan_id)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    word = word_repo.get_by_id(word_id)
+    target_language = word.target_language.value if word is not None else "unknown"
+
+    use_case = ExplainInterventionUseCase(diagnosis_repo, ai_provider)
+    request = use_case.build_request(plan, target_language)
+
+    cache_key = None
+    if ai_provider is not None:
+        cache_key = _coach_cache_key(current_user.id, plan, request)
+        cached = _coach_cache.get(cache_key, utcnow())
+        if cached is not None:
+            return _explanation_response("ok", cached, None)
+
+    db.close()
+
+    outcome, content, detail = await use_case.generate(request)
+    if outcome == "ok" and cache_key is not None:
+        # Failures are deliberately never cached (see ai_cache.py's own
+        # rule) — a daemon that was unreachable or a generation that was
+        # rejected a minute ago may succeed on retry, and caching either
+        # would keep serving that non-answer for the whole TTL.
+        _coach_cache.put(cache_key, content, utcnow())
+    return _explanation_response(outcome, content, detail)
 
 
 @router.post("/{plan_id}/reject", response_model=InterventionPlanResponse)

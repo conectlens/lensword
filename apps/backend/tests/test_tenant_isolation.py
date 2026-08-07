@@ -270,6 +270,10 @@ CROSS_TENANT_CASES = [
     _case("POST", "/api/v1/words/{word}/interventions/{plan}/reject"),
     _case("POST", "/api/v1/words/{word}/interventions/{plan}/postpone"),
     _case("POST", "/api/v1/words/{word}/interventions/{plan}/alternative", {"strategy": "spatial_anchor"}),
+    # AI-generated intervention content (#187 TODO 2). No AI provider is
+    # configured in this audit, so this always answers "disabled" for the
+    # owner — the ownership check must still run and 404 before that.
+    _case("POST", "/api/v1/words/{word}/interventions/{plan}/explain"),
     # Graduated acquisition ladder (#184). Same disclosure concern as
     # diagnosis above, plus a real write surface on /start and /answer.
     _case("GET", "/api/v1/words/{word}/acquisition"),

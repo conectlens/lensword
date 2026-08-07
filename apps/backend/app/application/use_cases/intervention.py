@@ -1,18 +1,28 @@
-"""Learner-facing actions on an `InterventionPlan`, and delayed-outcome
-evaluation (issue #185 TODO 4/5).
+"""Learner-facing actions on an `InterventionPlan`, delayed-outcome
+evaluation, and AI-generated content for a plan (issue #185 TODO 4/5,
+issue #187 TODO 2).
 
 `RunDiagnosisForWordUseCase` (diagnosis.py) creates plans; everything here
 acts on a plan that already exists — reject/postpone/choose an alternative
 (TODO 4's "let users reject, postpone, or choose an alternative"), list the
-ones still awaiting a learner decision, and mark a plan's delayed
-effectiveness once enough evidence exists (TODO 5).
+ones still awaiting a learner decision, mark a plan's delayed effectiveness
+once enough evidence exists (TODO 5), and — `ExplainInterventionUseCase`,
+below — generate bounded, evidence-grounded content for one (#187 TODO 2).
 """
 from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from app.domain.exceptions import EntityNotFoundError, PermissionDeniedError, ValidationError
-from app.domain.repositories import InterventionRepository, LearningObservationRepository
+from app.domain.exceptions import AIProviderUnavailableError, EntityNotFoundError, PermissionDeniedError, ValidationError
+from app.domain.repositories import DiagnosisRepository, InterventionRepository, LearningObservationRepository
+from app.domain.services.ai_provider import AIProvider
+from app.domain.services.companion_coach import (
+    CoachContent,
+    CoachContentRejected,
+    CoachRequest,
+    build_coach_request,
+    deterministic_fallback,
+)
 from app.domain.services.diagnosis_contracts import InterventionOutcome, InterventionPlan
 from app.domain.services.intervention_planning import InterventionStrategy, evaluate_intervention_outcome
 from app.domain.value_objects import ReviewOutcome, utcnow
@@ -182,3 +192,78 @@ class EvaluateInterventionOutcomesUseCase:
                 completed=True, result=result, recorded_at=moment, horizon=horizon,
             )
         )
+
+
+# #187 TODO 2: which generated-content family a strategy gets. Only the
+# strategies with a more specific generator are listed; everything else
+# (ISOLATE, MORPHOLOGY_DECOMPOSITION, CONTEXT_VARIATION,
+# PRODUCTION_PRACTICE, SPATIAL_ANCHOR, ACQUISITION_RESTART) falls through to
+# the plain explanation below — a bounded, evidence-cited explanation is
+# always a safe default even where no dedicated generator exists yet.
+_CONTENT_TYPE_FOR_STRATEGY: dict[str, str] = {
+    InterventionStrategy.CONTRAST.value: "contrast",
+    InterventionStrategy.PREREQUISITE_PATH.value: "prerequisite",
+    InterventionStrategy.MNEMONIC_REPLACEMENT.value: "mnemonic",
+}
+
+
+class ExplainInterventionUseCase:
+    """AI-generated, evidence-grounded content for an existing
+    `InterventionPlan` (issue #187 TODO 2).
+
+    Nothing here is persisted onto the plan: `InterventionPlan` is one of
+    this epic's append-only facts (see its docstring in
+    diagnosis_contracts.py), and a generated explanation is a proposal the
+    learner edits or rejects, not a new fact about the diagnosis — so this
+    use case only ever reads the plan/diagnosis and returns content for the
+    caller to hand back to the client.
+
+    Split into a synchronous, database-bound half (`build_request`) and an
+    awaitable half that touches no repository (`generate`), the same shape
+    `SuggestMnemonicUseCase` (#185's own AI use case, review.py) already
+    uses — so the router built on top can release its DB connection before
+    the slow await (#187 TODO 5), the same way suggest_mnemonic's router
+    does.
+    """
+
+    def __init__(self, diagnosis_repo: DiagnosisRepository, provider: AIProvider | None):
+        self.diagnosis_repo = diagnosis_repo
+        self.provider = provider
+
+    def build_request(self, plan: InterventionPlan, target_language: str) -> CoachRequest:
+        """The database-bound half: looks up the diagnosis that produced
+        this plan (best-effort — build_coach_request falls back to the
+        plan's own rationale when none matches) and shapes the bounded
+        request. No provider call here."""
+        diagnosis = self.diagnosis_repo.latest_for_word(plan.user_id, plan.word_id)
+        content_type = _CONTENT_TYPE_FOR_STRATEGY.get(plan.strategy, "explanation")
+        return build_coach_request(plan, diagnosis, target_language=target_language, content_type=content_type)
+
+    async def generate(self, request: CoachRequest) -> tuple[str, CoachContent, str | None]:
+        """The slow half. Touches no repository.
+
+        Returns `(outcome, content, detail)` where `outcome` is one of
+        "disabled"/"unavailable"/"rejected"/"ok" (#187 TODO 3's
+        disabled-vs-unavailable-vs-ok pattern, extended with "rejected" for
+        TODO 2's own "malformed/unsafe outputs rejected without losing the
+        underlying plan"). Every branch except "ok" answers with
+        `deterministic_fallback` so the caller always has content to show —
+        never blocking on the AI the way TODO 5 requires.
+        """
+        if self.provider is None:
+            return "disabled", deterministic_fallback(request, content_type=request.intervention_type), None
+
+        try:
+            if request.intervention_type == "contrast":
+                content = await self.provider.generate_contrast_exercise(request)
+            elif request.intervention_type == "prerequisite":
+                content = await self.provider.generate_prerequisite_lesson(request)
+            elif request.intervention_type == "mnemonic":
+                content = await self.provider.suggest_mnemonic_alternatives(request)
+            else:
+                content = await self.provider.explain_diagnosis(request)
+        except AIProviderUnavailableError as exc:
+            return "unavailable", deterministic_fallback(request, content_type=request.intervention_type), str(exc)
+        except CoachContentRejected as exc:
+            return "rejected", deterministic_fallback(request, content_type=request.intervention_type), str(exc)
+        return "ok", content, None
