@@ -16,12 +16,12 @@ import re
 
 import pytest
 
+from lensword_cli.backend_client import BackendError
 from lensword_mcp.server import (
     _PROMPTS,
     _RESOURCE_DESCRIPTORS,
     _RESOURCE_TEMPLATES,
     SUPPORTED_PROTOCOL_VERSIONS,
-    BackendError,
     MCPServer,
 )
 

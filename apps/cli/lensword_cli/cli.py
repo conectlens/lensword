@@ -4,9 +4,10 @@
 contacts the backend. The four commands added here — `add`, `explain`,
 `diagnose`, `review` — necessarily do contact it (they read or write a
 learner's real account), through the same `/api/v1/mcp/invoke` boundary
-`lensword-mcp`'s stdio server already uses (`BackendClient` in `server.py`),
-so every one of them is still policy-gated, grant-checked, and audited by
-the backend exactly as an AI agent's MCP call would be — this CLI is not a
+`lensword-mcp`'s stdio server also uses (`BackendClient` in
+`backend_client.py`, shared by both packages — see issue #311), so every
+one of them is still policy-gated, grant-checked, and audited by the
+backend exactly as an AI agent's MCP call would be — this CLI is not a
 side door around that boundary.
 
 Every command that would write something (`add`, `review`) previews what it
@@ -38,8 +39,8 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, TextIO, Sequence
 
+from .backend_client import BackendClient, BackendError
 from .context_import import ContextImportPolicy, ContextImportRejected, preview_context
-from .server import BackendClient, BackendError
 
 
 EXIT_OK = 0
@@ -218,7 +219,7 @@ def _backend_from_env(error_stream: TextIO) -> BackendClient | None:
         error_stream.write(
             f"lensword: missing environment variables: {', '.join(missing)}\n"
             "lensword: set them to connect this command to your LensWord backend "
-            "(see apps/mcp/README.md)\n"
+            "(see apps/cli/README.md)\n"
         )
         return None
     return BackendClient(values["LENSWORD_API_URL"], values["LENSWORD_TOKEN"], values["LENSWORD_MCP_REQUESTER"], values["LENSWORD_MCP_WORKSPACE"])

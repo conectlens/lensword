@@ -3,9 +3,9 @@ import json
 
 import pytest
 
-import lensword_mcp.cli as cli
-from lensword_mcp.cli import EXIT_BACKEND_ERROR, EXIT_CANCELLED, EXIT_OK, EXIT_REJECTED, main
-from lensword_mcp.server import BackendError
+import lensword_cli.cli as cli
+from lensword_cli.backend_client import BackendError
+from lensword_cli.cli import EXIT_BACKEND_ERROR, EXIT_CANCELLED, EXIT_OK, EXIT_REJECTED, main
 
 
 def test_import_context_cli_is_offline_preview_only_and_supports_json():
