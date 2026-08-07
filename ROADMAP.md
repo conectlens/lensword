@@ -138,8 +138,10 @@ depends on this.
       pass; live third-party-client interoperability is not claimed.)*
 - [x] **6.0** Verify the graduated acquisition policy with deterministic
       scheduler/API/dispatch/persistence/isolation coverage and a reproducible
-      JSON benchmark. *(Shipped — see
-      [Memory Loop Verification](docs/memory-loop-verification.md).)*
+      JSON benchmark. *(Shipped. Earlier drafts of this document linked a
+      standalone `docs/memory-loop-verification.md` report; that file does not
+      exist in this repository — see the evidence gap recorded in
+      [docs/internal/evidence-gaps.md](docs/internal/evidence-gaps.md).)*
 - [ ] **6.1** Measure retention and workload against an FSRS-only control using
       an opt-in learner cohort. *(Not measurable from this repository's current
       data; no retention lift is claimed.)*

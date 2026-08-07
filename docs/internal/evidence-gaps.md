@@ -40,7 +40,19 @@
    written). A full reconciliation pass was out of scope for this audit and
    should be done by whoever next edits `SECURITY.md`.
 
-6. **Docker-to-host Ollama networking** is documented with OS-specific
+6. **`docs/memory-loop-verification.md` is missing.** `ROADMAP.md` (item 6.0)
+   and, before this rewrite, `README.md` both referenced it as the evidence
+   record for the graduated-acquisition-policy verification work. The file
+   does not exist anywhere in the repository's history that this audit could
+   find — it was either never committed or was removed without updating its
+   referring links. The underlying work is still marked shipped in
+   `ROADMAP.md` on the strength of the test coverage described there; only
+   the standalone report is missing. If it turns up (e.g. in an old branch or
+   someone's local copy), restore it at that path; otherwise the ROADMAP
+   entry should eventually cite the actual test files instead of a report
+   that doesn't exist.
+
+7. **Docker-to-host Ollama networking** is documented with OS-specific
    caveats (`host.docker.internal` behavior differs by platform) but the
    audit could not independently confirm current behavior on Windows/Linux
    Docker hosts beyond what's already written in the README — this should

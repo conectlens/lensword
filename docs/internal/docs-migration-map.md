@@ -36,6 +36,23 @@ installation/setup, Ollama/AI configuration, self-hosting/production
 deployment, and the design-decisions/verification-gaps material. This list
 is the direct input for #271's rewrite scope.
 
+## New pages created by #271 (README rewrite)
+
+The README rewrite ([#271](https://github.com/conectlens/lensword/issues/271))
+moved detail out of `README.md` into new, standalone docs pages rather than
+deleting it, since VitePress (#272) doesn't exist yet to hold canonical
+use-case guides. These are plain files today and should become VitePress
+routes without content changes when #272 lands:
+
+| New file | Moved from | Future route |
+|---|---|---|
+| `docs/architecture.md` | README § Architecture, § Design decisions worth flagging | `/reference/architecture` |
+| `docs/local-development.md` | README § Local development, § Database | `/use-cases/local-development` |
+| `docs/desktop-app.md` | README § Desktop | `/use-cases/desktop` (supersedes the placeholder route in the table above) |
+| `docs/local-ai-ollama.md` | README § Optional: local AI mnemonic suggestions (Ollama) | `/use-cases/ollama-mnemonics` (supersedes the placeholder route above) |
+| `docs/verification.md` | README § Verification actually run, § Known gaps | `/trust/verification` |
+| `docs/media/screenshots/*.webp` | New — captured from a real `docker compose up --build` run for the README demo section | `/get-started` hero media |
+
 ## Explicitly not migrated
 
 No file listed in the audit is deleted. Every ADR, the AI verification log,
