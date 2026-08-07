@@ -1,0 +1,60 @@
+id: mcp-oauth-token-exchange-diagnostics
+products:
+  - backend
+type: none
+reason: >-
+  Adds server-side logging only (which specific check inside token
+  exchange rejected a request) — no change to any response, status code,
+  or behavior a client observes. Needed because Render's access logs show
+  only method/path/status, not enough to diagnose a real Claude.ai
+  connection's POST /token 400 with the generic invalid_grant detail
+  shared across several distinct causes.
+summary: >-
+  No user-observable change — see reason.
+technical_summary: >-
+  apps/backend/app/api/routers/mcp_oauth.py's _exchange_authorization_code
+  and _load_client now log a specific reason (missing field, unrecognized
+  client, client_secret mismatch, code not found / wrong client / already
+  consumed / expired, redirect_uri mismatch, or PKCE failure) before each
+  400/401 it already raised. Response bodies are unchanged — still the
+  generic OAuth-spec error codes (invalid_request/invalid_client/
+  invalid_grant), deliberately not more specific to a caller, since a
+  token-endpoint error response is exactly where an attacker probing this
+  endpoint should learn nothing more than "it failed". Never logs the raw
+  authorization code or code_verifier themselves (both are live
+  credentials at this point in the flow) — only whether they were
+  present/matched, and non-sensitive values like redirect_uri and
+  client_id.
+user_impact: None — internal change.
+release_status: unreleased
+breaking: false
+migration: none
+known_limitations: []
+compatibility:
+  requires:
+    server_api: null
+verification:
+  automated_tests:
+    status: passed
+    commands:
+      - cd apps/backend && .venv/bin/python3 -m pytest tests/test_mcp_oauth.py -q (22/22 passing, unchanged)
+    workflow_url: null
+  artifact_build:
+    status: not_run
+    artifacts: []
+  manual_platform_checks:
+    macos: not_applicable
+    windows: not_applicable
+    linux: not_applicable
+  production_observation:
+    status: not_observed
+security_impact: >-
+  Log lines never include the raw authorization code or PKCE code_verifier
+  (both live credentials); only presence/match booleans, lengths, and
+  already-non-secret values (client_id, redirect_uri, timestamps).
+documentation_required: false
+date: '2026-08-08'
+references:
+  issues: []
+  pull_requests: []
+  commits: []
