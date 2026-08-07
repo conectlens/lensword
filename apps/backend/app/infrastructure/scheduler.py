@@ -33,6 +33,45 @@ from app.infrastructure.reminders import restore_reminder_jobs
 
 logger = logging.getLogger(__name__)
 
+# APScheduler's persistent SQLAlchemyJobStore identifies a job's callable by a
+# plain "module:qualname" string (apscheduler.util.obj_to_ref) and re-derives
+# it fresh on every load via that string alone — it does not, and cannot,
+# serialize a *constructed* object's state through that path. Passing
+# ClaimPurger(session_factory) directly as a job's func used to collapse to a
+# reference to the bare ClaimPurger class (obj_to_ref has no way to name an
+# instance, only a type), silently dropping the constructor argument; every
+# future firing then called ClaimPurger() with no arguments and raised
+# TypeError. That happened on the very first firing after add_job(), in the
+# same process, not just after a real restart, since the store round-trips
+# through this reference on every dispatch.
+#
+# The fix is to register plain, zero/primitive-argument top-level functions
+# instead — references to those round-trip correctly — and keep the actual
+# dispatcher instances (each closing over a live, unpicklable SQLAlchemy
+# session_factory) as ordinary module globals that these functions read at
+# call time. That is safe here specifically because every job in this store
+# only ever runs inside the same process that registered it (see this
+# module's own docstring); nothing about this relies on the instances
+# themselves crossing a process boundary.
+_claim_purger: ClaimPurger | None = None
+_acquisition_dispatcher: AcquisitionDispatcher | None = None
+_companion_task_executor: CompanionTaskExecutor | None = None
+
+
+def _run_claim_purger() -> None:
+    assert _claim_purger is not None, "register_jobs must run before this job can fire"
+    _claim_purger()
+
+
+def _run_acquisition_dispatcher() -> None:
+    assert _acquisition_dispatcher is not None, "register_jobs must run before this job can fire"
+    _acquisition_dispatcher()
+
+
+def _run_companion_task_executor() -> None:
+    assert _companion_task_executor is not None, "register_jobs must run before this job can fire"
+    _companion_task_executor()
+
 
 def create_scheduler(settings: Settings | None = None) -> AsyncIOScheduler:
     """Build the scheduler, with a persistent job store unless told otherwise.
@@ -92,10 +131,12 @@ def register_jobs(
     # replacement at start time, so a job added twice beforehand is genuinely
     # there twice in the meantime. Same reasoning as
     # ApSchedulerReminderScheduler.schedule.
+    global _claim_purger, _acquisition_dispatcher, _companion_task_executor
     if scheduler.get_job(PURGE_CLAIMS_JOB_ID) is not None:
         scheduler.remove_job(PURGE_CLAIMS_JOB_ID)
+    _claim_purger = ClaimPurger(session_factory)
     scheduler.add_job(
-        ClaimPurger(session_factory),
+        _run_claim_purger,
         "interval",
         days=1,
         id=PURGE_CLAIMS_JOB_ID,
@@ -119,8 +160,9 @@ def register_jobs(
     # not the timer the client-side session itself is responsible for.
     if scheduler.get_job(ACQUISITION_DISPATCH_JOB_ID) is not None:
         scheduler.remove_job(ACQUISITION_DISPATCH_JOB_ID)
+    _acquisition_dispatcher = AcquisitionDispatcher(session_factory, channel or LogNotificationChannel())
     scheduler.add_job(
-        AcquisitionDispatcher(session_factory, channel or LogNotificationChannel()),
+        _run_acquisition_dispatcher,
         "interval",
         minutes=5,
         id=ACQUISITION_DISPATCH_JOB_ID,
@@ -138,8 +180,9 @@ def register_jobs(
     # module docstring for why).
     if scheduler.get_job(COMPANION_TASK_DISPATCH_JOB_ID) is not None:
         scheduler.remove_job(COMPANION_TASK_DISPATCH_JOB_ID)
+    _companion_task_executor = CompanionTaskExecutor(session_factory)
     scheduler.add_job(
-        CompanionTaskExecutor(session_factory),
+        _run_companion_task_executor,
         "interval",
         seconds=10,
         id=COMPANION_TASK_DISPATCH_JOB_ID,
