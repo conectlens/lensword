@@ -2,6 +2,7 @@
 schemas. Centralized here so word/group/room mapping logic isn't duplicated
 across the groups, words, rooms, and review routers.
 """
+from app.api.schemas.mcp_resources import CompanionWordView
 from app.api.schemas.review import MnemonicResponse
 from app.api.schemas.vocabulary import (
     GroupResponse,
@@ -25,6 +26,51 @@ def word_to_response(word: Word) -> WordResponse:
         translations=word.translations,
         example_sentence=word.example_sentence,
         mnemonic=word.mnemonic,
+        category=word.category,
+        definition=word.definition,
+        part_of_speech=word.part_of_speech,
+        cefr_level=word.cefr_level,
+        pronunciation=word.pronunciation,
+        collocations=word.collocations,
+        tags=word.tags,
+        ai_confidence=word.ai_confidence,
+        ai_provider=word.ai_provider,
+        ai_model=word.ai_model,
+        ai_verified_at=word.ai_verified_at,
+        ai_state=verification_state(word.ai_provider, word.ai_verified_at),
+        synonyms=word.synonyms,
+        antonyms=word.antonyms,
+        topics=word.topics,
+        review_state=ReviewStateResponse(
+            strength=word.review_state.strength,
+            ease_factor=word.review_state.ease_factor,
+            interval_days=word.review_state.interval_days,
+            repetitions=word.review_state.repetitions,
+            due_at=word.review_state.due_at,
+            last_reviewed_at=word.review_state.last_reviewed_at,
+            status=word.review_state.status,
+            fsrs_retrievability=FSRSScheduler.retrievability(word.review_state),
+        ),
+        created_at=word.created_at,
+        revision=word.revision,
+    )
+
+
+def word_to_companion_view(word: Word) -> CompanionWordView:
+    """The redacted projection an AI companion may see through MCP (issue
+    #192 TODO 0: "redact raw answers, private mnemonics, and source context
+    by default"). Deliberately not `word_to_response(word).model_dump(...)`
+    with `mnemonic` popped afterward — see `CompanionWordView`'s own
+    docstring for why the type itself, not a call-site filter, is what has
+    to enforce this.
+    """
+    return CompanionWordView(
+        id=word.id,
+        group_id=word.group_id,
+        term=word.term,
+        target_language=word.target_language,
+        translations=word.translations,
+        example_sentence=word.example_sentence,
         category=word.category,
         definition=word.definition,
         part_of_speech=word.part_of_speech,

@@ -1,15 +1,26 @@
-"""Intervention plan endpoints (issue #185 TODO 4).
+"""Intervention plan endpoints (issue #185 TODO 4, issue #192 `/me/interventions`).
 
-List the plans still awaiting a learner decision, and act on one — reject,
-postpone, or choose an alternative strategy. Generating a plan itself has no
-endpoint: it only ever happens as a side effect of `RunDiagnosisForWordUseCase`
-(review answer submission), the same "no separate write path" pattern
-diagnoses and knowledge edges already follow.
+Two audiences share this file. `router` is per-word: the plans still
+awaiting a learner decision, and acting on one — reject, postpone, or choose
+an alternative strategy. Generating a plan itself has no endpoint: it only
+ever happens as a side effect of `RunDiagnosisForWordUseCase` (review answer
+submission), the same "no separate write path" pattern diagnoses and
+knowledge edges already follow.
+
+`me_router` is account-wide: issue #192's `/me/interventions` companion
+resource, which has no single word to scope to — the same reasoning
+`weaknesses.py` and `observations.py` apply to their own `/me` endpoints,
+and previously had no real endpoint to call at all (a permanent
+`{"items": [], "available": False}` MCP-side stub).
 """
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 
 from app.api.deps import CurrentUser, InterventionRepo, WordRepo
-from app.api.schemas.interventions import ChooseAlternativeRequest, InterventionPlanResponse
+from app.api.schemas.interventions import (
+    ChooseAlternativeRequest,
+    InterventionPlanListResponse,
+    InterventionPlanResponse,
+)
 from app.application.use_cases.intervention import (
     ChooseAlternativeInterventionUseCase,
     ListActiveInterventionPlansUseCase,
@@ -20,6 +31,10 @@ from app.domain.exceptions import EntityNotFoundError, ValidationError
 from app.domain.services.diagnosis_contracts import InterventionPlan
 
 router = APIRouter(prefix="/api/v1/words/{word_id}/interventions", tags=["diagnosis"])
+me_router = APIRouter(prefix="/api/v1/me", tags=["interventions"])
+
+DEFAULT_PAGE_SIZE = 50
+MAX_PAGE_SIZE = 200
 
 
 def _response(p: InterventionPlan) -> InterventionPlanResponse:
@@ -110,3 +125,35 @@ def _get_plan_or_404(intervention_repo: InterventionRepo, user_id: int, word_id:
     if plan is None or plan.word_id != word_id:
         raise EntityNotFoundError("InterventionPlan", plan_id)
     return plan
+
+
+def _decode_offset_cursor(cursor: str | None) -> int:
+    if not cursor:
+        return 0
+    try:
+        value = int(cursor)
+    except ValueError:
+        return 0
+    return value if value >= 0 else 0
+
+
+@me_router.get("/interventions", response_model=InterventionPlanListResponse)
+def list_my_interventions(
+    current_user: CurrentUser,
+    intervention_repo: InterventionRepo,
+    limit: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    cursor: str | None = None,
+) -> InterventionPlanListResponse:
+    """Every planned intervention across this account's whole vocabulary,
+    newest first — not just the ones still awaiting a decision (`router`'s
+    `list_active_interventions` above, scoped to one word). Backs issue
+    #192's `lensword://me/interventions` companion resource.
+    """
+    offset = _decode_offset_cursor(cursor)
+    rows = intervention_repo.list_all_for_user(current_user.id, limit=limit + 1, offset=offset)
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    return InterventionPlanListResponse(
+        items=[_response(plan) for plan in rows],
+        next_cursor=str(offset + limit) if has_more else None,
+    )

@@ -150,6 +150,45 @@ def test_a_repeated_category_is_named_once_it_recurs(client, headers):
     assert body["categories"][0]["occurrences"] == 3
 
 
+# --- Freshness and provenance (issue #192 TODO 0) --------------------------
+
+
+def test_the_profile_carries_a_freshness_timestamp(client, headers):
+    body = client.get("/api/v1/me/weaknesses", headers=headers).json()
+
+    assert body["generated_at"] is not None
+
+
+def test_a_named_category_carries_the_mistake_row_ids_behind_it(client, headers):
+    """A companion (or any other reader) can trace the claim back to the
+    rows it was derived from — the same "evidence/provenance" requirement
+    `DiagnosisResponse.evidence[].observation_ids` already satisfies for
+    diagnoses."""
+    group_id = _group(client, headers)
+    word_id = _word(client, headers, group_id, "gato")
+
+    session_id = _session(client, headers, group_id)
+    for _ in range(3):
+        _answer(client, headers, session_id, word_id, "skipped")
+
+    category = client.get("/api/v1/me/weaknesses", headers=headers).json()["categories"][0]
+    assert len(category["evidence_ids"]) == 3
+    assert len(set(category["evidence_ids"])) == 3  # each mistake is its own row
+
+
+def test_a_confused_pair_carries_the_mistake_row_ids_behind_it(client, headers):
+    group_id = _group(client, headers)
+    gato = _word(client, headers, group_id, "gato")
+    _word(client, headers, group_id, "gata")
+
+    session_id = _session(client, headers, group_id)
+    for _ in range(2):
+        _answer(client, headers, session_id, gato, "incorrect", "gata")
+
+    pair = client.get("/api/v1/me/weaknesses", headers=headers).json()["confused_pairs"][0]
+    assert len(pair["evidence_ids"]) == 2
+
+
 def test_shares_are_reported_alongside_counts(client, headers):
     """60% of five mistakes and 60% of five hundred are different claims, so
     the count travels with the share rather than being replaced by it."""
