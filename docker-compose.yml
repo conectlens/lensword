@@ -33,6 +33,22 @@ services:
       CORS_ORIGINS: '["http://localhost:18421","http://localhost:5173"]'
       FIRST_ADMIN_EMAIL: ${FIRST_ADMIN_EMAIL:-}
       FIRST_ADMIN_PASSWORD: ${FIRST_ADMIN_PASSWORD:-}
+      # Local AI mnemonic suggestions via Ollama — off by default (AI_PROVIDER
+      # defaults to "none" both here and in the app itself, so an unset .env
+      # keeps this feature off exactly as before these lines existed). See
+      # docs/install/local-ai-ollama.md, in particular "Running the backend
+      # in Docker with Ollama on the host" for OLLAMA_BASE_URL — Compose's
+      # network namespace means `localhost` inside this container is *not*
+      # the host machine.
+      AI_PROVIDER: ${AI_PROVIDER:-none}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://localhost:11434}
+      # Remote MCP over Streamable HTTP + OAuth (issue #196) — off by
+      # default. See docs/reference/mcp-remote-transport.md before turning
+      # this on; it requires TLS terminated in front of this backend, which
+      # this Compose stack does not set up.
+      REMOTE_MCP_ENABLED: ${REMOTE_MCP_ENABLED:-false}
+      MCP_ISSUER_URL: ${MCP_ISSUER_URL:-http://localhost:8000}
     depends_on:
       # `service_healthy`, not a bare depends_on: the container starts by
       # running migrations, so a Postgres that is merely *started* is not

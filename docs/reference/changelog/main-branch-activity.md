@@ -11,6 +11,8 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 
 | Date | Commit | Author | Subject | Changelog fragment |
 |---|---|---|---|---|
+| 2026-08-07 | [47927b7](https://github.com/conectlens/lensword/commit/47927b7fd247d50c5b9912f009f256d6b5bb39ae) | Ömer Faruk Coşkun | Add Cloudflare deployment infrastructure (backend/MCP Containers, frontend Pages) (#310) | none (predates this system) |
+| 2026-08-07 | [9d52f69](https://github.com/conectlens/lensword/commit/9d52f69f4378a8a34f5eae475ba089717e949cc2) | Lenser | Regenerate changelog ledger against current development | none (predates this system) |
 | 2026-08-07 | [e58dd7d](https://github.com/conectlens/lensword/commit/e58dd7d5e6817010649f8d8c8e83dacc068d9fd7) | Lenser | Regenerate changelog ledger against current development | none (predates this system) |
 | 2026-08-07 | [60bbba7](https://github.com/conectlens/lensword/commit/60bbba7a2ee710c3fc68f5862021a72da0acfc04) | Lenser | Rename companion-heads merge migration to match main's revision id | none (predates this system) |
 | 2026-08-07 | [95073c5](https://github.com/conectlens/lensword/commit/95073c557f614a92f0ed0c14ef49f54f5fe23d9b) | Lenser | Fix CodeQL clear-text-logging finding for SECRET_PATTERNS in check_media.py | none (predates this system) |
@@ -49,7 +51,5 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 | 2026-08-07 | [399d138](https://github.com/conectlens/lensword/commit/399d138b6320fb78b36ffe185100ecfa5a30d15c) | ÖMER FARUK COŞKUN | Audit companion task tenant isolation | none (predates this system) |
 | 2026-08-07 | [3d6232b](https://github.com/conectlens/lensword/commit/3d6232bdba9eec39e09db72241d309292b06e022) | ÖMER FARUK COŞKUN | Add durable companion task lifecycle | none (predates this system) |
 | 2026-08-07 | [b3d78fa](https://github.com/conectlens/lensword/commit/b3d78fae77908c4b65d4c15af844bdd389832c8f) | ÖMER FARUK COŞKUN | Trigger CI for consolidated companion implementation | none (predates this system) |
-| 2026-08-07 | [4191866](https://github.com/conectlens/lensword/commit/4191866bf8652d879ce94194f98cc615cfcc29be) | Ömer Faruk Coşkun | Add bounded preview-only context import (#260) | none (predates this system) |
-| 2026-08-07 | [ab74ff1](https://github.com/conectlens/lensword/commit/ab74ff1ed5d63ae2727ac9b61f629c05759369a3) | Ömer Faruk Coşkun | Expose companion resources and prompts over MCP (#254) | none (predates this system) |
 
 Generated from `git log -40 development` — 40 commits shown.
