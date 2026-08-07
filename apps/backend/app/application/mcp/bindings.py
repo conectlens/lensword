@@ -1,13 +1,38 @@
-"""Concrete MCP handlers that delegate to application use cases only."""
+"""Concrete MCP handlers that delegate to application use cases only.
+
+Every handler here must build its own response shape rather than reach for
+a bigger one and hope nobody notices an extra field. In particular:
+`word_to_response` (used by the pre-existing word-returning tools below)
+currently serializes `Word.mnemonic` unredacted — issue #192's gap, fixed on
+a parallel branch. The five issue #188 tools added below
+(`get_language_profile`/`check_known_term`/`explain_for_user`/
+`suggest_stretch_vocabulary`/`record_context_occurrence`) deliberately never
+call `word_to_response` and never include `mnemonic` or any other private
+field in their own response dicts, so they do not share that leak.
+"""
 from typing import Any
 
 from app.api.mappers import word_to_companion_view, word_to_response
+from app.application.use_cases.mcp_dev_workflow import (
+    CheckKnownTermUseCase,
+    ContextOccurrenceInput,
+    ExplainWordForUserUseCase,
+    GetLanguageProfileUseCase,
+    RecordContextOccurrenceUseCase,
+    SuggestStretchVocabularyUseCase,
+)
 from app.application.use_cases.vocabulary import AddWordUseCase, SearchWordsUseCase, WordInput
 from app.application.use_cases.review import GetWeeklyProgressUseCase, StartReviewSessionUseCase, SubmitAnswerUseCase
 from app.application.use_cases.practice import GenerateExerciseUseCase
 from app.application.use_cases.extract import ExtractVocabularyUseCase
 from app.application.use_cases.vocabulary import _require_word_owner
-from app.domain.repositories import GroupRepository, PracticeExerciseRepository, WordRepository
+from app.domain.repositories import (
+    DiagnosisRepository,
+    GroupRepository,
+    LearningObservationRepository,
+    PracticeExerciseRepository,
+    WordRepository,
+)
 from app.domain.repositories import ReviewSessionRepository
 from app.domain.value_objects import SupportedLanguage
 from app.domain.value_objects import ReviewOutcome, SessionMode
@@ -121,4 +146,82 @@ def extract_vocabulary_handler(groups: GroupRepository, provider: AIProvider | N
     async def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         items, source = await ExtractVocabularyUseCase(groups, provider).execute(user_id, int(payload["group_id"]), str(payload["text"]), payload.get("source_language"), str(payload["target_language"]), min(int(payload.get("max_items", 20)), 50), payload.get("min_level"))
         return {"source": source, "items": [{"term": item.term, "translations": item.translations, "examples": item.examples, "cefr_level": item.cefr_level} for item in items]}
+    return handle
+
+
+def language_profile_handler(groups: GroupRepository, words: WordRepository):
+    def handle(user_id: int, _payload: dict[str, Any]) -> dict[str, Any]:
+        profile = GetLanguageProfileUseCase(groups, words).execute(user_id)
+        return {
+            "target_languages": list(profile.target_languages),
+            "known_word_count": profile.known_word_count,
+            "active_word_count": profile.active_word_count,
+            "total_word_count": profile.total_word_count,
+            "group_count": profile.group_count,
+        }
+    return handle
+
+
+def check_known_term_handler(words: WordRepository, groups: GroupRepository):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        result = CheckKnownTermUseCase(words, groups).execute(user_id, str(payload["term"]))
+        return {
+            "term": result.term,
+            "known": result.known,
+            "active": result.active,
+            "matches": [
+                {
+                    "word_id": match.word_id, "target_language": match.target_language,
+                    "cefr_level": match.cefr_level, "known": match.known, "active": match.active,
+                }
+                for match in result.matches
+            ],
+        }
+    return handle
+
+
+def explain_for_user_handler(words: WordRepository, groups: GroupRepository, diagnoses: DiagnosisRepository):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        result = ExplainWordForUserUseCase(words, groups, diagnoses).execute(user_id, int(payload["word_id"]))
+        return {
+            "word_id": result.word_id, "term": result.term, "target_language": result.target_language,
+            "cefr_level": result.cefr_level, "has_diagnosis": result.has_diagnosis,
+            "diagnosis_outcome": result.diagnosis_outcome, "diagnosis_confidence": result.diagnosis_confidence,
+            "sample_size": result.sample_size, "explanation": result.explanation,
+        }
+    return handle
+
+
+def suggest_stretch_vocabulary_handler(words: WordRepository, groups: GroupRepository):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        group_id = int(payload["group_id"]) if payload.get("group_id") is not None else None
+        limit = int(payload["limit"]) if payload.get("limit") is not None else None
+        suggestions = SuggestStretchVocabularyUseCase(words, groups).execute(user_id, group_id, limit)
+        return {
+            "items": [
+                {
+                    "word_id": item.word_id, "term": item.term, "target_language": item.target_language,
+                    "cefr_level": item.cefr_level, "reason": item.reason,
+                }
+                for item in suggestions
+            ]
+        }
+    return handle
+
+
+def record_context_occurrence_handler(
+    words: WordRepository, groups: GroupRepository, observations: LearningObservationRepository
+):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        data = ContextOccurrenceInput(
+            word_id=int(payload["word_id"]), context_kind=str(payload["context_kind"]),
+            outcome=str(payload["outcome"]), confirmed=bool(payload["confirmed"]),
+            operation_id=payload.get("request_id"),
+        )
+        result = RecordContextOccurrenceUseCase(words, groups, observations).execute(user_id, data)
+        return {
+            "observation_id": result.observation_id, "word_id": result.word_id,
+            "context_source": result.context_source, "outcome": result.outcome,
+            "recorded_at": result.recorded_at.isoformat(),
+        }
     return handle
