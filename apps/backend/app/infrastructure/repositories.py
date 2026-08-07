@@ -2166,6 +2166,19 @@ class SqlAlchemyDiagnosisRepository:
         )
         return [_diagnosis_to_domain(m) for m in self.db.scalars(stmt)]
 
+    def list_for_user(self, user_id: int, limit: int = 50, offset: int = 0) -> list[Diagnosis]:
+        # `ix_diagnoses_user_word_diagnosed` still covers this: user_id is
+        # its leading column, so an account-wide query uses the same index
+        # prefix a per-word lookup does.
+        stmt = (
+            select(DiagnosisModel)
+            .where(DiagnosisModel.user_id == user_id)
+            .order_by(DiagnosisModel.diagnosed_at.desc(), DiagnosisModel.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return [_diagnosis_to_domain(m) for m in self.db.scalars(stmt)]
+
 
 def _prerequisite_ids_to_column(ids: tuple[int, ...]) -> str | None:
     return ",".join(str(i) for i in ids) if ids else None
@@ -2270,12 +2283,23 @@ class SqlAlchemyInterventionRepository:
         model = self.db.scalars(stmt).first()
         return _intervention_plan_to_domain(model) if model is not None else None
 
-    def list_all_for_user(self, user_id: int) -> list[InterventionPlan]:
+    def list_all_for_user(
+        self, user_id: int, limit: int | None = None, offset: int = 0
+    ) -> list[InterventionPlan]:
+        # `ix_intervention_plans_user_word_planned` leads with user_id, so
+        # an account-wide query still uses that index's prefix. `limit`
+        # stays optional (default: everything) so `review.py`'s existing
+        # unbounded call for contrast-card decisions is unaffected; issue
+        # #192's `/me/interventions` companion resource is the first
+        # caller to bound and paginate it.
         stmt = (
             select(InterventionPlanModel)
             .where(InterventionPlanModel.user_id == user_id)
-            .order_by(InterventionPlanModel.planned_at.desc())
+            .order_by(InterventionPlanModel.planned_at.desc(), InterventionPlanModel.id.desc())
+            .offset(offset)
         )
+        if limit is not None:
+            stmt = stmt.limit(limit)
         return [_intervention_plan_to_domain(m) for m in self.db.scalars(stmt)]
 
     def list_all_outcomes_for_user(self, user_id: int) -> list[InterventionOutcome]:
@@ -2285,6 +2309,7 @@ class SqlAlchemyInterventionRepository:
             .order_by(InterventionOutcomeModel.recorded_at.desc())
         )
         return [_intervention_outcome_to_domain(m) for m in self.db.scalars(stmt)]
+
 
 
 def _companion_session_to_domain(m: CompanionSessionModel) -> CompanionSession:
