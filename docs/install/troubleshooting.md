@@ -78,7 +78,7 @@ straight to the relevant section.
   notifications have a real delivery path but have never been observed on
   a real OS build — see
   [Known gaps](/reference/verification#known-gaps) and
-  [Desktop § What works, and what is not yet verified](/install/desktop-app#what-works-and-what-is-not-yet-verified).
+  [Desktop § Platform verification matrix](/install/desktop-app#platform-verification-matrix).
 - **Reminders fire at the wrong time** — check the time zone set in
   Settings; reminder times and quiet hours are read on that clock, not the
   server's or the browser's.
@@ -87,9 +87,9 @@ straight to the relevant section.
 
 - **Gatekeeper (macOS) or SmartScreen (Windows) warning on install** —
   expected; no release has ever been signed. See
-  [Installing](/install/desktop-app#installing).
+  [Install](/install/desktop-app#install).
 - **No native notification appears** — this has never been observed on any
-  real OS; see [What works, and what is not yet verified](/install/desktop-app#what-works-and-what-is-not-yet-verified).
+  real OS; see [Platform verification matrix](/install/desktop-app#platform-verification-matrix).
 
 ## Browser extension / MCP
 

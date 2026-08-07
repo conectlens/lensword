@@ -20,6 +20,7 @@
       "releaseChannel": null,
       "releaseChannelNote": "Docker image built in CI but never pushed to a registry (push: false).",
       "changelogRoute": "/reference/changelog/web",
+      "installRoute": "/install/web-app",
       "versionTagPrefix": "web-v",
       "releaseStatus": "unreleased",
       "artifactTypes": ["docker-image (unpublished)", "static build (dist/)"]
@@ -42,6 +43,7 @@
       "relatedAdr": ["docs/adr/0001-use-tauri-for-desktop-shell.md", "docs/adr/0002-desktop-backend-mode.md"],
       "blockedBy": ["issue #65 (signed desktop build baseline)"],
       "changelogRoute": "/reference/changelog/desktop",
+      "installRoute": "/install/desktop-app",
       "versionTagPrefix": "desktop-v",
       "releaseStatus": "unreleased",
       "artifactTypes": [".dmg (macOS)", ".msi/.exe (Windows)", ".deb/.AppImage (Linux)"]
@@ -62,6 +64,7 @@
       "ciCoverage": [],
       "releaseChannel": null,
       "changelogRoute": "/reference/changelog/browser-extension",
+      "installRoute": "/install/browser-extension",
       "versionTagPrefix": "browser-v",
       "releaseStatus": "unreleased",
       "artifactTypes": ["unpacked source (sideload zip only, no store package built by CI)"]
@@ -83,6 +86,7 @@
       "releaseChannel": null,
       "relatedAdr": ["docs/adr/0008-ai-companion-architecture.md"],
       "changelogRoute": "/reference/changelog/mcp",
+      "installRoute": "/install/mcp-local-cli",
       "versionTagPrefix": "mcp-v",
       "releaseStatus": "unreleased",
       "artifactTypes": ["sdist/wheel (built locally only, never published to PyPI)"]
@@ -103,6 +107,7 @@
       "ciCoverage": [],
       "releaseChannel": null,
       "changelogRoute": "/reference/changelog/mcp",
+      "installRoute": "/install/mcp-local-cli",
       "versionTagPrefix": "mcp-v",
       "releaseStatus": "unreleased",
       "artifactTypes": ["sdist/wheel (shares apps/mcp's package with mcp-server — same tag prefix, not versioned separately)"]

@@ -209,12 +209,15 @@ def render_overview(products: list[dict], fragments: list[dict]) -> str:
 
 def git_log_entries(limit: int = 40) -> list[dict]:
     fmt = "%H%x1f%h%x1f%ad%x1f%an%x1f%s"
-    # A checkout that only fetched a pull request's merge ref (CI's default
-    # for pull_request events) has no local 'development' branch — only
-    # 'origin/development' — so that's tried first with a local fallback for
-    # a normal developer checkout, and HEAD as a last resort rather than
-    # silently emitting an empty ledger.
-    for ref in ("development", "origin/development", "HEAD"):
+    # origin/development first, not local development: a local branch is
+    # easy to leave stale (this exact mismatch — a locally-generated page
+    # missing a commit that had already landed on the remote — is what
+    # caused a real CI failure during #283's own development, caught by
+    # the idempotency check this ledger feeds). origin/development is the
+    # authoritative "what's actually merged" state; local development is
+    # only a fallback for a checkout with no remote configured, and HEAD
+    # after that, rather than silently emitting an empty ledger.
+    for ref in ("origin/development", "development", "HEAD"):
         try:
             raw = subprocess.run(
                 ["git", "log", f"-{limit}", "--date=short", f"--pretty=format:{fmt}", ref],

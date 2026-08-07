@@ -1,0 +1,86 @@
+name: Docs QA
+
+# #283: proves the docs site works as one coherent product instead of
+# accepting "the Markdown exists" as done. Separate from docs.yml (which
+# only builds + deploys) so a QA failure reads as its own clearly-labeled
+# check rather than an ambiguous build failure.
+on:
+  pull_request:
+    branches: [main, development]
+  push:
+    branches: [main, development]
+
+permissions:
+  contents: read
+
+jobs:
+  routes-and-content:
+    name: Routes, links, code blocks, media
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+
+      - name: Install docs dependencies
+        working-directory: docs
+        run: npm ci
+
+      - name: Build the site
+        working-directory: docs
+        run: npm run docs:build
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: pip install pyyaml pytest
+
+      - name: Check routes and links
+        run: python scripts/docs-qa/check_routes_links.py
+
+      - name: Check code-block syntax
+        run: python scripts/docs-qa/check_code_blocks.py
+
+      - name: Check media size budgets and sidecar secrets
+        run: python scripts/docs-qa/check_media.py
+
+      - name: Run docs-qa tooling tests
+        working-directory: scripts/docs-qa
+        run: python -m pytest -v
+
+  accessibility:
+    name: Accessibility smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+
+      - name: Install docs dependencies
+        working-directory: docs
+        run: npm ci
+
+      - name: Build the site
+        working-directory: docs
+        run: npm run docs:build
+
+      - name: Install scripts dependencies
+        working-directory: scripts
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: scripts
+        run: npx playwright install --with-deps chromium
+
+      - name: Run accessibility check
+        run: node scripts/docs-qa/check_accessibility.mjs
