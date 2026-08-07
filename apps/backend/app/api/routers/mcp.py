@@ -8,16 +8,19 @@ from app.application.mcp.contracts import CONTRACT_VERSION, capabilities, valida
 from app.application.mcp.dispatcher import MCPDispatcher, UnboundMCPToolError, UnknownMCPToolError
 from app.application.mcp.idempotency import IdempotencyStore
 from app.application.mcp.bindings import (
-    add_word_handler, check_known_term_handler, create_study_session_handler, due_reviews_handler,
-    explain_for_user_handler, extract_vocabulary_handler, finish_companion_session_handler,
-    generate_exercises_handler, get_companion_session_handler, language_profile_handler,
+    add_word_handler, begin_learning_activity_handler, check_known_term_handler, create_study_session_handler,
+    due_reviews_handler, explain_evidence_handler, explain_for_user_handler, extract_vocabulary_handler,
+    finish_companion_session_handler, finish_learning_activity_handler, generate_exercises_handler,
+    get_activity_result_handler, get_companion_session_handler, language_profile_handler,
     learning_progress_handler, pause_companion_session_handler, record_answer_handler,
-    record_context_occurrence_handler, resume_companion_session_handler, search_words_handler,
-    start_companion_session_handler, suggest_stretch_vocabulary_handler,
+    record_context_occurrence_handler, request_hint_handler, resume_companion_session_handler,
+    search_words_handler, start_companion_session_handler, submit_activity_response_handler,
+    suggest_stretch_vocabulary_handler,
 )
 from app.api.deps import (
-    CompanionSessionRepo, CurrentUser, DbSession, DiagnosisRepo, GroupRepo, LearningObservationRepo,
-    OptionalAIProvider, PracticeExerciseRepo, RecallSettingsRepo, ReviewSessionRepo, WordRepo,
+    CompanionActivityRepo, CompanionSessionRepo, CurrentUser, DbSession, DiagnosisRepo, GroupRepo,
+    LearningObservationRepo, OptionalAIProvider, PracticeExerciseRepo, RecallSettingsRepo, ReviewSessionRepo,
+    WordRepo,
 )
 from app.domain.services.mcp_policy import AccessClass, GrantMode, MCPGrant, MCPPolicyGate, redact_and_chain
 from app.domain.services.spaced_repetition import SpacedRepetitionScheduler
@@ -62,7 +65,7 @@ async def invoke(
     request: InvokeRequest, current_user: CurrentUser, db: DbSession, groups: GroupRepo, words: WordRepo,
     sessions: ReviewSessionRepo, exercises: PracticeExerciseRepo, provider: OptionalAIProvider,
     companion_sessions: CompanionSessionRepo, recall_settings: RecallSettingsRepo,
-    diagnoses: DiagnosisRepo, observations: LearningObservationRepo,
+    diagnoses: DiagnosisRepo, observations: LearningObservationRepo, companion_activities: CompanionActivityRepo,
 ) -> dict:
     payload_bytes = len(dumps(request.payload, sort_keys=True, default=str).encode())
     if not _valid_workspace(request.workspace):
@@ -83,6 +86,24 @@ async def invoke(
         "lensword.explain_for_user": explain_for_user_handler(words, groups, diagnoses),
         "lensword.suggest_stretch_vocabulary": suggest_stretch_vocabulary_handler(words, groups),
         "lensword.record_context_occurrence": record_context_occurrence_handler(words, groups, observations),
+        "lensword.begin_learning_activity": begin_learning_activity_handler(
+            companion_activities, companion_sessions, recall_settings, words, groups
+        ),
+        "lensword.submit_activity_response": submit_activity_response_handler(
+            companion_activities, companion_sessions, recall_settings, observations
+        ),
+        "lensword.get_activity_result": get_activity_result_handler(
+            companion_activities, companion_sessions, recall_settings
+        ),
+        "lensword.finish_learning_activity": finish_learning_activity_handler(
+            companion_activities, companion_sessions, recall_settings
+        ),
+        "lensword.request_hint": request_hint_handler(
+            companion_activities, companion_sessions, recall_settings, words, groups
+        ),
+        "lensword.explain_evidence": explain_evidence_handler(
+            companion_activities, companion_sessions, recall_settings, words, groups, diagnoses
+        ),
     }
     dispatcher = MCPDispatcher(handlers)
     try: contract = dispatcher.contract_for(request.tool)

@@ -5,6 +5,7 @@ calls to application use cases only—repositories never cross this boundary.
 """
 from __future__ import annotations
 from dataclasses import dataclass
+from app.domain.services.companion_activities import ActivityType
 from app.domain.services.mcp_policy import AccessClass
 
 CONTRACT_VERSION = "1.0.0"
@@ -75,6 +76,40 @@ TOOL_CONTRACTS = tuple(ToolContract(name, f"https://lensword.app/mcp/{CONTRACT_V
     ("lensword.explain_for_user", AccessClass.READ, _schema({"word_id":{"type":"integer","minimum":1}}, ["word_id"])),
     ("lensword.suggest_stretch_vocabulary", AccessClass.READ, _schema({"group_id":{"type":"integer","minimum":1}, "limit":{"type":"integer","minimum":1,"maximum":50}})),
     ("lensword.record_context_occurrence", AccessClass.WRITE, _schema({"word_id":{"type":"integer","minimum":1}, "context_kind":{"enum":list(CONTEXT_KINDS)}, "outcome":{"enum":["correct","incorrect"]}, "confirmed":{"type":"boolean"}}, ["word_id","context_kind","outcome","confirmed"], write=True)),
+    # Measurable companion activities and companion action tools (issue
+    # #194 TODO 1). `begin_learning_activity` fixes `expected_evaluation`
+    # once, and nothing here — not even `submit_activity_response` — can
+    # change it afterward (#194 TODO 5): the companion cannot submit an
+    # expected answer after seeing the learner's response.
+    ("lensword.begin_learning_activity", AccessClass.WRITE, _schema({
+        "session_id": {"type":"string","minLength":1,"maxLength":64},
+        "activity_type": {"enum": [item.value for item in ActivityType]},
+        "prompt": {"type":"string","minLength":1,"maxLength":4000},
+        "expected_evaluation": {"type":"object"},
+    }, ["session_id","activity_type","prompt"], write=True)),
+    ("lensword.submit_activity_response", AccessClass.WRITE, _schema({
+        "session_id": {"type":"string","minLength":1,"maxLength":64},
+        "activity_id": {"type":"string","minLength":1,"maxLength":64},
+        "response": {"type":"string","minLength":1,"maxLength":10000},
+    }, ["session_id","activity_id","response"], write=True)),
+    ("lensword.get_activity_result", AccessClass.READ, _schema({
+        "session_id": {"type":"string","minLength":1,"maxLength":64},
+        "activity_id": {"type":"string","minLength":1,"maxLength":64},
+    }, ["session_id","activity_id"])),
+    ("lensword.finish_learning_activity", AccessClass.WRITE, _schema({
+        "session_id": {"type":"string","minLength":1,"maxLength":64},
+        "activity_id": {"type":"string","minLength":1,"maxLength":64},
+    }, ["session_id","activity_id"], write=True)),
+    # A write, not a read: it increments the activity's bounded hint
+    # counter (MAX_HINTS_PER_ACTIVITY) and persists that.
+    ("lensword.request_hint", AccessClass.WRITE, _schema({
+        "session_id": {"type":"string","minLength":1,"maxLength":64},
+        "activity_id": {"type":"string","minLength":1,"maxLength":64},
+    }, ["session_id","activity_id"], write=True)),
+    ("lensword.explain_evidence", AccessClass.READ, _schema({
+        "session_id": {"type":"string","minLength":1,"maxLength":64},
+        "activity_id": {"type":"string","minLength":1,"maxLength":64},
+    }, ["session_id","activity_id"])),
 ))
 
 def capabilities() -> dict:

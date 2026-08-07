@@ -156,6 +156,16 @@ def owned(client, two_accounts, db_session):
     conversation = SqlAlchemyConversationRepository(_db).start(
         user_id=owner_id, target_language="Spanish", difficulty="steady"
     )
+    # #194 TODO 3: a tutor message with one correction, seeded directly for
+    # the same no-AI-provider reason as `conversation` above — the
+    # correction-feedback endpoint needs a message that actually has a
+    # correction at index 0, or the owner-reachability check below could not
+    # tell "no correction at that index" apart from a tenant denial.
+    conversation_message = SqlAlchemyConversationRepository(_db).add_message(
+        conversation.id, "tutor", "Corriste bien.",
+        corrections=[{"original": "corriste", "corrected": "corriste", "explanation": "example"}],
+    )
+    _db.commit()
 
     companion_session = client.post(
         "/api/v1/companion/sessions",
@@ -175,6 +185,13 @@ def owned(client, two_accounts, db_session):
     companion_task = client.post(
         f"/api/v1/companion/sessions/{companion_session['id']}/tasks",
         json={"task_type": "extraction", "total_units": 3, "operation_id": "audit-task"},
+        headers=owner,
+    ).json()
+    # #194 TODO 4: a plan_generation task, separate from the extraction one
+    # above — generate-plan/confirm-plan both reject any other task_type.
+    companion_plan_task = client.post(
+        f"/api/v1/companion/sessions/{companion_session['id']}/tasks",
+        json={"task_type": "plan_generation", "total_units": 1, "operation_id": "audit-plan-task"},
         headers=owner,
     ).json()
     # Seeded directly: starting an attempt needs no AI provider, and this audit
@@ -231,6 +248,9 @@ def owned(client, two_accounts, db_session):
         "companion_session": companion_session["id"],
         "companion_activity": companion_activity["id"],
         "companion_task": companion_task["id"],
+        "companion_plan_task": companion_plan_task["id"],
+        "conversation_message": conversation_message.id,
+        "correction_index": 0,
         "plan": plan.id,
     }
 
@@ -363,6 +383,25 @@ CROSS_TENANT_CASES = [
     _case("POST", "/api/v1/companion/sessions/{companion_session}/tasks/{companion_task}/progress", {"completed_units": 1}),
     _case("POST", "/api/v1/companion/sessions/{companion_session}/tasks/{companion_task}/complete", {"result": {}}),
     _case("POST", "/api/v1/companion/sessions/{companion_session}/tasks/{companion_task}/cancel"),
+    # #194 TODO 1: request_hint/explain_evidence/cancel on a measurable
+    # activity, and TODO 4's bounded session planning. Confirming a plan
+    # without `confirmed: true` still 409s for the owner (nothing has been
+    # generated yet on this fresh task) rather than a clean 2xx — same
+    # posture as the AI-provider-disabled `/interventions/{plan}/explain`
+    # case above: what matters here is that the ownership check still runs
+    # and denies a second account before any of that.
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/activities/{companion_activity}/cancel"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/activities/{companion_activity}/hint"),
+    _case("GET", "/api/v1/companion/sessions/{companion_session}/activities/{companion_activity}/evidence"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/tasks/{companion_plan_task}/generate-plan", {"max_activities": 3}),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/tasks/{companion_plan_task}/confirm-plan", {"confirmed": False}),
+    # #194 TODO 3: accept/reject/edit feedback on a tutor correction — as
+    # personal as the conversation it belongs to.
+    _case(
+        "POST",
+        "/api/v1/conversations/{conversation}/messages/{conversation_message}/corrections/{correction_index}/feedback",
+        {"outcome": "accepted"},
+    ),
 ]
 
 

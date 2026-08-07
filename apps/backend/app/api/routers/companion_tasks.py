@@ -4,13 +4,33 @@ from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.deps import CompanionSessionRepo, CompanionTaskRepo, CurrentUser, RecallSettingsRepo
+from app.api.deps import (
+    CompanionActivityRepo,
+    CompanionSessionRepo,
+    CompanionTaskRepo,
+    CurrentUser,
+    DiagnosisRepo,
+    GroupRepo,
+    InterventionRepo,
+    RecallSettingsRepo,
+    WordRepo,
+)
 from app.api.schemas.companion import (
+    CompanionActivityPlanConfirmRequest,
+    CompanionActivityPlanRequest,
     CompanionTaskCompleteRequest,
     CompanionTaskCreateRequest,
     CompanionTaskProgressRequest,
     CompanionTaskResponse,
 )
+from app.application.use_cases.companion_activities import BeginLearningActivityUseCase
+from app.application.use_cases.companion_planning import (
+    ConfirmCompanionActivityPlanUseCase,
+    GenerateCompanionActivityPlanUseCase,
+)
+from app.application.use_cases.conversation_context import AssembleConversationContextUseCase
+from app.domain.exceptions import ValidationError
+from app.domain.services.companion_planning import plan_from_dict
 from app.domain.services.companion_sessions import CompanionSessionStatus
 from app.domain.services.companion_tasks import CompanionTask, CompanionTaskStatus, CompanionTaskType
 from app.domain.value_objects import utcnow
@@ -168,3 +188,77 @@ def complete_task(session_id: str, task_id: str, payload: CompanionTaskCompleteR
 @router.post("/{session_id}/tasks/{task_id}/cancel", response_model=CompanionTaskResponse)
 def cancel_task(session_id: str, task_id: str, current_user: CurrentUser, settings_repo: RecallSettingsRepo, session_repo: CompanionSessionRepo, task_repo: CompanionTaskRepo):
     return _mutate(session_id, task_id, current_user, settings_repo, session_repo, task_repo, lambda task: task.cancel(utcnow()))
+
+
+# --- Session planning without an open-ended agent (#194 TODO 4) -------------
+#
+# `PLAN_GENERATION` tasks get real logic here: `generate-plan` runs a
+# deterministic, bounded planner over the same facts #194 TODO 2 assembles
+# for a live session and stores the (always unconfirmed) result on the task.
+# `confirm-plan` is the one place that can turn a plan into real
+# `LearningActivity` rows — and only once a caller has explicitly said
+# `confirmed: true`, mirroring `app.api.routers.mcp_plans`'s own
+# preview-then-confirm gate for MCP command plans.
+
+
+@router.post("/{session_id}/tasks/{task_id}/generate-plan", response_model=CompanionTaskResponse)
+def generate_plan(
+    session_id: str,
+    task_id: str,
+    payload: CompanionActivityPlanRequest,
+    current_user: CurrentUser,
+    settings_repo: RecallSettingsRepo,
+    session_repo: CompanionSessionRepo,
+    task_repo: CompanionTaskRepo,
+    word_repo: WordRepo,
+    group_repo: GroupRepo,
+    diagnosis_repo: DiagnosisRepo,
+    intervention_repo: InterventionRepo,
+):
+    _enabled(settings_repo, current_user.id)
+    _session(session_repo, current_user.id, session_id)
+    task = _task(task_repo, current_user.id, session_id, task_id)
+    if task.task_type is not CompanionTaskType.PLAN_GENERATION:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only a plan_generation task can generate a plan")
+    context_use_case = AssembleConversationContextUseCase(session_repo, word_repo, group_repo, diagnosis_repo, intervention_repo)
+    plan = GenerateCompanionActivityPlanUseCase(context_use_case).execute(
+        current_user.id, session_id, max_activities=payload.max_activities
+    )
+    try:
+        task.complete(plan.to_dict(), utcnow())
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return _response(task_repo.update(task))
+
+
+@router.post("/{session_id}/tasks/{task_id}/confirm-plan", response_model=CompanionTaskResponse)
+def confirm_plan(
+    session_id: str,
+    task_id: str,
+    payload: CompanionActivityPlanConfirmRequest,
+    current_user: CurrentUser,
+    settings_repo: RecallSettingsRepo,
+    session_repo: CompanionSessionRepo,
+    task_repo: CompanionTaskRepo,
+    activity_repo: CompanionActivityRepo,
+    word_repo: WordRepo,
+    group_repo: GroupRepo,
+):
+    _enabled(settings_repo, current_user.id)
+    _session(session_repo, current_user.id, session_id)
+    task = _task(task_repo, current_user.id, session_id, task_id)
+    if task.task_type is not CompanionTaskType.PLAN_GENERATION or not task.result:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No generated plan is waiting for confirmation")
+    plan = plan_from_dict(task.result)
+    try:
+        created = ConfirmCompanionActivityPlanUseCase(activity_repo, BeginLearningActivityUseCase(word_repo, group_repo)).execute(
+            current_user.id, plan, confirmed=payload.confirmed
+        )
+    except ValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    result = {**plan.to_dict(), "confirmed": True, "created_activity_ids": [activity.id for activity in created]}
+    try:
+        task.record_plan_confirmation(result, utcnow())
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return _response(task_repo.update(task))

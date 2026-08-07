@@ -40,6 +40,7 @@ from app.domain.services.diagnosis_contracts import (
 from app.domain.services.companion_sessions import CompanionSession, CompanionTurn
 from app.domain.services.companion_activities import LearningActivity
 from app.domain.services.companion_tasks import CompanionTask
+from app.domain.services.conversation import CorrectionFeedback
 from app.domain.services.knowledge_graph import KnowledgeEdge
 
 
@@ -270,6 +271,15 @@ class CompanionActivityRepository(Protocol):
     def get(self, user_id: int, session_id: str, activity_id: str) -> LearningActivity | None: ...
     def update(self, activity: LearningActivity) -> LearningActivity: ...
     def find_by_operation(self, user_id: int, session_id: str, operation_id: str) -> LearningActivity | None: ...
+
+
+class ConversationCorrectionFeedbackRepository(Protocol):
+    """Append-only accept/reject/edit outcomes on tutor corrections (#194
+    TODO 3) — a fact about what the learner did, never an edit to the
+    message or correction it targets."""
+
+    def add(self, feedback: CorrectionFeedback) -> CorrectionFeedback: ...
+    def list_for_message(self, user_id: int, message_id: int) -> list[CorrectionFeedback]: ...
 
 
 class CompanionTaskRepository(Protocol):

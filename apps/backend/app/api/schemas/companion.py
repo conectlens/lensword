@@ -91,10 +91,40 @@ class CompanionActivityResponse(BaseModel):
     started_at: datetime
     updated_at: datetime
     revision: int
+    hints_used: int = 0
 
 
 class CompanionActivityAnswerRequest(BaseModel):
     response: str = Field(min_length=1, max_length=10000)
+
+
+class CompanionActivityHintResponse(BaseModel):
+    """#194 TODO 1's `request_hint`."""
+
+    activity: CompanionActivityResponse
+    hint: str
+    hints_used: int
+    hints_remaining: int
+
+
+class CompanionActivityEvidenceResponse(BaseModel):
+    """#194 TODO 1's `explain_evidence`."""
+
+    activity_id: str
+    activity_type: str
+    prompt: str
+    status: str
+    result: dict[str, Any] | None
+    hints_used: int
+    word_explanation: dict[str, Any] | None = None
+
+
+class CompanionActivityPlanRequest(BaseModel):
+    max_activities: int = Field(default=5, ge=1, le=8)
+
+
+class CompanionActivityPlanConfirmRequest(BaseModel):
+    confirmed: bool = False
 
 
 class CompanionTaskCreateRequest(BaseModel):
