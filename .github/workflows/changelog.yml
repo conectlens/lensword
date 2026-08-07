@@ -1,0 +1,71 @@
+name: Changelog
+
+# Turns the changelog/release-transparency policy from #281 into an
+# enforced gate (#282). Four checks, each failing with an actionable local
+# command rather than just a red X:
+#
+#   1. the product registry is structurally valid and consistent with the
+#      docs nav (validate_registry.py)
+#   2. every fragment under .changes/ satisfies the schema, including
+#      evidence for any "passed" verification claim (schema.py)
+#   3. a PR touching a registered product's source includes a fragment for
+#      it — path detection beyond that single check is advisory, not
+#      blocking (check_product_impact.py)
+#   4. the generated changelog/releases/compatibility pages are what
+#      generate.py actually produces from the current fragments + registry
+#      — catches "added a fragment, forgot to regenerate"
+#
+# Runs on pull_request only: check 3 needs a base ref to diff against, and a
+# push to development/main only happens via an already-checked PR merge, so
+# re-running there would just repeat the same result while adding a
+# workflow-triggered-by-push path that risks looping if this job ever wrote
+# back to the branch (it doesn't — steps 1-4 are read-only checks).
+on:
+  pull_request:
+    branches: [main, development]
+
+permissions:
+  contents: read
+
+jobs:
+  changelog:
+    name: Validate changelog, registry, and product impact
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # check_product_impact.py diffs base...head; a shallow checkout
+          # would only have the merge commit, not the base ref to diff against.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pyyaml pytest
+
+      - name: Validate product registry
+        run: python scripts/changelog/validate_registry.py
+
+      - name: Validate changelog fragments
+        run: python scripts/changelog/schema.py .changes/*.yml
+
+      - name: Check product-impact declarations
+        run: |
+          python scripts/changelog/check_product_impact.py \
+            --base "origin/${{ github.base_ref }}" --head HEAD
+
+      - name: Regenerate changelog pages and diff against committed output
+        run: |
+          python scripts/changelog/generate.py
+          if ! git diff --exit-code -- docs/reference/changelog docs/reference/releases docs/reference/trust/compatibility.md; then
+            echo ""
+            echo "::error::Generated changelog pages don't match what's committed." \
+              "Run 'python scripts/changelog/generate.py' locally and commit the result."
+            exit 1
+          fi
+
+      - name: Run changelog tooling tests
+        working-directory: scripts/changelog
+        run: python -m pytest -v

@@ -24,7 +24,7 @@ import yaml
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 DEFAULT_REGISTRY = ROOT / "docs" / "internal" / "product-registry.json"
 
-CHANGE_TYPES = {"added", "changed", "fixed", "security", "deprecated", "removed", "performance", "documentation"}
+CHANGE_TYPES = {"added", "changed", "fixed", "security", "deprecated", "removed", "performance", "documentation", "none"}
 TEST_STATUSES = {"passed", "failed", "not_run", "unavailable"}
 PLATFORM_STATUSES = {"passed", "failed", "not_run", "not_applicable"}
 OBSERVATION_STATUSES = {"observed", "not_observed", "not_applicable"}
@@ -37,7 +37,7 @@ REQUIRED_TOP_LEVEL = (
     "breaking", "migration", "known_limitations", "compatibility",
     "verification", "security_impact", "documentation_required", "date", "references",
 )
-OPTIONAL_TOP_LEVEL = ("technical_summary",)
+OPTIONAL_TOP_LEVEL = ("technical_summary", "reason")
 ALL_TOP_LEVEL = set(REQUIRED_TOP_LEVEL) | set(OPTIONAL_TOP_LEVEL)
 
 
@@ -82,6 +82,16 @@ def validate_fragment(path: pathlib.Path, product_ids: set[str]) -> list[str]:
 
     if data["type"] not in CHANGE_TYPES:
         err(f"type {data['type']!r} must be one of {sorted(CHANGE_TYPES)}")
+    if data["type"] == "none":
+        # The explicit "this change needs no changelog entry" escape hatch —
+        # still a real fragment, still reviewed in the PR diff, but excluded
+        # from every product's rendered page (see generate.py). A mandatory
+        # reason keeps it distinguishable from silently skipping the fragment
+        # requirement altogether.
+        if not isinstance(data.get("reason"), str) or not data["reason"].strip():
+            err("type: none requires a non-empty 'reason' field")
+        if data.get("documentation_required") is not False:
+            err("type: none requires documentation_required: false")
 
     if not isinstance(data["summary"], str) or not data["summary"].strip():
         err("summary must be a non-empty string")
@@ -111,9 +121,13 @@ def validate_fragment(path: pathlib.Path, product_ids: set[str]) -> list[str]:
         at = verification.get("automated_tests", {})
         if at.get("status") not in TEST_STATUSES:
             err(f"verification.automated_tests.status must be one of {sorted(TEST_STATUSES)}")
+        elif at["status"] == "passed" and not at.get("commands") and not at.get("workflow_url"):
+            err("verification.automated_tests.status: passed requires at least one command or a workflow_url as evidence")
         ab = verification.get("artifact_build", {})
         if ab.get("status") not in TEST_STATUSES:
             err(f"verification.artifact_build.status must be one of {sorted(TEST_STATUSES)}")
+        elif ab["status"] == "passed" and not ab.get("artifacts"):
+            err("verification.artifact_build.status: passed requires at least one artifact reference as evidence")
         mpc = verification.get("manual_platform_checks", {})
         for platform in ("macos", "windows", "linux"):
             if mpc.get(platform) not in PLATFORM_STATUSES:

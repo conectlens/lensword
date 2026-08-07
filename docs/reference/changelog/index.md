@@ -21,6 +21,8 @@ The shared backend (`apps/backend`) is not an independently released product —
 
 **MCP Server, Local CLI**
 
+<a id="mcp-read-tool-request-id-fix"></a>
+
 ### Fixed: Read-only MCP tool calls (e.g. searching your vocabulary) no longer fail with an "unsupported payload field" error.
 
 *2026-08-07* — verification: automated tests: passed
@@ -39,6 +41,8 @@ apps/mcp's BackendClient.invoke() unconditionally attaches a request_id to every
 References: [#276](https://github.com/conectlens/lensword/issues/276), [PR #300](https://github.com/conectlens/lensword/pull/300)
 
 **Web Application, Desktop Application, Browser Extension, MCP Server, Local CLI**
+
+<a id="lensword-documentation-site"></a>
 
 ### Documentation: LensWord has a real documentation site (docs/, built with VitePress), organized around Diátaxis (Setup tutorial, Install how-to guides, Learn explanation, Reference material) — replacing a flat, uncurated docs/ folder.
 
@@ -59,6 +63,8 @@ References: [#272](https://github.com/conectlens/lensword/issues/272), [PR #295]
 
 **Web Application, Desktop Application, Browser Extension**
 
+<a id="lensword-brand-identity"></a>
+
 ### Added: LensWord has a canonical logo and icon set for the first time — a favicon in the web app, real desktop app icons, and a real browser extension icon, replacing generic/unbranded placeholders.
 
 *2026-08-07* — verification: automated tests: passed; artifact build: passed
@@ -78,6 +84,8 @@ References: [#270](https://github.com/conectlens/lensword/issues/270), [PR #291]
 
 **Browser Extension**
 
+<a id="browser-notification-icon-fix"></a>
+
 ### Fixed: Capture notifications ("Saved to LensWord", error notifications) now show the LensWord icon instead of a broken image.
 
 *2026-08-07* — verification: not verified
@@ -96,3 +104,11 @@ service-worker.js's three chrome.notifications.create() calls referenced iconUrl
 References: [#275](https://github.com/conectlens/lensword/issues/275), [PR #299](https://github.com/conectlens/lensword/pull/299)
 
 Also see [Main Branch Activity](/reference/changelog/main-branch-activity) — what's merged but not yet part of any release, and [Releases](/reference/releases/) — published, immutable release records (none exist yet).
+
+## No changelog entry
+
+Changes reviewed and confirmed to have no user-observable effect (internal-only, CI-only, docs-only) — see [CONTRIBUTING.md](https://github.com/conectlens/lensword/blob/development/CONTRIBUTING.md) for the fragment policy. Listed here for reviewer visibility, not rendered on any product's changelog page.
+
+| Date | Products | Reason | References |
+|---|---|---|---|
+| 2026-08-07 | Web Application, Desktop Application, Browser Extension, MCP Server, Local CLI, Backend (API) | Adds CI enforcement (registry validation, fragment schema, product-impact detection, generation idempotency) for the changelog/release-transparency system #281 introduced. No product's runtime behavior changes — this is contributor-workflow and CI tooling only. | [#282](https://github.com/conectlens/lensword/issues/282) |

@@ -37,7 +37,7 @@ VALID_FRAGMENT = {
     "known_limitations": [],
     "compatibility": {"requires": {"server_api": None}},
     "verification": {
-        "automated_tests": {"status": "passed", "commands": [], "workflow_url": None},
+        "automated_tests": {"status": "passed", "commands": ["pytest -v"], "workflow_url": None},
         "artifact_build": {"status": "not_run", "artifacts": []},
         "manual_platform_checks": {"macos": "not_applicable", "windows": "not_applicable", "linux": "not_applicable"},
         "production_observation": {"status": "not_observed"},
@@ -130,6 +130,65 @@ def test_multi_product_fragment_accepted(tmp_path):
     data = {**VALID_FRAGMENT, "id": "multi-product", "products": ["web", "desktop", "browser-extension"]}
     path = write_fragment(tmp_path, data)
     assert validate_fragment(path, PRODUCT_IDS) == []
+
+
+def test_none_type_with_reason_accepted(tmp_path):
+    data = {
+        **VALID_FRAGMENT, "id": "internal-refactor", "type": "none",
+        "reason": "Internal refactor of test helpers, no observable behavior change.",
+        "documentation_required": False,
+    }
+    path = write_fragment(tmp_path, data)
+    assert validate_fragment(path, PRODUCT_IDS) == []
+
+
+def test_none_type_without_reason_rejected(tmp_path):
+    data = {**VALID_FRAGMENT, "id": "no-reason", "type": "none", "documentation_required": False}
+    path = write_fragment(tmp_path, data)
+    errors = validate_fragment(path, PRODUCT_IDS)
+    assert any("requires a non-empty 'reason'" in e for e in errors)
+
+
+def test_none_type_with_documentation_required_true_rejected(tmp_path):
+    data = {
+        **VALID_FRAGMENT, "id": "bad-doc-flag", "type": "none",
+        "reason": "Some internal change.", "documentation_required": True,
+    }
+    path = write_fragment(tmp_path, data)
+    errors = validate_fragment(path, PRODUCT_IDS)
+    assert any("documentation_required: false" in e for e in errors)
+
+
+def test_automated_tests_passed_without_evidence_rejected(tmp_path):
+    data = {**VALID_FRAGMENT, "id": "unevidenced-tests"}
+    data["verification"] = {
+        **VALID_FRAGMENT["verification"],
+        "automated_tests": {"status": "passed", "commands": [], "workflow_url": None},
+    }
+    path = write_fragment(tmp_path, data)
+    errors = validate_fragment(path, PRODUCT_IDS)
+    assert any("passed requires at least one command or a workflow_url" in e for e in errors)
+
+
+def test_automated_tests_passed_with_command_accepted(tmp_path):
+    data = {**VALID_FRAGMENT, "id": "evidenced-tests"}
+    data["verification"] = {
+        **VALID_FRAGMENT["verification"],
+        "automated_tests": {"status": "passed", "commands": ["pytest -v"], "workflow_url": None},
+    }
+    path = write_fragment(tmp_path, data)
+    assert validate_fragment(path, PRODUCT_IDS) == []
+
+
+def test_artifact_build_passed_without_evidence_rejected(tmp_path):
+    data = {**VALID_FRAGMENT, "id": "unevidenced-build"}
+    data["verification"] = {
+        **VALID_FRAGMENT["verification"],
+        "artifact_build": {"status": "passed", "artifacts": []},
+    }
+    path = write_fragment(tmp_path, data)
+    errors = validate_fragment(path, PRODUCT_IDS)
+    assert any("passed requires at least one artifact reference" in e for e in errors)
 
 
 def test_invalid_yaml_reported_not_crashed(tmp_path):

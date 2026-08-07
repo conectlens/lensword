@@ -9,6 +9,8 @@ Status — Browser Extension: **unreleased**.
 
 Every entry states exactly what was verified — a passing automated test does not imply a platform was manually checked, and a manual check on one OS does not imply another. See [Verification levels](/reference/trust/verification-levels) for what each status means.
 
+<a id="lensword-documentation-site"></a>
+
 ### Documentation: LensWord has a real documentation site (docs/, built with VitePress), organized around Diátaxis (Setup tutorial, Install how-to guides, Learn explanation, Reference material) — replacing a flat, uncurated docs/ folder.
 
 *2026-08-07* — verification: automated tests: passed; artifact build: passed; manual checks — windows: passed; production observation: not_applicable
@@ -26,6 +28,8 @@ docs/.vitepress/config.mts defines the site; every existing doc was moved (not d
 
 References: [#272](https://github.com/conectlens/lensword/issues/272), [PR #295](https://github.com/conectlens/lensword/pull/295)
 
+<a id="lensword-brand-identity"></a>
+
 ### Added: LensWord has a canonical logo and icon set for the first time — a favicon in the web app, real desktop app icons, and a real browser extension icon, replacing generic/unbranded placeholders.
 
 *2026-08-07* — verification: automated tests: passed; artifact build: passed
@@ -42,6 +46,8 @@ Original SVG mark (lens + word-line) in brand/logo/svg/, with a reproducible gen
 - Desktop icon change was not visually re-verified on a packaged installer (none has ever been built) — confirmed only that the icon files exist at the correct paths/sizes referenced by tauri.conf.json.
 
 References: [#270](https://github.com/conectlens/lensword/issues/270), [PR #291](https://github.com/conectlens/lensword/pull/291)
+
+<a id="browser-notification-icon-fix"></a>
 
 ### Fixed: Capture notifications ("Saved to LensWord", error notifications) now show the LensWord icon instead of a broken image.
 

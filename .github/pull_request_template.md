@@ -44,8 +44,11 @@ product(s) and the verification actually performed, and validate it:
 
     python scripts/changelog/schema.py .changes/your-fragment.yml
 
-CI does not enforce this yet (tracked in #282) — for now this is a
-reviewer checklist item, not an automated gate.
+No user-observable effect (internal-only, CI-only, docs-only)? Still add a
+fragment, with `type: none` and a `reason` — see .changes/README.md.
+
+CI enforces this (.github/workflows/changelog.yml, #282): a PR touching a
+registered product's source with no fragment at all fails the build.
 -->
 
 - [ ] This PR changes user-observable behavior for one or more LensWord products, and I've added a validated fragment under `.changes/`

@@ -37,6 +37,8 @@ docs/.vitepress/dist/
 # Demo-media generation scripts
 scripts/node_modules
 scripts/node_modules/
+scripts/**/__pycache__/
+scripts/changelog/.pytest_cache/
 
 # Deployment
 # Compose reads a root .env automatically, and it holds the database password
