@@ -59,7 +59,7 @@ verification:
   production_observation:
     status: observed
 security_impact: none
-documentation_required: true
+documentation_required: false
 date: '2026-08-07'
 references:
   issues: []
