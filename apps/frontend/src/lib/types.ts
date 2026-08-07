@@ -158,6 +158,20 @@ export interface MnemonicNote {
   created_at: string
 }
 
+/** A remote MCP companion this account has completed OAuth with (issue
+ *  #196) — distinct from the local stdio `McpServer` type above, which the
+ *  desktop shell manages entirely on-device and never goes through
+ *  `/api/v1/mcp/oauth`. */
+export interface McpConnection {
+  client_id: string
+  client_name: string
+  scope: string
+  workspace: string
+  created_at: string
+  last_used_at: string | null
+  active_token_count: number
+}
+
 export interface RecallSettings {
   scheduler: 'sm2' | 'fsrs'
   enabled: boolean
@@ -360,6 +374,48 @@ export interface ObservationHistoryItem {
 export interface ObservationHistoryResponse {
   items: ObservationHistoryItem[]
   has_more: boolean
+}
+
+// Learning DNA: contextual intervention efficacy, not a learner-style label
+// (issue #186). Every estimate carries its own context, sample size, and
+// uncertainty interval — there is no global "you are a visual learner"
+// verdict anywhere in this shape.
+export type EfficacyStatus = 'MEASURED' | 'INCONCLUSIVE' | 'INSUFFICIENT_EVIDENCE'
+
+export interface EfficacyContext {
+  item_class: string
+  language: string
+  prompt_direction: string
+  difficulty: string
+  modality: string
+  horizon_days: number
+}
+
+export interface EfficacyEstimate {
+  intervention_type: string
+  context: EfficacyContext
+  status: EfficacyStatus
+  intervention_samples: number
+  control_samples: number
+  intervention_rate: number | null
+  control_rate: number | null
+  effect: number | null
+  interval_low: number | null
+  interval_high: number | null
+  reason: string | null
+  // A ready-to-read sentence with sample size/period/effect/confidence, or
+  // null unless status is MEASURED — never a bare percentage.
+  recommendation: string | null
+  period_start: string | null
+  period_end: string | null
+  valid_until: string | null
+}
+
+// A learner's *stated* modality preference — deliberately its own resource,
+// never merged with `EfficacyEstimate` (which is measured, not stated).
+export interface ModalityPreference {
+  modality: string
+  stated_at: string
 }
 
 // Offline mutation queue (issue #90's server contract, issue #218's client).

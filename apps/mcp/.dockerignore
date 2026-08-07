@@ -1,0 +1,15 @@
+__pycache__
+*.pyc
+.pytest_cache
+tests/
+*.egg-info
+
+# Cloudflare Worker deploy tooling (see wrangler.toml) — not part of the
+# Python image.
+node_modules
+cf-worker
+package.json
+package-lock.json
+tsconfig.json
+wrangler.toml
+.wrangler

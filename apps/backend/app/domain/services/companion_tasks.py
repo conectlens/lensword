@@ -6,6 +6,7 @@ may advance progress.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -53,6 +54,12 @@ class CompanionTask:
     created_at: datetime
     updated_at: datetime
     revision: int = 1
+    # Bounded, caller-supplied execution parameters (e.g. precomputed
+    # extraction candidates, or the due-word items a plan should cover).
+    # Never free-form model output and never a place for secrets: the
+    # background executor only ever reads it, and callers build it from
+    # already-validated domain data before the task exists.
+    input: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if not self.id or len(self.id) > 64:
@@ -69,6 +76,8 @@ class CompanionTask:
             raise ValueError("task operation_id is limited to 128 characters")
         if self.error is not None and len(self.error) > 500:
             raise ValueError("task errors are limited to 500 characters")
+        if self.input is not None and len(json.dumps(self.input, default=str)) > 8_000:
+            raise ValueError("task input is limited to 8000 serialized characters")
 
     @property
     def progress(self) -> float:
@@ -123,6 +132,43 @@ class CompanionTask:
         self.status = CompanionTaskStatus.EXPIRED
         self._touch(now)
         return True
+
+    def record_partial_result(self, result: dict[str, Any], now: datetime) -> None:
+        """Attach output produced before every unit finished.
+
+        Distinct from `complete`: it never advances `completed_units` or the
+        status, so "the total_units field says done" and "here is what we
+        produced before stopping" can never be confused by a caller that
+        only glances at `result`. Callers are expected to mark the payload
+        itself (e.g. a `"partial": True` field) since this method carries no
+        opinion about the shape of `result`. Used mid-run to make an
+        in-progress task's output visible, and after a cancellation to record
+        whatever work had actually completed.
+        """
+        if self.status is CompanionTaskStatus.COMPLETED:
+            raise ValueError("a completed companion task's result is final")
+        self.result = dict(result or {})
+        self._touch(now)
+
+    def record_plan_confirmation(self, result: dict[str, Any], now: datetime) -> None:
+        """Store the outcome of confirming (and, on confirmation, executing)
+        a `plan_generation` task's plan (#194 TODO 4).
+
+        Only ever called after `complete` has already stored the generated,
+        unconfirmed plan (`status is COMPLETED`) — confirming a plan does
+        not reopen the task, it records one more fact about what happened
+        to the plan the task already produced. Raises if this task is not a
+        `plan_generation` task, has no plan yet, or was already confirmed —
+        a plan can be executed at most once.
+        """
+        if self.task_type is not CompanionTaskType.PLAN_GENERATION:
+            raise ValueError("Only a plan_generation task can record a plan confirmation")
+        if self.status is not CompanionTaskStatus.COMPLETED:
+            raise ValueError("A plan must be generated before it can be confirmed")
+        if isinstance(self.result, dict) and self.result.get("confirmed"):
+            raise ValueError("This plan has already been confirmed")
+        self.result = dict(result)
+        self._touch(now)
 
     def fail(self, error: str, now: datetime) -> None:
         if self.is_terminal:

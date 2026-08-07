@@ -1,0 +1,97 @@
+id: docs-qa-verification-gates
+products:
+  - web
+  - desktop
+  - browser-extension
+  - mcp-server
+  - local-cli
+type: none
+reason: >-
+  Adds automated documentation QA (route/link integrity, code-block syntax,
+  media size/secret scanning, accessibility smoke test) and fixes two
+  broken-anchor bugs and one accessibility contrast issue the new tooling
+  found. No product's runtime behavior changes.
+summary: >-
+  No user-observable change — documentation QA tooling, plus fixes to
+  broken doc links/anchors and a docs-site accessibility issue found by it.
+technical_summary: >-
+  Adds scripts/docs-qa/check_routes_links.py (crawls the built VitePress
+  site; fails on a registered product missing its install/changelog route,
+  a broken internal link, or a broken anchor — respects the same
+  ignoreDeadLinks patterns as config.mts for the deliberately-dead
+  CHANGELOG.md-include links), check_code_blocks.py (validates every fenced
+  json/yaml/toml example across docs/, README.md, CONTRIBUTING.md parses),
+  check_media.py (file-size budgets and a sidecar-text secret/real-path
+  scan for docs/media — does not OCR screenshot pixels, documented as a
+  limitation), and check_accessibility.mjs (axe-core via Playwright against
+  6 representative pages x light/dark, wcag2a/wcag2aa/wcag21aa rule sets,
+  with a small transparent KNOWN_VIOLATIONS baseline so CI blocks new
+  regressions without silently hiding or being blocked by one pre-existing
+  gap). Wired into .github/workflows/docs-qa.yml.
+  Real bugs found and fixed by this tooling, not by inspection:
+  docs/install/troubleshooting.md linked to two anchors that don't exist on
+  desktop-app.md (fixed to the real heading anchors); VitePress's default
+  --vp-code-lang-color measured below WCAG AA contrast in both themes
+  (overridden in custom.css, verified by the same tool after the fix).
+  One accessibility gap found and left open, documented as a known
+  baseline entry: Shiki's default github-light/github-dark comment token
+  color is set via a per-span inline CSS custom property with no class to
+  target, so a clean fix needs either a different Shiki theme pair (visual
+  review needed across every code sample) or a fragile hex-literal
+  attribute selector — neither applied blind.
+  docs/internal/qa-report.md synthesizes the full #268 documentation epic
+  per #283's required-report specification.
+user_impact: >-
+  None — internal change. Two doc pages had broken anchor links, now
+  fixed; the code-block language badge is slightly darker/lighter for
+  better readability in both themes.
+release_status: unreleased
+breaking: false
+migration: none
+known_limitations:
+  - Shiki code-comment contrast in the docs site's default light/dark
+    syntax theme remains below WCAG AA (~4.45:1 light, ~3.75:1 dark vs.
+    4.5:1 required) — tracked as a known, non-blocking baseline entry in
+    scripts/docs-qa/check_accessibility.mjs, not silently passing or
+    silently failing every future PR.
+  - Media privacy scanning covers file-size budgets and sidecar text
+    (JSON/txt/md) for secret-shaped strings and real local paths; it does
+    not inspect screenshot pixel content (needs OCR/image-understanding
+    tooling not available here) — every screenshot was manually reviewed
+    for that before being committed, which remains the real control.
+  - Documented commands (docker/npm/pip invocations in code fences) are
+    checked for syntactic validity only, not executed in a clean
+    environment.
+compatibility:
+  requires:
+    server_api: null
+verification:
+  automated_tests:
+    status: passed
+    commands:
+      - cd scripts/docs-qa && python -m pytest -v
+      - cd scripts/changelog && python -m pytest -v
+      - python scripts/changelog/validate_registry.py
+      - python scripts/changelog/schema.py .changes/*.yml
+      - cd docs && npm run docs:build
+      - python scripts/docs-qa/check_routes_links.py
+      - python scripts/docs-qa/check_code_blocks.py
+      - python scripts/docs-qa/check_media.py
+      - node scripts/docs-qa/check_accessibility.mjs
+    workflow_url: null
+  artifact_build:
+    status: not_run
+    artifacts: []
+  manual_platform_checks:
+    macos: not_applicable
+    windows: not_applicable
+    linux: not_applicable
+  production_observation:
+    status: not_applicable
+security_impact: none
+documentation_required: false
+date: '2026-08-07'
+references:
+  issues: [283]
+  pull_requests: []
+  commits: []

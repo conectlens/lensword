@@ -1,416 +1,194 @@
-# LensWord
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/logo/webp/lensword-lockup-white.webp">
+    <img src="brand/logo/webp/lensword-lockup-ink.webp" alt="LensWord" width="280">
+  </picture>
+</p>
 
-[![CI](https://github.com/conectlens/lensword/actions/workflows/ci.yml/badge.svg)](https://github.com/conectlens/lensword/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+<p align="center"><strong>LensWord is an open-source vocabulary trainer that forces spaced-repetition recall and lets you anchor words spatially in a memory palace.</strong></p>
 
-A vocabulary-learning app built around **spaced repetition** and the **memory-palace
-(method of loci)** mnemonic technique. FastAPI backend on Postgres or SQLite,
-Vite + React + Tailwind frontend, email/password auth, Docker deployment.
+<p align="center">
+  <a href="https://github.com/conectlens/lensword/actions/workflows/ci.yml"><img src="https://github.com/conectlens/lensword/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-CHANGELOG.md-blue" alt="Changelog" /></a>
+  <br />
+  <a target="_blank" href="https://github.com/sponsors/conectlens"><img src="https://img.shields.io/badge/sponsor-GitHub_Sponsors-ea4aaa?logo=githubsponsors&logoColor=white" alt="GitHub Sponsors" /></a>
+  <a target="_blank" href="https://patreon.com/ofcskn"><img src="https://img.shields.io/badge/sponsor-Patreon-f96854?logo=patreon&logoColor=white" alt="Patreon" /></a>
+  <a href="mailto:lensword@conectlens.com"><img src="https://img.shields.io/badge/contact-lensword%40conectlens.com-blue?logo=maildotcom&logoColor=white" alt="Contact" /></a>
+</p>
 
-## What LensWord does
+No release has shipped yet (see [Current status and known limitations](#current-status-and-known-limitations)) — this is an active, evidence-documented open-source project, not a finished product.
 
-- **Groups** — personal vocabulary decks ("Spanish Verbs", "Business English")
-- **Words** — term, translations, example sentence, personal mnemonic, category,
-  synonyms/antonyms/topics, and their own spaced-repetition state
-- **Rooms** ("Mind Palace") — a 2D canvas per group where words are dragged to a
-  spatial position as a memory anchor
-- **Review sessions** — one core forced-recall loop, presented five ways
-  (standard, focus/Pomodoro, walking, night wind-down, study-break) — see
-  *Design decisions* below for why this is one component, not five
-- **MnemoLab** — write and vote on mnemonics for your hardest words
-- **Mind map** — radial synonym/antonym/topic visualization per word
-- **Forced Recall Engine settings** — per-user intensity and trigger configuration
-- **Memory loop** — same-day graduated stabilization for new and weakly acquired
-  words; see [verification and evidence](docs/memory-loop-verification.md)
-- **Browser capture** — Chrome MV3 selected-text capture under `apps/browser/`
-- **MCP server** — stdio server under `apps/mcp/` backed by the authenticated API
-- **Profile** — stats, streak, real badge computation
-- **Admin panel** — real user list/search/suspend/delete and aggregate stats
+## What can I do with LensWord?
 
-## Architecture
+- **Build personal vocabulary groups** — decks like "Spanish Verbs" or "Business English," each word with translations, an example sentence, your own mnemonic, and a category.
+- **Review with spaced repetition and forced recall** — an SM-2-based scheduler prompts you right before you'd forget a word, and you type the answer instead of just recognizing it.
+- **Organize words spatially in the Mind Palace** — drag words onto a 2D room canvas as spatial memory anchors (the method of loci).
+- **Practice conversation, scenarios, writing, and pronunciation feedback** — the Practice Lab covers guided conversations, scenario prompts, writing exercises, and pronunciation/transcript feedback beyond flashcard review.
+- **Use local, Ollama-powered mnemonic suggestions** — MnemoLab can ask a locally hosted model for a mnemonic; off by default, nothing leaves your machine when it's on.
+- **Capture words while browsing** — the browser extension saves selected text on a page straight into a LensWord group.
+- **Use LensWord from a desktop shell** — a Tauri app that talks to a LensWord server over the network.
+- **Connect an MCP-capable AI client, or use the bounded local CLI** — give Claude, Codex, Cursor, or another MCP client scoped access to your vocabulary, or preview/import developer context locally without ever contacting the server.
+- **Self-host LensWord for yourself or a team** — one Docker Compose stack, with documented limitations (see the surface chooser below).
 
-**Backend** — hexagonal/clean architecture:
+## Choose your surface
 
-```
-domain/          entities, value objects, SM-2 scheduler, badge service — pure
-                 Python, zero framework dependencies, fully unit-testable
-application/     use cases — one per operation, depend only on domain interfaces
-infrastructure/  SQLAlchemy models + repository implementations, JWT/bcrypt.
-                 Dialect-agnostic: the same models and queries run on Postgres
-                 and SQLite, and CI runs the whole suite against both
-api/             FastAPI routers, Pydantic schemas, dependency wiring
-```
+| Surface | Best for | Install / access | Requires | Status |
+|---|---|---|---|---|
+| **Web app** | Everyday review in a browser | `docker compose up --build` (below) | Nothing else — the stack bundles its own Postgres | Public, CI-tested |
+| **Self-hosting for others** | Running LensWord as a shared service | [docs/install/self-hosting.md](docs/install/self-hosting.md) | Managed Postgres, TLS, real secrets | Public, documented; notifications are log-only (see limitations) |
+| **Desktop app** (macOS / Windows / Linux) | A native shell around the same app | Build from source today — see [docs/install/desktop-app.md](docs/install/desktop-app.md) | A running LensWord server (remote-only, [ADR 0002](docs/reference/adr/0002-desktop-backend-mode.md)) | **Unreleased** — no installer has been published; CI currently builds macOS and Linux only |
+| **Browser extension** | Capturing words while reading | Load unpacked — see [apps/browser/README.md](apps/browser/README.md) | A running LensWord server | Functional, developer-mode only — not on the Chrome Web Store, no CI coverage |
+| **MCP server** | Claude, Codex, Cursor, or another MCP client | Run from source — see [apps/mcp/README.md](apps/mcp/README.md) and [docs/reference/mcp-remote-transport.md](docs/reference/mcp-remote-transport.md) | A LensWord account + API URL; remote transport is off by default | Functional, not on PyPI, no CI coverage |
+| **Local CLI** | Bounded, offline context preview/import | Run from source — see [apps/mcp/README.md](apps/mcp/README.md) | Local Python install only for `import-context` (offline, never contacts the server) | Functional, not on PyPI |
 
-Dependency direction points inward: `api` → `application` → `domain` ←
-`infrastructure`. The domain layer has no SQLAlchemy or FastAPI imports at all —
-you can read `domain/entities.py` and `domain/services/` with zero web-framework
-context.
+Per-surface deep-dive guides (verified desktop/browser/MCP walkthroughs) are being written in the documentation epic ([#268](https://github.com/conectlens/lensword/issues/268)) — until they land, the links above point at the most accurate source that exists today. See [docs/internal/repo-audit.md](docs/internal/repo-audit.md) for the full evidence behind this table.
 
-**Frontend** — Vite + React + TypeScript + Tailwind, feature-sliced:
+## Quick start
 
-```
-lib/           typed API client + shared types mirroring the backend schemas
-context/       auth state
-components/ui/ design-system primitives extracted from the templates' UI kit
-features/      one folder per bounded context (auth, groups, rooms, review, ...)
-```
+The fastest path that's actually been run end-to-end: Docker Compose, which bundles its own Postgres and serves both the API and the web app.
 
-### Design decisions worth flagging
-
-- **No OAuth, despite the templates showing Google/Microsoft/Facebook buttons.**
-  Email/password auth is the only supported flow; the OAuth buttons were dropped
-  rather than built as non-functional decoration.
-- **One `ReviewSessionPage`, not five.** The focus/walking/night/break templates
-  are the same recall mechanic with different pacing and input style (typed vs.
-  multiple-choice). Building five near-identical pages would have duplicated the
-  session/scoring logic five times. Mode is a query param that changes
-  presentation only.
-- **Color/type tokens normalized.** The 30 templates don't agree with each other
-  (surface color drifts between `#1f1f1f`/`#1E1E1E`, the admin panel template
-  uses a completely different blue/Inter scheme, text-secondary drifts between
-  gray and a yellowish tan). Normalized to one consistent token set built on a
-  `#ffde59` primary and Montserrat, with Poppins for body text, since the
-  templates themselves only ever use Montserrat.
-- **MnemoLab is per-word, not cross-user-global.** The template gallery shows
-  mnemonics from multiple different usernames for what looks like a shared
-  "Ephemeral" entry. Building a true cross-user shared-by-word-text catalog
-  (decoupled from each user's personal `Word` row) is a bigger modeling change
-  than time allowed. The schema supports authorship and voting; each user
-  currently sees mnemonics attached to their own word entries.
-- **AI mnemonic suggestions are real, opt-in, and local.** MnemoLab can ask a
-  locally hosted [Ollama](https://ollama.com) model for a mnemonic. It is off
-  by default, so an install that configures nothing behaves exactly as before
-  and the UI says plainly that suggestions are unavailable rather than
-  pretending to call a provider. See
-  [Optional: local AI mnemonic suggestions](#optional-local-ai-mnemonic-suggestions-ollama).
-  Image generation is still not implemented — no image provider is wired up.
-- **Reminders reach the desktop; push and email still only reach the log.**
-  Recall settings (channels, quiet hours, triggers) persist for real, a
-  background scheduler registers each reminder and fires it at the configured
-  time on the account's own clock, and those settings gate delivery before it
-  reaches the notification port.
-
-  The **desktop** channel is now backed by a real adapter. Since the desktop
-  app is remote-only (ADR 0002), the backend records what the notification tray
-  is owed and the shell collects it and raises a native toast. That path is
-  unit-tested end to end, but **no toast has actually been observed on macOS,
-  Windows or Linux** — that needs a packaged and, on macOS, signed build
-  (ROADMAP 3.1). Treat it as implemented and unverified rather than proven.
-
-  Desktop notifications carry actions — start a session, remind me later, skip
-  today — and handling them is idempotent, since an operating system may
-  deliver the same activation twice. Two settings govern them: *hide
-  notification details* keeps specifics off a lock screen, and *pause
-  notifications* stops delivery without unsetting the schedule.
-
-  **Push and email** still have no credentialed provider behind the port: the
-  only adapter for them writes the message to the application log, so nothing
-  arrives. The settings page says so rather than silently no-op'ing.
-
-## Running it
-
-### Docker (recommended)
+**Prerequisites:** Docker and Docker Compose.
 
 ```bash
+cp .env.example .env
+# Edit .env and set SECRET_KEY and POSTGRES_PASSWORD to real values —
+# see the comments in .env.example for how to generate a SECRET_KEY.
+
 docker compose up --build
 ```
-- Frontend: http://localhost:18421
-- Backend API: http://localhost:18420 (docs at `/docs`)
 
-Copy `.env.example` to `.env` next to `docker-compose.yml` and set at least
-`SECRET_KEY` and `POSTGRES_PASSWORD` before running in anything but a throwaway
-local environment. Optionally set
-`FIRST_ADMIN_EMAIL` / `FIRST_ADMIN_PASSWORD` to auto-create an admin account on
-first boot — otherwise, register normally and promote yourself via a one-off SQL
-update (`UPDATE users SET role='admin' WHERE email='you@example.com'`).
+- Frontend: **http://localhost:18421**
+- Backend API: **http://localhost:18420** (interactive docs at `/docs`)
 
-**Note:** `docker compose up --build` has been verified end-to-end (both
-containers build, boot healthy, and serve traffic on the ports above).
+Register an account from the frontend, or set `FIRST_ADMIN_EMAIL` /
+`FIRST_ADMIN_PASSWORD` in `.env` before first boot to create an admin account
+automatically.
 
-#### Database
+**Verified:** `docker compose up --build` builds both containers, boots them
+healthy, and serves traffic on the ports above — confirmed by running it and
+walking through registration, onboarding, adding words, and a review session
+(see the screenshots below).
 
-The Compose stack runs **Postgres**, and the backend waits for it to pass a
-health check before starting, because it runs migrations on boot. The database
-port is not published to the host — nothing outside the stack needs it, and the
-default `lensword`/`lensword` credentials are only safe while it is
-unreachable. Override `POSTGRES_USER`, `POSTGRES_PASSWORD` and `POSTGRES_DB`
-for anything that is not a throwaway local environment.
+For everything past this — [local development without Docker](docs/reference/local-development.md), [hosted
+deployment for other people](docs/install/self-hosting.md), [desktop builds](docs/install/desktop-app.md), [browser extension loading](apps/browser/README.md), [MCP configuration](apps/mcp/README.md), and [local AI](docs/install/local-ai-ollama.md) — see [Documentation](#documentation) below.
 
-To point the backend at a database you already run, set `DATABASE_URL`:
+## See it in action
 
-```
-DATABASE_URL=postgresql+psycopg://user:password@host:5432/lensword
-```
+Real captures from each surface — a `docker compose up --build` run for
+Web, a local build for Desktop, the popup UI for the extension, and a real
+terminal session for the CLI. Nothing here is a mockup; regenerate all of
+it yourself with `node scripts/capture-demo-media.mjs && python
+scripts/assemble-demo-animation.py` (Web) — see each surface's guide,
+linked below, for how its own screenshots were produced.
 
-The `+psycopg` suffix is required — without it SQLAlchemy looks for `psycopg2`,
-which this project does not depend on. `DB_POOL_SIZE` and `DB_MAX_OVERFLOW`
-bound the connection pool; against a managed plan's connection cap, the number
-that matters is their sum multiplied by how many backend instances you run.
+**Web** — forced-recall review session, animated from 4 real frames (question → typed answer → "Correct!" → next word):
 
-### Hosted deployment
+![Animated demo of a LensWord review session: a question appears, the answer is typed, "Correct!" is shown, then the next word appears](docs/media/screenshots/web-review-session-demo.webp)
 
-The Compose stack above runs everything on one host, including its database.
-That is right for one person and wrong for a service. Running LensWord *for
-other people* — managed Postgres, secrets in a platform store, TLS, more than
-one instance — is covered in
-**[docs/hosted-deployment.md](docs/hosted-deployment.md)**.
+| | |
+|---|---|
+| ![LensWord landing page](docs/media/screenshots/web-landing.webp) | ![Vocabulary group with three Spanish words, translations, and mnemonics](docs/media/screenshots/web-group-vocabulary.webp) |
+| Landing page | A group with real words, translations, and mnemonics |
+| ![Mind Palace room canvas with a word placed as a spatial anchor](docs/media/screenshots/web-mind-palace.webp) | ![Settings page: daily practice session, Forced Recall Engine intensity, and review scheduler](docs/media/screenshots/web-settings.webp) |
+| Mind Palace: words placed as spatial anchors | Review scheduler and Forced Recall settings |
 
-Two things to know before you do: **push and email notifications have no
-provider and only write to the log**, and no desktop notification has yet been
-observed on a real machine (ROADMAP 3.1). Anyone you host this for will set
-reminders and, outside the desktop shell, receive nothing — so say so where
-they sign up.
+**Desktop, Browser Extension, and MCP/CLI:**
 
-### Local development
-
-```bash
-# Backend — defaults to SQLite, so no database server is needed
-cd apps/backend
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-cp .env.example .env
-.venv/bin/uvicorn app.main:app --reload
-
-# Frontend (separate terminal)
-cd apps/frontend
-npm install
-cp .env.example .env   # VITE_API_URL=http://localhost:8000
-npm run dev
-```
-
-## Desktop
-
-LensWord has a desktop shell (Tauri 2) under `apps/desktop/`. It hosts the same
-frontend build as the browser version and talks to a LensWord server over the
-network — [ADR 0002](docs/adr/0002-desktop-backend-mode.md) decided the first
-release is **remote-only**, so the app does not bundle a database or a Python
-runtime and needs a server to point at.
-
-### Installing
-
-Tagged releases build installers for all three platforms and attach them to a
-GitHub release: `.dmg` for macOS, `.msi`/`.exe` for Windows,
-`.deb`/`.AppImage` for Linux.
-
-> **No release has been published yet.** Until one is, build from source with
-> the instructions below. When a release does exist, its artifacts are
-> **unsigned** unless the repository's signing secrets are configured — macOS
-> will show a Gatekeeper warning and Windows a SmartScreen one. See
-> [docs/releasing.md](docs/releasing.md).
-
-### Building from source
-
-Requires a Rust toolchain ([rustup](https://rustup.rs)) and your platform's
-webview development packages, listed in the
-[Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
-
-```bash
-(cd apps/frontend && npm ci && npm run build)   # the shell embeds this build
-(cd apps/desktop && npx @tauri-apps/cli@2 build)
-```
-
-The artifact lands under `apps/desktop/target/release/bundle/`. On macOS, add
-`CI=1` if you are building over SSH or from a headless process — the `.dmg`
-step ends with an AppleScript that needs a GUI session.
-
-### Pointing it at a server
-
-The endpoint is read from `LENSWORD_API_URL`, then from an `api-endpoint` file
-in the OS application-config directory, then defaults to
-`http://127.0.0.1:8000`.
-
-It must be a **loopback address or an `https://` origin**. Plain HTTP to a
-remote host is refused rather than silently accepted, so a self-hosted server
-the shell will talk to has to serve HTTPS.
-
-### What works, and what is not yet verified
-
-The shell stores your authentication token in the operating system's
-credential store (Keychain, Credential Manager, Secret Service) rather than in
-webview `localStorage`, and it polls for reminder notifications and raises
-native toasts with Start / Remind later / Skip today actions.
-
-**No toast has been observed on any operating system.** The path is
-unit-tested end to end, but confirming it needs a signed packaged build
-(ROADMAP 3.1). Treat native notifications as implemented and unverified.
-
-Startup, memory and installer-size figures have not been measured either, but
-the harness that will measure them exists: `scripts/desktop-baseline.py`. Point
-it at a packaged build and it reports every ADR 0001 Phase 3.1 gate with a
-pass/fail against the documented bar. Run without `--signed` it labels every
-figure `NOT-THE-GATE` and exits non-zero, because signing and notarisation
-change startup time and an unsigned number flatters the result. It also prints
-the packaged-app checks that need a person, so a report cannot look complete
-without them.
-
-### Optional: local AI mnemonic suggestions (Ollama)
-
-MnemoLab can ask a locally hosted model for a mnemonic. Everything runs on your
-machine — no API key, no account, and nothing leaves the host. The feature is
-**off by default**: an install that sets none of these settings builds no
-provider at all and behaves exactly as it did before.
-
-**1. Install Ollama** — download it from [ollama.com/download](https://ollama.com/download),
-or on macOS with Homebrew:
-
-```bash
-brew install ollama
-ollama serve            # leave running; listens on http://localhost:11434
-```
-
-**2. Pull a model** (a few GB — this is the slow step, and it is a one-off):
-
-```bash
-ollama pull llama3.2
-```
-
-**3. Turn the provider on** in `apps/backend/.env`:
-
-```bash
-AI_PROVIDER=ollama
-OLLAMA_MODEL=llama3.2
-OLLAMA_BASE_URL=http://localhost:11434
-```
-
-| Setting | Default | What it does |
+| | | |
 |---|---|---|
-| `AI_PROVIDER` | `none` | `none` disables AI entirely; `ollama` enables local suggestions. Any other value is rejected at startup with a message listing the supported values. |
-| `OLLAMA_MODEL` | `llama3.2` | The model name passed to Ollama. Must be one you have pulled. |
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | Where the Ollama daemon is listening. |
-| `AI_MAX_OUTPUT_TOKENS` | `200` | Upper bound on the length of a generated suggestion. Must be greater than zero — Ollama reads a non-positive value as "no limit", so a zero or negative bound is rejected at startup rather than silently disabling itself. |
-| `AI_CONTEXT_MAX_CHARS` | `500` | How much of a word's context is sent to the model. Longer context is truncated. Must be greater than zero. |
+| ![LensWord desktop shell running on Windows, showing the landing page in a native window](docs/media/screenshots/desktop-windows-launch.webp) | ![Browser extension popup with API URL, access token, and group ID fields](docs/media/screenshots/browser-popup.webp) | ![Terminal showing lensword --help output listing the import-context, add, explain, diagnose, and review subcommands](docs/media/screenshots/mcp-cli-terminal.webp) |
+| Desktop shell, launched from a local Windows build ([verified how](docs/install/desktop-app.md)) | Browser extension popup UI (shown standalone — `chrome://` pages can't be captured by this repo's automation) | Local CLI, `lensword --help`, real terminal output |
 
-Restart the backend, open **MnemoLab**, pick a word and use **Suggest with AI**.
+## Current status and known limitations
 
-The endpoint (`POST /api/v1/words/{word_id}/mnemonics/suggest`) always answers
-HTTP 200 and reports what happened in a `status` field, because a provider
-being switched off or temporarily down is a normal state of a healthy install
-rather than a server error:
+No tagged release exists yet for any surface — everything below is evaluated
+against the current `development` branch, not a versioned artifact. See
+[docs/internal/repo-audit.md](docs/internal/repo-audit.md) for the full,
+evidence-based breakdown per surface.
 
-| `status` | When | What MnemoLab shows |
-|---|---|---|
-| `disabled` | `AI_PROVIDER` is `none` | A calm "AI suggestions unavailable" notice, with no retry — retrying cannot change a setting. |
-| `unavailable` | Provider configured but unreachable, timed out, or the model isn't pulled | The reason, plus a retry. |
-| `ok` | Success | The suggestion, which you can drop straight into your draft. |
+- **Desktop:** no installer has ever been published, and native toast
+  notifications are unit-tested but have never been observed on a real,
+  packaged build of macOS, Windows, or Linux. Unsigned builds will show a
+  Gatekeeper (macOS) or SmartScreen (Windows) warning. Treat desktop
+  notifications as implemented and unverified, not proven.
+- **Push and email notifications** have no credentialed provider behind
+  them — the only adapter writes the message to the application log, so
+  nothing is actually delivered through those channels. Desktop
+  notifications are the only channel with a real, if unverified, delivery
+  path.
+- **Browser extension** is developer-mode only (manual "Load unpacked"),
+  not published to the Chrome Web Store, and has no CI coverage. First
+  release scope is narrow — hardcoded to Spanish, no translations.
+- **MCP server and local CLI** are not published to PyPI; install is
+  source-only. No CI job builds or tests either.
+- **AI mnemonic suggestions** (MnemoLab, via Ollama) are real and verified
+  against a live model, but off by default and require a local Ollama
+  install — see [Documentation](#documentation).
+- No refresh-token rotation — a single 7-day access token. Fine for
+  personal use, not for a production launch.
+- Backend: 96/96 tests passing, boot-tested with a real `uvicorn` process.
+  Frontend: lints clean, type-checks and builds clean, unit tests passing.
+  Full detail in [docs/reference/verification.md](docs/reference/verification.md), which also
+  lists every known gap. See
+  [docs/internal/evidence-gaps.md](docs/internal/evidence-gaps.md) for what
+  has explicitly **not** been verified (e.g. no branch-protection visibility
+  from the repo, no live third-party MCP interop test).
 
-Setting names above match the `Settings` fields `ai_provider`, `ollama_model`
-and `ollama_base_url` in `apps/backend/app/config.py`.
+## Documentation
 
-#### Checking your setup
+`docs/` is a [VitePress](https://vitepress.dev) site, organized around
+[Diátaxis](https://diataxis.fr/): a **Setup** tutorial, task-oriented
+**Install** how-to guides, **Learn** explanation, and lookup **Reference**
+material. Run it locally with `cd docs && npm install && npm run docs:dev`.
+The same Markdown files are linked directly below, so they're just as
+readable straight from GitHub.
 
-An administrator can call `GET /api/v1/ai-settings/probe`. It reports the three
-failure modes separately, because they need different fixes and a single "AI
-unavailable" tells you nothing about which one you have:
+- **Setup:** [docs/setup/index.md](docs/setup/index.md) — the same verified quick start as above, plus where to go next.
+- **Install:** [web app](docs/install/web-app.md) · [desktop](docs/install/desktop-app.md) · [browser extension](docs/install/browser-extension.md) ([apps/browser/README.md](apps/browser/README.md)) · [MCP server & local CLI](docs/install/mcp-local-cli.md) ([apps/mcp/README.md](apps/mcp/README.md)) · [self-hosting](docs/install/self-hosting.md) · [local AI / Ollama](docs/install/local-ai-ollama.md) · [troubleshooting](docs/install/troubleshooting.md)
+- **Learn:** [architecture & design decisions](docs/learn/architecture.md) · [choose your surface](docs/learn/choose-a-surface.md) · [brand assets](docs/learn/brand.md)
+- **Reference:** [verification & known gaps](docs/reference/verification.md) · [AI model verification log](docs/reference/ai-model-verification.md) · [changelog](docs/reference/changelog/index.md) · [releasing & compatibility](docs/reference/releasing.md) · [MCP remote transport](docs/reference/mcp-remote-transport.md) · [local development](docs/reference/local-development.md) · [ADRs](docs/reference/adr/)
+- **Evidence base:** [docs/internal/repo-audit.md](docs/internal/repo-audit.md), [product-registry.json](docs/internal/product-registry.json), [docs-migration-map.md](docs/internal/docs-migration-map.md), [evidence-gaps.md](docs/internal/evidence-gaps.md) — not part of the published site (internal, excluded from the VitePress build), but this README and the whole documentation rewrite are built on them.
 
-| What it says | What it means | What to do |
-|---|---|---|
-| `reachable: false`, mentions `OLLAMA_BASE_URL` | Nothing is listening there | Start Ollama, or point `OLLAMA_BASE_URL` at the machine running it |
-| `reachable: false`, "did not answer like Ollama" | Something is listening, but it is not Ollama | Check the port — you are probably hitting a proxy |
-| `reachable: true`, `ready: false` | Ollama is running, the configured model is not installed | `ollama pull <model>`, or pick one of the models the response lists |
-| `ready: true` | Configured model is installed and usable | Nothing |
+## Changelog, releases & trust
 
-The route is admin-only: it names the deployment's base URL and every model
-installed on that host, which is infrastructure detail rather than something a
-learner needs.
+LensWord isn't one product with one version — Web, Desktop, Browser
+Extension, and MCP Server/Local CLI each have their own changelog,
+release identity, and verification evidence, generated from structured
+fragments under [`.changes/`](.changes/) rather than hand-copied between
+places:
 
-#### Running the backend in Docker with Ollama on the host
+- [docs/reference/changelog/index.md](docs/reference/changelog/index.md) — the changelog overview, with a page per product.
+- [docs/reference/changelog/main-branch-activity.md](docs/reference/changelog/main-branch-activity.md) — what's merged into `development`, explicitly **not** the same as released.
+- [docs/reference/releases/index.md](docs/reference/releases/index.md) — published, immutable release records. None exist yet for any product — confirmed via `git tag -l` and `gh release list`, both empty.
+- [docs/reference/trust/verification-levels.md](docs/reference/trust/verification-levels.md) — what "Automated Tests Passed," "Manually Verified," etc. actually mean, and don't mean.
+- [docs/reference/trust/release-process.md](docs/reference/trust/release-process.md) — the versioning/tagging decision (namespaced per product: `desktop-v`, `web-v`, `browser-v`, `mcp-v`) and how a merged change becomes a released one.
+- [docs/reference/trust/compatibility.md](docs/reference/trust/compatibility.md) — cross-product compatibility. Every cell reads "Not declared" today, honestly, since no release has ever existed to declare one.
+- [CHANGELOG.md](CHANGELOG.md) / [docs/reference/changelog/legacy.md](docs/reference/changelog/legacy.md) — the original, repository-wide changelog, preserved in full as a historical record rather than retroactively (and speculatively) reclassified into per-product entries.
 
-`http://localhost:11434` means *inside the container*, where nothing is
-listening — so the default fails in Docker even when Ollama is running fine on
-your machine. This is the single most common way the setup appears broken.
+CI enforcement of changelog fragments (failing a PR that changes observable behavior without one) is tracked separately in [#282](https://github.com/conectlens/lensword/issues/282) and doesn't exist yet — `scripts/changelog/schema.py` validates fragments today as a script contributors can run by hand.
 
-**macOS and Windows** (Docker Desktop) — use the host alias:
+## Sponsorship & support
 
-```bash
-OLLAMA_BASE_URL=http://host.docker.internal:11434
-```
+LensWord is built and maintained in the open. If it's useful to you or your
+team, sponsoring keeps development moving — maintenance, the documentation
+work in this repository, cross-platform desktop verification (real
+hardware and CI time for macOS/Windows/Linux), eventual release
+signing/notarization, hosting, and accessibility work all cost real time
+and, for some of them, real money. Sponsoring doesn't buy roadmap
+priority, security guarantees, or private access — there's no such policy
+today, and this won't imply one that doesn't exist.
 
-**Linux** — `host.docker.internal` is not provided by default. Either map it
-explicitly, which the Compose file can do:
+- [GitHub Sponsors](https://github.com/sponsors/conectlens) — individual or organizational
+- [Patreon](https://patreon.com/ofcskn) — individual
+- Sponsorship, partnerships, product questions, or other business contact: **[lensword@conectlens.com](mailto:lensword@conectlens.com)**
 
-```yaml
-services:
-  backend:
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    environment:
-      OLLAMA_BASE_URL: http://host.docker.internal:11434
-```
-
-or point at the Docker bridge address directly (`http://172.17.0.1:11434`),
-which is stable for the default bridge network but not for user-defined ones.
-
-Whichever you choose, Ollama must be listening on more than loopback. By
-default it binds `127.0.0.1`, which a container cannot reach even with the
-right hostname:
-
-```bash
-OLLAMA_HOST=0.0.0.0 ollama serve
-```
-
-Binding `0.0.0.0` exposes the daemon to your whole network. On a laptop on an
-untrusted network, bind it to the Docker bridge interface instead, or leave the
-backend outside Docker.
-
-#### Repeated questions are not re-generated
-
-A local model takes seconds per generation, so identical requests within a
-short window are answered from an in-process cache rather than asked again.
-Entries are keyed by account, provider and model — a response from one model is
-never served for another, and one account's response is never served to
-another. Failures are not cached, so a model that was starting up a minute ago
-is retried rather than remembered as broken. Changing the AI settings clears
-the cache.
-
-## Verification actually run
-
-- **Backend: 96/96 tests passing** (`cd apps/backend && .venv/bin/pytest`) — SM-2
-  scheduler edge cases, badge thresholds, full auth/group/word/room/review/
-  mnemonic/settings/admin flows, cross-user permission checks, cascade deletes.
-  Also boot-tested with a real `uvicorn` process and `curl`, not just
-  `TestClient`.
-- **Frontend: lints clean** (`eslint`), **type-checks and builds clean**
-  (`tsc -b && vite build`), **16/16 unit tests passing** (`vitest run`).
-- **Ollama suggestions checked live** against a real daemon running
-  `llama3.2`, via `uvicorn` + `curl` rather than mocks. All three documented
-  states were observed end to end: `ok` with generated text, `disabled` with
-  no AI settings present, and `unavailable` with the provider pointed at a
-  port nothing is listening on.
-- **The Ollama walkthrough above was followed literally from a clean shell**
-  — fresh virtualenv, `pip install`, `.env`, boot, first suggestion — and
-  took well under a minute, comfortably inside the 10-minute target.
-  Installing Ollama and running `ollama pull llama3.2` are excluded from that
-  figure: the model download is several GB and dominated entirely by your
-  connection. The MnemoLab suggestion UI itself is covered by unit tests; it
-  has not been click-tested in a browser.
-- Three real bugs were caught and fixed by the test suite along the way: an
-  SM-2 interval that could overflow on long correct streaks, a naive/aware
-  datetime mismatch against SQLite, and a SQLAlchemy identity-map staleness bug
-  where placements/attempts added mid-request didn't show up in the response.
-
-## Known gaps
-
-- Alembic manages schema changes. Run `cd apps/backend && alembic upgrade head`
-  before a direct local server start; the Docker backend runs this automatically.
-- No refresh-token rotation — a single 7-day access token. Fine for an MVP, not
-  for a production launch.
-- Blog/About marketing pages from the templates aren't built — the landing page
-  is real; a full blog would need a content backend, which felt out of scope for
-  the app itself.
-- MnemoLab image generation is intentionally not implemented — that needs
-  real credentials and an infrastructure decision for you to make, not
-  something to fake. AI *mnemonic* suggestions are implemented and opt-in via
-  Ollama.
-- Scheduled notification delivery **is** implemented: a durable job dispatches
-  due reminders, claims each occurrence so two instances cannot deliver it
-  twice, and writes a desktop notification the shell polls for. What is still
-  missing is *transport* — push and email have no provider and only write to
-  the log, and no desktop toast has been observed on a real machine. So a
-  reminder fires and is recorded; whether anyone sees it depends on where they
-  are running the app.
-- Ollama suggestions have been verified with the backend run directly on the
-  host. Reaching a host-installed Ollama daemon from inside the Docker
-  containers has not been tested, and `http://localhost:11434` will not resolve
-  to the host from within a container.
+Use [GitHub Issues](https://github.com/conectlens/lensword/issues) for bugs
+and feature requests — that's where the project actually tracks work. Use
+email for anything that shouldn't be public (sponsorship terms,
+partnership discussions) or that isn't a code issue. Security
+vulnerabilities go through [SECURITY.md](SECURITY.md), not a public issue
+or this email address. No response-time guarantee exists for any channel.
 
 ## Contributing
 

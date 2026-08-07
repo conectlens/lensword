@@ -453,6 +453,17 @@ class RecallSettings:
     companion_sampling_enabled: bool = False
     companion_remote_enabled: bool = False
     companion_multimodal_enabled: bool = False
+    # A developer flag, not a product feature (#189 TODO 2): gates the
+    # software-concepts domain-kernel spike
+    # (`app.domain.services.software_concepts_spike`,
+    # `RunSoftwareConceptSpikeUseCase`), the one non-language architecture
+    # proof for the domain-neutral kernel (ADR
+    # docs/adr/0009-domain-neutral-kernel.md). Persisted the same way every
+    # other RecallSettings flag is, but deliberately left out of
+    # RecallSettingsResponse/RecallSettingsUpdateRequest — there is nothing
+    # for an end user to opt into here, and no UI surface exists or is
+    # planned for it.
+    domain_kernel_spike_enabled: bool = False
 
     def set_intensity(self, level: int) -> None:
         if not (1 <= level <= 5):
@@ -530,6 +541,10 @@ class DesktopNotification:
     expires_at: datetime | None = None
     action: str | None = None
     action_at: datetime | None = None
+    # A `lensword://` deep link into a companion prompt or resumable session
+    # (#197 TODO 0). Set only when the recipient has AI Companion enabled;
+    # `None` otherwise, so an account that never opted in never gets one.
+    companion_deep_link: str | None = None
 
     @property
     def pending(self) -> bool:

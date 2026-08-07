@@ -55,6 +55,7 @@ def _to_response(
         # that all return an error.
         actions=[] if notification.is_expired() else [a.value for a in NotificationAction],
         expires_at=notification.expires_at,
+        companion_deep_link=notification.companion_deep_link,
     )
 
 

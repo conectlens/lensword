@@ -1,6 +1,6 @@
 import type {
-  AdminStats, AcquisitionState, Group, MnemonicNote, ProfileOverview, RecallSettings, Room,
-  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile, CefrProgress, Prerequisites, RelatedWord, WordRevision, AiState, OllamaProbe, LearningPath, GeneratePathResult, Conversation, ConversationMessage, SendMessageResult, Difficulty, Scenario, ScenarioAttempt, ScenarioVocabulary, ObservationHistoryResponse, ObservationCorrection, ObservationCorrectionReason, QueuedOperation, SyncOperationResult, SyncConflict,
+  AdminStats, AcquisitionState, Group, McpConnection, MnemonicNote, ProfileOverview, RecallSettings, Room,
+  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile, CefrProgress, Prerequisites, RelatedWord, WordRevision, AiState, OllamaProbe, LearningPath, GeneratePathResult, Conversation, ConversationMessage, SendMessageResult, Difficulty, Scenario, ScenarioAttempt, ScenarioVocabulary, ObservationHistoryResponse, ObservationCorrection, ObservationCorrectionReason, QueuedOperation, SyncOperationResult, SyncConflict, EfficacyEstimate, ModalityPreference,
 } from './types'
 import { resolveApiBase } from './runtimeConfig'
 
@@ -291,6 +291,25 @@ export const settingsApi = {
   profile: () => request<ProfileOverview>('/api/v1/profile'),
   weaknesses: () => request<WeaknessProfile>('/api/v1/me/weaknesses'),
   cefrProgress: () => request<CefrProgress>('/api/v1/me/cefr-progress'),
+}
+
+export const learningDnaApi = {
+  efficacy: () => request<EfficacyEstimate[]>('/api/v1/me/learning-dna/efficacy'),
+  modalityPreference: () => request<ModalityPreference | null>('/api/v1/me/learning-dna/modality-preference'),
+  setModalityPreference: (modality: string) =>
+    request<ModalityPreference>('/api/v1/me/learning-dna/modality-preference', {
+      method: 'POST',
+      body: JSON.stringify({ modality }),
+    }),
+}
+
+// Remote MCP companion connections (issue #196). 404s wherever the backend
+// has REMOTE_MCP_ENABLED off — callers treat that the same as "no
+// connections" rather than surfacing it as an error; see RemoteCompanionsCard.
+export const mcpOauthApi = {
+  connections: () => request<McpConnection[]>('/api/v1/mcp/oauth/connections'),
+  revoke: (clientId: string) =>
+    request<void>(`/api/v1/mcp/oauth/connections/${encodeURIComponent(clientId)}/revoke`, { method: 'POST' }),
 }
 
 export const observationsApi = {

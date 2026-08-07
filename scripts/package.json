@@ -1,0 +1,14 @@
+{
+  "name": "lensword-demo-media-scripts",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "capture": "node capture-demo-media.mjs",
+    "docs-qa:a11y": "node docs-qa/check_accessibility.mjs"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
+    "playwright": "^1.55.0"
+  }
+}

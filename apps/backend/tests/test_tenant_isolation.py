@@ -156,6 +156,16 @@ def owned(client, two_accounts, db_session):
     conversation = SqlAlchemyConversationRepository(_db).start(
         user_id=owner_id, target_language="Spanish", difficulty="steady"
     )
+    # #194 TODO 3: a tutor message with one correction, seeded directly for
+    # the same no-AI-provider reason as `conversation` above — the
+    # correction-feedback endpoint needs a message that actually has a
+    # correction at index 0, or the owner-reachability check below could not
+    # tell "no correction at that index" apart from a tenant denial.
+    conversation_message = SqlAlchemyConversationRepository(_db).add_message(
+        conversation.id, "tutor", "Corriste bien.",
+        corrections=[{"original": "corriste", "corrected": "corriste", "explanation": "example"}],
+    )
+    _db.commit()
 
     companion_session = client.post(
         "/api/v1/companion/sessions",
@@ -177,12 +187,42 @@ def owned(client, two_accounts, db_session):
         json={"task_type": "extraction", "total_units": 3, "operation_id": "audit-task"},
         headers=owner,
     ).json()
+    # #194 TODO 4: a plan_generation task, separate from the extraction one
+    # above — generate-plan/confirm-plan both reject any other task_type.
+    companion_plan_task = client.post(
+        f"/api/v1/companion/sessions/{companion_session['id']}/tasks",
+        json={"task_type": "plan_generation", "total_units": 1, "operation_id": "audit-plan-task"},
+        headers=owner,
+    ).json()
+    # #195: a loop budget must already exist for GET/reserve/fail/stop to be
+    # reachable at all, the same way the task/activity above must exist
+    # before their own owner-reachability checks can prove anything.
+    client.post(
+        f"/api/v1/companion/sessions/{companion_session['id']}/loop/start",
+        json={},
+        headers=owner,
+    )
     # Seeded directly: starting an attempt needs no AI provider, and this audit
     # deliberately does not stand one up.
     from app.infrastructure.repositories import SqlAlchemyScenarioAttemptRepository
 
     scenario_attempt = SqlAlchemyScenarioAttemptRepository(_db).add(
         user_id=owner_id, session_id=conversation.id, scenario_key="restaurant"
+    )
+    _db.commit()
+
+    # #185: seeded directly, the same reasoning as scenario_attempt above —
+    # reliably reaching EXACT_CONFUSION through the real endpoint needs a
+    # repeated, specific wrong answer this fixture does not otherwise set up.
+    from app.domain.services.diagnosis_contracts import InterventionPlan
+    from app.domain.value_objects import utcnow
+    from app.infrastructure.repositories import SqlAlchemyInterventionRepository
+
+    plan = SqlAlchemyInterventionRepository(_db).add_plan(
+        InterventionPlan(
+            word_id=word["id"], user_id=owner_id, diagnosis_outcome="exact_confusion",
+            strategy="isolate", policy_version=1, eligible=True, rationale="r", planned_at=utcnow(),
+        )
     )
     _db.commit()
 
@@ -216,6 +256,10 @@ def owned(client, two_accounts, db_session):
         "companion_session": companion_session["id"],
         "companion_activity": companion_activity["id"],
         "companion_task": companion_task["id"],
+        "companion_plan_task": companion_plan_task["id"],
+        "conversation_message": conversation_message.id,
+        "correction_index": 0,
+        "plan": plan.id,
     }
 
 
@@ -247,6 +291,17 @@ CROSS_TENANT_CASES = [
     # pattern for someone else's word.
     _case("GET", "/api/v1/words/{word}/diagnosis"),
     _case("GET", "/api/v1/words/{word}/diagnosis/history"),
+    # Intervention plans (#185 TODO 4). Acting on one (reject/postpone/
+    # choose an alternative) is a write against someone else's plan, not
+    # just a read.
+    _case("GET", "/api/v1/words/{word}/interventions"),
+    _case("POST", "/api/v1/words/{word}/interventions/{plan}/reject"),
+    _case("POST", "/api/v1/words/{word}/interventions/{plan}/postpone"),
+    _case("POST", "/api/v1/words/{word}/interventions/{plan}/alternative", {"strategy": "spatial_anchor"}),
+    # AI-generated intervention content (#187 TODO 2). No AI provider is
+    # configured in this audit, so this always answers "disabled" for the
+    # owner — the ownership check must still run and 404 before that.
+    _case("POST", "/api/v1/words/{word}/interventions/{plan}/explain"),
     # Graduated acquisition ladder (#184). Same disclosure concern as
     # diagnosis above, plus a real write surface on /start and /answer.
     _case("GET", "/api/v1/words/{word}/acquisition"),
@@ -286,6 +341,7 @@ CROSS_TENANT_CASES = [
     _case("POST", "/api/v1/words/{word}/mnemonics", {"text": "intruding"}),
     _case("POST", "/api/v1/words/{word}/mnemonics/{mnemonic}/vote", {"upvote": True}),
     _case("POST", "/api/v1/words/{word}/mnemonics/suggest"),
+    _case("GET", "/api/v1/words/{word}/mnemonics/{mnemonic}/strength"),
     # Review. Both bodies must be *valid*: a 422 is rejected by this audit
     # (see DENIED), because a request that fails schema validation never
     # reaches the ownership check and so proves nothing about isolation.
@@ -316,6 +372,9 @@ CROSS_TENANT_CASES = [
     _case("POST", "/api/v1/companion/sessions/{companion_session}/pause"),
     _case("POST", "/api/v1/companion/sessions/{companion_session}/resume"),
     _case("POST", "/api/v1/companion/sessions/{companion_session}/finish"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/summary"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/transfer",
+          {"connection_id": "intruding-connection", "client_id": "intruding-host"}),
     _case("POST", "/api/v1/companion/sessions/{companion_session}/revoke"),
     _case("GET", "/api/v1/companion/sessions/{companion_session}/export"),
     _case("DELETE", "/api/v1/companion/sessions/{companion_session}/content"),
@@ -332,6 +391,42 @@ CROSS_TENANT_CASES = [
     _case("POST", "/api/v1/companion/sessions/{companion_session}/tasks/{companion_task}/progress", {"completed_units": 1}),
     _case("POST", "/api/v1/companion/sessions/{companion_session}/tasks/{companion_task}/complete", {"result": {}}),
     _case("POST", "/api/v1/companion/sessions/{companion_session}/tasks/{companion_task}/cancel"),
+    # #194 TODO 1: request_hint/explain_evidence/cancel on a measurable
+    # activity, and TODO 4's bounded session planning. Confirming a plan
+    # without `confirmed: true` still 409s for the owner (nothing has been
+    # generated yet on this fresh task) rather than a clean 2xx — same
+    # posture as the AI-provider-disabled `/interventions/{plan}/explain`
+    # case above: what matters here is that the ownership check still runs
+    # and denies a second account before any of that.
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/activities/{companion_activity}/cancel"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/activities/{companion_activity}/hint"),
+    _case("GET", "/api/v1/companion/sessions/{companion_session}/activities/{companion_activity}/evidence"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/tasks/{companion_plan_task}/generate-plan", {"max_activities": 3}),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/tasks/{companion_plan_task}/confirm-plan", {"confirmed": False}),
+    # #194 TODO 3: accept/reject/edit feedback on a tutor correction — as
+    # personal as the conversation it belongs to.
+    _case(
+        "POST",
+        "/api/v1/conversations/{conversation}/messages/{conversation_message}/corrections/{correction_index}/feedback",
+        {"outcome": "accepted"},
+    ),
+    # Bounded companion loop budgets and sampling provenance (#195). All are
+    # owner-scoped through the same companion session.
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/loop/start", {}),
+    _case("GET", "/api/v1/companion/sessions/{companion_session}/loop"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/loop/reserve", {"kind": "tool", "amount": 1}),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/loop/fail"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/loop/stop", {"reason": "cancelled"}),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/sampling-events", {
+        "requester": "audit-client", "prompt_template_version": "companion-v1",
+        "source_facts_ref": "sha256:abc123", "validation_result": "accepted",
+        "fallback_path": "sampling_unavailable_used_deterministic",
+    }),
+    _case("GET", "/api/v1/companion/sessions/{companion_session}/sampling-events"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/reply", {
+        "task": "Explain", "target_language": "Spanish", "intervention_type": "explanation",
+        "evidence": [{"evidence_id": "obs-1", "fact": "borrow was answered as lend", "source": "review_observation"}],
+    }),
 ]
 
 

@@ -1,0 +1,52 @@
+name: Deploy Backend (Cloudflare)
+
+# Deploys apps/backend as a Cloudflare Container (see apps/backend/wrangler.toml
+# and cf-worker/index.ts) whenever main receives changes under apps/backend/.
+# Postgres itself is NOT hosted by Cloudflare — DATABASE_URL must point at a
+# real external Postgres (Neon/Supabase/Railway/RDS/etc.); see
+# docs/internal/cloudflare-deployment.md for the full one-time setup,
+# including exactly which token scopes to create and how to add the
+# required secrets without ever pasting them into chat or committing them.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/backend/**"
+      - ".github/workflows/deploy-backend.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy backend Container
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/backend/package-lock.json
+
+      - name: Install Worker deploy tooling
+        working-directory: apps/backend
+        run: npm ci
+
+      - name: Deploy
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: apps/backend
+          secrets: |
+            DATABASE_URL
+            SECRET_KEY
+        env:
+          # These GitHub secret NAMES are this workflow's contract; the
+          # VALUES are set once via `gh secret set`, never here. See
+          # docs/internal/cloudflare-deployment.md.
+          DATABASE_URL: ${{ secrets.BACKEND_DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.BACKEND_SECRET_KEY }}

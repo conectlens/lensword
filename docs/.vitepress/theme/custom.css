@@ -1,0 +1,85 @@
+/**
+ * LensWord VitePress theme overrides.
+ *
+ * The brand accent (#ffde59) is a light, low-contrast yellow — it fails
+ * WCAG AA as text on a white background (~1.3:1; AA needs 4.5:1). So link
+ * text uses a darker amber derived from the same hue in light mode
+ * (#7a5f00, ~6:1 on white) and the true accent in dark mode, where it has
+ * plenty of contrast against the near-black surface (~14:1). Buttons keep
+ * the true accent as a background with dark ink text on top, matching the
+ * app's own UI convention — that pairing is high-contrast in both themes.
+ */
+
+:root {
+  /* VitePress's default --vp-code-lang-color (the small language label on a
+     fenced code block, e.g. "bash") measured 2.87:1 on the code-block
+     background in light mode and 3.36:1 in dark — both below WCAG AA's
+     4.5:1 for normal text. Found by scripts/docs-qa/check_accessibility.mjs
+     (#283), verified against the same tool after this change. */
+  --vp-code-lang-color: #595a5c;
+}
+
+.dark {
+  --vp-code-lang-color: #a3a3a8;
+}
+
+:root {
+  --vp-c-brand-1: #7a5f00;
+  --vp-c-brand-2: #6b5400;
+  --vp-c-brand-3: #5c4700;
+  --vp-c-brand-soft: rgba(255, 222, 89, 0.16);
+
+  --vp-button-brand-bg: #ffde59;
+  --vp-button-brand-hover-bg: #f5c400;
+  --vp-button-brand-active-bg: #e0b400;
+  --vp-button-brand-text: #121212;
+  --vp-button-brand-border: transparent;
+  --vp-button-brand-hover-text: #121212;
+  --vp-button-brand-active-text: #121212;
+
+  --lw-accent: #ffde59;
+  --lw-ink: #121212;
+}
+
+.dark {
+  --vp-c-brand-1: #ffde59;
+  --vp-c-brand-2: #f5c400;
+  --vp-c-brand-3: #e0b400;
+  --vp-c-brand-soft: rgba(255, 222, 89, 0.14);
+
+  --vp-button-brand-text: #121212;
+  --vp-button-brand-hover-text: #121212;
+  --vp-button-brand-active-text: #121212;
+}
+
+/* Restrained status badges used by product/surface tables across the site. */
+.lw-status {
+  display: inline-block;
+  padding: 0.1em 0.6em;
+  border-radius: 999px;
+  font-size: 0.78em;
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.lw-status-public {
+  background: rgba(52, 211, 153, 0.16);
+  color: #0f6a4d;
+}
+.dark .lw-status-public {
+  color: #6ee7b7;
+}
+
+.lw-status-partial {
+  background: var(--vp-c-brand-soft);
+  color: var(--vp-c-brand-1);
+}
+
+.lw-status-unreleased {
+  background: rgba(239, 68, 68, 0.14);
+  color: #b42318;
+}
+.dark .lw-status-unreleased {
+  color: #fca5a5;
+}

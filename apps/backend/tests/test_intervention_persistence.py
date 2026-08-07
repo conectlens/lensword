@@ -136,9 +136,11 @@ def test_submitting_an_answer_that_abstains_produces_no_plan(client, auth_header
     assert repo.list_plans_for_word(owner_id, word["id"]) == []
 
 
-def test_a_real_exact_confusion_produces_a_contrast_plan(client, auth_headers, db_session):
+def test_a_real_exact_confusion_produces_an_isolate_plan(client, auth_headers, db_session):
     """End to end: a genuinely repeated confusion produces a non-abstention
-    diagnosis, which produces a real, persisted CONTRAST plan."""
+    diagnosis, which produces a real, persisted plan — staged at ISOLATE
+    first (#185 TODO 1; contrast only follows a demonstrated isolated
+    recall, which this fixture never produces)."""
     headers = auth_headers()
     owner_id = SqlAlchemyUserRepository(db_session).get_by_email("alex@example.com").id
     group = client.post("/api/v1/groups", json={"name": "g", "target_language": "Spanish"}, headers=headers).json()
@@ -147,21 +149,48 @@ def test_a_real_exact_confusion_produces_a_contrast_plan(client, auth_headers, d
         json={"term": "libre", "target_language": "Spanish", "translations": ["free"]},
         headers=headers,
     ).json()
-    client.post(
+    competitor = client.post(
         f"/api/v1/groups/{group['id']}/words",
         json={"term": "libro", "target_language": "Spanish", "translations": ["book"]},
         headers=headers,
-    )
+    ).json()
     _enable_diagnosis(client, headers)
 
     for _ in range(2):
         _answer(client, headers, target, attempted_answer="libro")
 
     plans = SqlAlchemyInterventionRepository(db_session).list_plans_for_word(owner_id, target["id"])
-    assert len(plans) >= 1
-    assert plans[0].strategy == "contrast"
+    assert len(plans) == 1
+    assert plans[0].strategy == "isolate"
     assert plans[0].diagnosis_outcome == "exact_confusion"
     assert plans[0].eligible is True
+    assert plans[0].second_word_id == competitor["id"]
+
+
+def test_re_diagnosing_the_same_standing_confusion_does_not_duplicate_the_plan(client, auth_headers, db_session):
+    """TODO 4's idempotency verify clause, exercised end to end: answering
+    again after the same confusion is already diagnosed must not pile up a
+    second plan."""
+    headers = auth_headers()
+    owner_id = SqlAlchemyUserRepository(db_session).get_by_email("alex@example.com").id
+    group = client.post("/api/v1/groups", json={"name": "g2", "target_language": "Spanish"}, headers=headers).json()
+    target = client.post(
+        f"/api/v1/groups/{group['id']}/words",
+        json={"term": "vaca", "target_language": "Spanish", "translations": ["cow"]},
+        headers=headers,
+    ).json()
+    client.post(
+        f"/api/v1/groups/{group['id']}/words",
+        json={"term": "vaso", "target_language": "Spanish", "translations": ["glass"]},
+        headers=headers,
+    )
+    _enable_diagnosis(client, headers)
+
+    for _ in range(4):
+        _answer(client, headers, target, attempted_answer="vaso")
+
+    plans = SqlAlchemyInterventionRepository(db_session).list_plans_for_word(owner_id, target["id"])
+    assert len(plans) == 1
 
 
 def test_no_plan_is_recorded_while_diagnosis_is_disabled(client, auth_headers, db_session):

@@ -18,6 +18,12 @@ import httpx
 from app.config import Settings
 from app.domain.exceptions import AIProviderUnavailableError
 from app.domain.services.ai_provider import AIProvider, ExtractedVocabulary, WordEnrichment
+from app.domain.services.companion_coach import (
+    CoachContent,
+    CoachRequest,
+    build_coach_prompt,
+    validate_generated_content,
+)
 from app.domain.services.conversation import MAX_CORRECTIONS_PER_TURN, TutorContext, Turn
 from app.domain.services.scenarios import Scenario, ScoreDimension
 
@@ -630,12 +636,75 @@ class OllamaProvider:
             )
             feedback = payload.get("feedback")
             return feedback.strip() if isinstance(feedback, str) else ""
+        if field == "companion_session_summary":
+            # The caller (SummarizeCompanionSessionUseCase) re-validates this
+            # output against the same facts before trusting it, and falls
+            # back to a deterministic summary if it invents anything — this
+            # instruction is a first line of defence, not the enforcement.
+            payload = await self._json_generation(
+                "Return JSON only with a concise `feedback` recap of this companion session. "
+                "Use only the supplied facts; never invent turn counts, activity ids, goals, or "
+                "any other detail not listed.",
+                f"{DATA_BLOCK_BEGIN}\nfacts: {_as_data(context or '', self._context_max_chars)}\n{DATA_BLOCK_END}",
+            )
+            feedback = payload.get("feedback")
+            return feedback.strip() if isinstance(feedback, str) else ""
         result = await self.enrich_word(term, source_language, target_language)
         values = {
             "example": result.examples, "mnemonic": [result.mnemonic or ""], "definition": result.definitions,
             "translation": result.translations,
         }.get(field, [])
         return next((value for value in values if value), "")
+
+    # --- Evidence-grounded companion coach content (#187 TODO 0) ----------
+    #
+    # `_coach_generate` is the one place that talks to Ollama for this
+    # family of calls: `build_coach_prompt` does the evidence-delimiting
+    # (companion_coach.py), and `validate_generated_content` enforces the
+    # forbidden-claim/evidence-citation rules on whatever comes back — a
+    # second provider adapter gets both by construction, not by having to
+    # remember to call them. `CoachContentRejected` propagates to the
+    # caller unchanged rather than being folded into
+    # `AIProviderUnavailableError`: "the model refused to stay inside its
+    # evidence" and "the daemon is unreachable" are different facts and the
+    # caller (#187 TODO 2's wired endpoint) reports them differently.
+    # The exact key name, casing, and array-of-strings shape are spelled out
+    # explicitly, with a worked example, because #187 TODO 4's real-model
+    # pass (docs/ai-model-verification.md) found two different small models
+    # both fail the original, shorter phrasing of this instruction — one
+    # capitalized the key (`Evidence_ids`), the other nested id/text objects
+    # inside the array instead of returning plain id strings. Neither was a
+    # safety failure (validate_generated_content still rejected both), but
+    # a validator that reliably rejects unusable output is not the same
+    # as a prompt that reliably produces usable output.
+    _COACH_JSON_INSTRUCTION = (
+        "Return JSON only, with exactly these two keys, spelled and cased "
+        "exactly as shown: `text` (a string, 1-4000 characters) and "
+        "`evidence_ids` (a JSON array of plain strings, not objects — each "
+        "one copied verbatim from an evidence id shown in the <evidence> "
+        "block below, e.g. \"evidence-0\"). Example shape: "
+        '{"text": "...", "evidence_ids": ["evidence-0"]}. '
+        "Follow every other rule stated in the evidence block below."
+    )
+
+    async def _coach_generate(self, request: CoachRequest, *, content_type: str) -> CoachContent:
+        prompt = build_coach_prompt(request)
+        payload = await self._json_generation(self._COACH_JSON_INSTRUCTION, prompt)
+        return validate_generated_content(
+            payload, request, content_type=content_type, provider="ollama", model=self._model
+        )
+
+    async def explain_diagnosis(self, request: CoachRequest) -> CoachContent:
+        return await self._coach_generate(request, content_type="explanation")
+
+    async def generate_contrast_exercise(self, request: CoachRequest) -> CoachContent:
+        return await self._coach_generate(request, content_type="contrast")
+
+    async def generate_prerequisite_lesson(self, request: CoachRequest) -> CoachContent:
+        return await self._coach_generate(request, content_type="prerequisite")
+
+    async def suggest_mnemonic_alternatives(self, request: CoachRequest) -> CoachContent:
+        return await self._coach_generate(request, content_type="mnemonic")
 
 
 def build_ai_provider(settings: Settings) -> AIProvider | None:

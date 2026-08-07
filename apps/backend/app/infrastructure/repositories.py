@@ -11,6 +11,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import delete, exists, func, or_, select
+from sqlalchemy import update as sa_update
 from sqlalchemy.orm import Session, selectinload
 
 from app.domain.entities import (
@@ -29,6 +30,7 @@ from app.domain.entities import (
     User,
     Word,
 )
+from app.domain.exceptions import ConcurrentModificationError
 from app.domain.services.cefr_progress import MASTERY_STRENGTH
 from app.domain.services.acquisition import AcquisitionScheduler
 from app.domain.services.companion_sessions import (
@@ -39,6 +41,9 @@ from app.domain.services.companion_sessions import (
 )
 from app.domain.services.companion_activities import ActivityStatus, ActivityType, LearningActivity
 from app.domain.services.companion_tasks import CompanionTask, CompanionTaskStatus, CompanionTaskType
+from app.domain.services.conversation import CorrectionFeedback, CorrectionOutcome
+from app.domain.services.companion_loop import CompanionLoopBudget, CompanionLoopState
+from app.domain.services.companion_sampling_audit import CompanionSamplingEvent, SamplingFallbackPath
 from app.domain.services.diagnosis_contracts import (
     AcquisitionState,
     Diagnosis,
@@ -46,6 +51,7 @@ from app.domain.services.diagnosis_contracts import (
     InterventionOutcome,
     InterventionPlan,
     LearningObservation,
+    ModalityPreference,
     ObservationCorrection,
     ObservationCorrectionReason,
 )
@@ -65,6 +71,7 @@ from app.infrastructure.models import (
     SyncOperationModel,
     GroupModel,
     ConversationMessageModel,
+    ConversationCorrectionFeedbackModel,
     ScenarioAttemptModel,
     ConversationSessionModel,
     LearningPathModel,
@@ -89,11 +96,14 @@ from app.infrastructure.models import (
     DiagnosisModel,
     InterventionPlanModel,
     InterventionOutcomeModel,
+    ModalityPreferenceModel,
     AcquisitionEventModel,
     CompanionSessionModel,
     CompanionTurnModel,
     CompanionActivityModel,
     CompanionTaskModel,
+    CompanionLoopStateModel,
+    CompanionSamplingEventModel,
 )
 
 logger = logging.getLogger(__name__)
@@ -353,6 +363,7 @@ def _settings_to_domain(m: RecallSettingsModel) -> RecallSettings:
         companion_sampling_enabled=m.companion_sampling_enabled,
         companion_remote_enabled=m.companion_remote_enabled,
         companion_multimodal_enabled=m.companion_multimodal_enabled,
+        domain_kernel_spike_enabled=m.domain_kernel_spike_enabled,
     )
 
 
@@ -561,6 +572,7 @@ def _delete_user_dependents(db: Session, user_id: int) -> None:
         WeeklyLearningReportModel,
         DesktopNotificationModel,
         SyncOperationModel,
+        ModalityPreferenceModel,
     ):
         for row in db.scalars(select(model).where(model.user_id == user_id)):
             db.delete(row)
@@ -712,7 +724,9 @@ class SqlAlchemyWordRepository:
         )
         return self.db.scalar(stmt)
 
-    def list_due_for_user(self, user_id: int, limit: int, group_id: int | None = None) -> list[Word]:
+    def list_due_for_user(
+        self, user_id: int, limit: int, group_id: int | None = None, offset: int = 0
+    ) -> list[Word]:
         # Ordered strictly by due_at, and deliberately not by issue #204's
         # semantic-diversity policy: that policy only acts at word
         # introduction, where no observed errors exist yet (its own boundary
@@ -726,7 +740,11 @@ class SqlAlchemyWordRepository:
         )
         if group_id is not None:
             stmt = stmt.where(WordModel.group_id == group_id)
-        stmt = stmt.order_by(WordModel.due_at.asc()).limit(limit)
+        # A secondary key breaks ties on due_at deterministically — without
+        # it, two words due at the same instant can swap order between an
+        # offset page and the next, which would silently skip or repeat a
+        # word at the page boundary.
+        stmt = stmt.order_by(WordModel.due_at.asc(), WordModel.id.asc()).offset(offset).limit(limit)
         return [_word_to_domain(m) for m in self.db.scalars(stmt)]
 
     def add(self, word: Word) -> Word:
@@ -1072,6 +1090,7 @@ class SqlAlchemyRecallSettingsRepository:
         m.companion_sampling_enabled = settings.companion_sampling_enabled
         m.companion_remote_enabled = settings.companion_remote_enabled
         m.companion_multimodal_enabled = settings.companion_multimodal_enabled
+        m.domain_kernel_spike_enabled = settings.domain_kernel_spike_enabled
         self.db.flush()
         return _settings_to_domain(m)
 
@@ -1162,6 +1181,7 @@ def _desktop_notification_to_domain(m: DesktopNotificationModel) -> DesktopNotif
         expires_at=m.expires_at,
         action=m.action,
         action_at=m.action_at,
+        companion_deep_link=m.companion_deep_link,
     )
 
 
@@ -1195,6 +1215,7 @@ class SqlAlchemyDesktopNotificationRepository:
             expires_at=notification.expires_at,
             action=notification.action,
             action_at=notification.action_at,
+            companion_deep_link=notification.companion_deep_link,
         )
         self.db.add(model)
         self.db.flush()
@@ -1728,6 +1749,49 @@ class SqlAlchemyConversationRepository:
         return [term for term in self.db.scalars(stmt) if term]
 
 
+def _correction_feedback_to_domain(m: ConversationCorrectionFeedbackModel) -> CorrectionFeedback:
+    return CorrectionFeedback(
+        message_id=m.message_id,
+        user_id=m.user_id,
+        correction_index=m.correction_index,
+        outcome=CorrectionOutcome(m.outcome),
+        edited_text=m.edited_text,
+    )
+
+
+class SqlAlchemyConversationCorrectionFeedbackRepository:
+    """Append-only accept/reject/edit outcomes on tutor corrections (#194
+    TODO 3) — see `ConversationCorrectionFeedbackModel` for why this is a
+    new row per outcome rather than a mutation of the message."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add(self, feedback: CorrectionFeedback) -> CorrectionFeedback:
+        model = ConversationCorrectionFeedbackModel(
+            message_id=feedback.message_id,
+            user_id=feedback.user_id,
+            correction_index=feedback.correction_index,
+            outcome=feedback.outcome.value,
+            edited_text=feedback.edited_text,
+            created_at=utcnow(),
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _correction_feedback_to_domain(model)
+
+    def list_for_message(self, user_id: int, message_id: int) -> list[CorrectionFeedback]:
+        stmt = (
+            select(ConversationCorrectionFeedbackModel)
+            .where(
+                ConversationCorrectionFeedbackModel.user_id == user_id,
+                ConversationCorrectionFeedbackModel.message_id == message_id,
+            )
+            .order_by(ConversationCorrectionFeedbackModel.created_at.asc())
+        )
+        return [_correction_feedback_to_domain(m) for m in self.db.scalars(stmt)]
+
+
 class SqlAlchemyScenarioAttemptRepository:
     """Role-play attempts (issue #136).
 
@@ -2114,6 +2178,7 @@ def _diagnosis_to_domain(m: DiagnosisModel) -> Diagnosis:
         diagnosed_at=m.diagnosed_at,
         sample_size=m.sample_size,
         competing_hypotheses=tuple(m.competing_hypotheses),
+        related_word_id=m.related_word_id,
     )
 
 
@@ -2134,6 +2199,7 @@ class SqlAlchemyDiagnosisRepository:
             diagnosed_at=diagnosis.diagnosed_at,
             sample_size=diagnosis.sample_size,
             competing_hypotheses=list(diagnosis.competing_hypotheses),
+            related_word_id=diagnosis.related_word_id,
         )
         self.db.add(model)
         self.db.flush()
@@ -2158,9 +2224,33 @@ class SqlAlchemyDiagnosisRepository:
         )
         return [_diagnosis_to_domain(m) for m in self.db.scalars(stmt)]
 
+    def list_for_user(self, user_id: int, limit: int = 50, offset: int = 0) -> list[Diagnosis]:
+        # `ix_diagnoses_user_word_diagnosed` still covers this: user_id is
+        # its leading column, so an account-wide query uses the same index
+        # prefix a per-word lookup does.
+        stmt = (
+            select(DiagnosisModel)
+            .where(DiagnosisModel.user_id == user_id)
+            .order_by(DiagnosisModel.diagnosed_at.desc(), DiagnosisModel.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return [_diagnosis_to_domain(m) for m in self.db.scalars(stmt)]
+
+
+def _prerequisite_ids_to_column(ids: tuple[int, ...]) -> str | None:
+    return ",".join(str(i) for i in ids) if ids else None
+
+
+def _prerequisite_ids_from_column(value: str | None) -> tuple[int, ...]:
+    if not value:
+        return ()
+    return tuple(int(part) for part in value.split(","))
+
 
 def _intervention_plan_to_domain(m: InterventionPlanModel) -> InterventionPlan:
     return InterventionPlan(
+        id=m.id,
         word_id=m.word_id,
         user_id=m.user_id,
         diagnosis_outcome=m.diagnosis_outcome,
@@ -2170,6 +2260,8 @@ def _intervention_plan_to_domain(m: InterventionPlanModel) -> InterventionPlan:
         rationale=m.rationale,
         planned_at=m.planned_at,
         scheduled_for=m.scheduled_for,
+        second_word_id=m.second_word_id,
+        prerequisite_ids=_prerequisite_ids_from_column(m.prerequisite_ids),
     )
 
 
@@ -2182,6 +2274,7 @@ def _intervention_outcome_to_domain(m: InterventionOutcomeModel) -> Intervention
         result=m.result,
         recorded_at=m.recorded_at,
         completed_at=m.completed_at,
+        horizon=m.horizon,
     )
 
 
@@ -2203,6 +2296,8 @@ class SqlAlchemyInterventionRepository:
             rationale=plan.rationale,
             planned_at=plan.planned_at,
             scheduled_for=plan.scheduled_for,
+            second_word_id=plan.second_word_id,
+            prerequisite_ids=_prerequisite_ids_to_column(plan.prerequisite_ids),
         )
         self.db.add(model)
         self.db.flush()
@@ -2217,6 +2312,7 @@ class SqlAlchemyInterventionRepository:
             result=outcome.result,
             recorded_at=outcome.recorded_at,
             completed_at=outcome.completed_at,
+            horizon=outcome.horizon,
         )
         self.db.add(model)
         self.db.flush()
@@ -2229,6 +2325,86 @@ class SqlAlchemyInterventionRepository:
             .order_by(InterventionPlanModel.planned_at.desc())
         )
         return [_intervention_plan_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def list_outcomes_for_word(self, user_id: int, word_id: int) -> list[InterventionOutcome]:
+        stmt = (
+            select(InterventionOutcomeModel)
+            .where(InterventionOutcomeModel.user_id == user_id, InterventionOutcomeModel.word_id == word_id)
+            .order_by(InterventionOutcomeModel.recorded_at.desc())
+        )
+        return [_intervention_outcome_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def get_plan(self, user_id: int, plan_id: int) -> InterventionPlan | None:
+        stmt = select(InterventionPlanModel).where(
+            InterventionPlanModel.user_id == user_id, InterventionPlanModel.id == plan_id
+        )
+        model = self.db.scalars(stmt).first()
+        return _intervention_plan_to_domain(model) if model is not None else None
+
+    def list_all_for_user(
+        self, user_id: int, limit: int | None = None, offset: int = 0
+    ) -> list[InterventionPlan]:
+        # `ix_intervention_plans_user_word_planned` leads with user_id, so
+        # an account-wide query still uses that index's prefix. `limit`
+        # stays optional (default: everything) so `review.py`'s existing
+        # unbounded call for contrast-card decisions is unaffected; issue
+        # #192's `/me/interventions` companion resource is the first
+        # caller to bound and paginate it.
+        stmt = (
+            select(InterventionPlanModel)
+            .where(InterventionPlanModel.user_id == user_id)
+            .order_by(InterventionPlanModel.planned_at.desc(), InterventionPlanModel.id.desc())
+            .offset(offset)
+        )
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        return [_intervention_plan_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def list_all_outcomes_for_user(self, user_id: int) -> list[InterventionOutcome]:
+        stmt = (
+            select(InterventionOutcomeModel)
+            .where(InterventionOutcomeModel.user_id == user_id)
+            .order_by(InterventionOutcomeModel.recorded_at.desc())
+        )
+        return [_intervention_outcome_to_domain(m) for m in self.db.scalars(stmt)]
+
+
+def _modality_preference_to_domain(m: ModalityPreferenceModel) -> ModalityPreference:
+    return ModalityPreference(id=m.id, user_id=m.user_id, modality=m.modality, stated_at=m.stated_at)
+
+
+class SqlAlchemyModalityPreferenceRepository:
+    """Append-only store of stated modality preferences (issue #186 TODO 0)
+    — the same shape `SqlAlchemyInterventionRepository` above uses for its
+    own append-only tables."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add(self, preference: ModalityPreference) -> ModalityPreference:
+        model = ModalityPreferenceModel(
+            user_id=preference.user_id, modality=preference.modality, stated_at=preference.stated_at
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _modality_preference_to_domain(model)
+
+    def latest_for_user(self, user_id: int) -> ModalityPreference | None:
+        stmt = (
+            select(ModalityPreferenceModel)
+            .where(ModalityPreferenceModel.user_id == user_id)
+            .order_by(ModalityPreferenceModel.stated_at.desc())
+        )
+        model = self.db.scalars(stmt).first()
+        return _modality_preference_to_domain(model) if model is not None else None
+
+    def list_for_user(self, user_id: int) -> list[ModalityPreference]:
+        stmt = (
+            select(ModalityPreferenceModel)
+            .where(ModalityPreferenceModel.user_id == user_id)
+            .order_by(ModalityPreferenceModel.stated_at.desc())
+        )
+        return [_modality_preference_to_domain(m) for m in self.db.scalars(stmt)]
 
 
 def _companion_session_to_domain(m: CompanionSessionModel) -> CompanionSession:
@@ -2300,26 +2476,58 @@ class SqlAlchemyCompanionSessionRepository:
         )
         return _companion_session_to_domain(model) if model else None
 
-    def update(self, session: CompanionSession) -> CompanionSession:
-        model = self.db.scalar(
-            select(CompanionSessionModel).where(
+    def update(self, session: CompanionSession, *, expected_revision: int) -> CompanionSession:
+        """Optimistic-locking write (#193 TODO 3).
+
+        The previous implementation loaded the row, mutated the ORM object in
+        place, and flushed — an in-memory `revision += 1` with no enforcement
+        that the row was still at that revision when the write landed. Two
+        concurrent readers (two tabs, two companion clients) could both read
+        revision N and both flush, the second silently clobbering the first's
+        change while still "succeeding".
+
+        A `sqlalchemy.update()` core statement with `revision == expected_revision`
+        in its WHERE clause makes the compare-and-swap atomic at the database
+        level (works identically on SQLite and Postgres, no SELECT...FOR UPDATE
+        needed): only one concurrent writer's UPDATE can match the row, and its
+        `rowcount` tells us whether we won the race.
+        """
+        exists_stmt = select(CompanionSessionModel.id).where(
+            CompanionSessionModel.id == session.id,
+            CompanionSessionModel.user_id == session.user_id,
+        )
+        if self.db.scalar(exists_stmt) is None:
+            raise ValueError("Companion session not found")
+
+        result = self.db.execute(
+            sa_update(CompanionSessionModel)
+            .where(
                 CompanionSessionModel.id == session.id,
                 CompanionSessionModel.user_id == session.user_id,
+                CompanionSessionModel.revision == expected_revision,
+            )
+            .values(
+                connection_id=session.connection_id,
+                client_id=session.client_id,
+                goal=session.goal,
+                language=session.language,
+                group_id=session.group_id,
+                difficulty=session.difficulty,
+                active_activity=session.active_activity,
+                consent_snapshot=session.consent_snapshot,
+                summary=session.summary,
+                status=session.status.value,
+                revision=session.revision,
+                updated_at=session.updated_at,
             )
         )
-        if model is None:
-            raise ValueError("Companion session not found")
-        model.goal = session.goal
-        model.language = session.language
-        model.group_id = session.group_id
-        model.difficulty = session.difficulty
-        model.active_activity = session.active_activity
-        model.consent_snapshot = session.consent_snapshot
-        model.summary = session.summary
-        model.status = session.status.value
-        model.revision = session.revision
-        model.updated_at = session.updated_at
+        if result.rowcount == 0:
+            raise ConcurrentModificationError("Companion session", session.id, expected_revision)
         self.db.flush()
+        # Re-select rather than trust the in-memory `session` argument: this
+        # keeps the returned value a true read of what is now persisted,
+        # matching every other repository method here.
+        model = self.db.scalar(select(CompanionSessionModel).where(CompanionSessionModel.id == session.id))
         return _companion_session_to_domain(model)
 
     def list_turns(self, user_id: int, session_id: str, limit: int = 100) -> list[CompanionTurn]:
@@ -2390,6 +2598,7 @@ def _companion_activity_to_domain(m: CompanionActivityModel) -> LearningActivity
         started_at=m.started_at,
         updated_at=m.updated_at,
         revision=m.revision,
+        hints_used=m.hints_used,
     )
 
 
@@ -2412,6 +2621,7 @@ class SqlAlchemyCompanionActivityRepository:
             started_at=activity.started_at,
             updated_at=activity.updated_at,
             revision=activity.revision,
+            hints_used=activity.hints_used,
         )
         self.db.add(model)
         self.db.flush()
@@ -2436,6 +2646,7 @@ class SqlAlchemyCompanionActivityRepository:
         model.result = activity.result
         model.updated_at = activity.updated_at
         model.revision = activity.revision
+        model.hints_used = activity.hints_used
         self.db.flush()
         return _companion_activity_to_domain(model)
 
@@ -2466,6 +2677,7 @@ def _companion_task_to_domain(m: CompanionTaskModel) -> CompanionTask:
         created_at=m.created_at,
         updated_at=m.updated_at,
         revision=m.revision,
+        input=dict(m.input) if m.input is not None else None,
     )
 
 
@@ -2491,6 +2703,7 @@ class SqlAlchemyCompanionTaskRepository:
             created_at=task.created_at,
             updated_at=task.updated_at,
             revision=task.revision,
+            input=task.input,
         )
         self.db.add(model)
         self.db.flush()
@@ -2541,6 +2754,174 @@ class SqlAlchemyCompanionTaskRepository:
             )
         )
         return _companion_task_to_domain(model) if model else None
+
+    def list_runnable(self, now: datetime, limit: int = 20) -> list[CompanionTask]:
+        # EXTRACTION only: PLAN_GENERATION already has a real, synchronous
+        # lifecycle of its own (generate-plan/confirm-plan in
+        # app.api.routers.companion_tasks, #194 TODO 4) that this poller
+        # would otherwise race — see companion_task_dispatch.py's module
+        # docstring for the full explanation.
+        stmt = (
+            select(CompanionTaskModel)
+            .where(
+                CompanionTaskModel.status.in_(
+                    (CompanionTaskStatus.PENDING.value, CompanionTaskStatus.RUNNING.value)
+                ),
+                CompanionTaskModel.task_type == CompanionTaskType.EXTRACTION.value,
+                CompanionTaskModel.expires_at > now,
+            )
+            .order_by(CompanionTaskModel.created_at.asc(), CompanionTaskModel.id.asc())
+            .limit(min(max(limit, 1), 100))
+        )
+        return [_companion_task_to_domain(model) for model in self.db.scalars(stmt)]
+
+
+def _companion_loop_state_to_domain(m: CompanionLoopStateModel) -> CompanionLoopState:
+    return CompanionLoopState(
+        session_id=m.session_id,
+        user_id=m.user_id,
+        budget=CompanionLoopBudget(
+            tool_calls=m.budget_tool_calls,
+            samples=m.budget_samples,
+            elapsed_seconds=m.budget_elapsed_seconds,
+            generated_tokens=m.budget_generated_tokens,
+            activities=m.budget_activities,
+            writes=m.budget_writes,
+        ),
+        started_at=m.started_at,
+        updated_at=m.updated_at,
+        tool_calls=m.tool_calls,
+        samples=m.samples,
+        generated_tokens=m.generated_tokens,
+        activities=m.activities,
+        writes=m.writes,
+        consecutive_failures=m.consecutive_failures,
+        stopped_reason=m.stopped_reason,
+        revision=m.revision,
+    )
+
+
+class SqlAlchemyCompanionLoopStateRepository:
+    """One durable loop-budget row per session (#195 TODO 2)."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get(self, user_id: int, session_id: str) -> CompanionLoopState | None:
+        model = self.db.scalar(
+            select(CompanionLoopStateModel).where(
+                CompanionLoopStateModel.session_id == session_id,
+                CompanionLoopStateModel.user_id == user_id,
+            )
+        )
+        return _companion_loop_state_to_domain(model) if model else None
+
+    def start(self, state: CompanionLoopState) -> CompanionLoopState:
+        # A fresh workflow replaces any prior state for the session rather
+        # than accumulating unrelated rows or inheriting a stopped budget.
+        existing = self.db.get(CompanionLoopStateModel, state.session_id)
+        if existing is not None:
+            self.db.delete(existing)
+            self.db.flush()
+        model = CompanionLoopStateModel(
+            session_id=state.session_id,
+            user_id=state.user_id,
+            budget_tool_calls=state.budget.tool_calls,
+            budget_samples=state.budget.samples,
+            budget_elapsed_seconds=state.budget.elapsed_seconds,
+            budget_generated_tokens=state.budget.generated_tokens,
+            budget_activities=state.budget.activities,
+            budget_writes=state.budget.writes,
+            tool_calls=state.tool_calls,
+            samples=state.samples,
+            generated_tokens=state.generated_tokens,
+            activities=state.activities,
+            writes=state.writes,
+            consecutive_failures=state.consecutive_failures,
+            stopped_reason=state.stopped_reason,
+            started_at=state.started_at,
+            updated_at=state.updated_at,
+            revision=state.revision,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _companion_loop_state_to_domain(model)
+
+    def update(self, state: CompanionLoopState) -> CompanionLoopState:
+        model = self.db.get(CompanionLoopStateModel, state.session_id)
+        if model is None or model.user_id != state.user_id:
+            raise ValueError("Companion loop state not found")
+        model.tool_calls = state.tool_calls
+        model.samples = state.samples
+        model.generated_tokens = state.generated_tokens
+        model.activities = state.activities
+        model.writes = state.writes
+        model.consecutive_failures = state.consecutive_failures
+        model.stopped_reason = state.stopped_reason
+        model.updated_at = state.updated_at
+        model.revision = state.revision
+        self.db.flush()
+        return _companion_loop_state_to_domain(model)
+
+
+def _companion_sampling_event_to_domain(m: CompanionSamplingEventModel) -> CompanionSamplingEvent:
+    return CompanionSamplingEvent(
+        id=m.id,
+        session_id=m.session_id,
+        user_id=m.user_id,
+        requester=m.requester,
+        host_client_id=m.host_client_id,
+        model=m.model,
+        prompt_template_version=m.prompt_template_version,
+        source_facts_ref=m.source_facts_ref,
+        validation_result=m.validation_result,
+        fallback_path=SamplingFallbackPath(m.fallback_path),
+        previous_hash=m.previous_hash,
+        event_hash=m.event_hash,
+        created_at=m.created_at,
+    )
+
+
+class SqlAlchemyCompanionSamplingEventRepository:
+    """Append-only, hash-chained sampling provenance (#195 TODO 4)."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add(self, event: CompanionSamplingEvent) -> CompanionSamplingEvent:
+        model = CompanionSamplingEventModel(
+            session_id=event.session_id,
+            user_id=event.user_id,
+            requester=event.requester,
+            host_client_id=event.host_client_id,
+            model=event.model,
+            prompt_template_version=event.prompt_template_version,
+            source_facts_ref=event.source_facts_ref,
+            validation_result=event.validation_result,
+            fallback_path=event.fallback_path.value,
+            previous_hash=event.previous_hash,
+            event_hash=event.event_hash,
+            created_at=event.created_at,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _companion_sampling_event_to_domain(model)
+
+    def latest_hash(self) -> str | None:
+        model = self.db.scalar(select(CompanionSamplingEventModel).order_by(CompanionSamplingEventModel.id.desc()))
+        return model.event_hash if model else None
+
+    def list_for_session(self, user_id: int, session_id: str, limit: int = 100) -> list[CompanionSamplingEvent]:
+        stmt = (
+            select(CompanionSamplingEventModel)
+            .where(
+                CompanionSamplingEventModel.user_id == user_id,
+                CompanionSamplingEventModel.session_id == session_id,
+            )
+            .order_by(CompanionSamplingEventModel.created_at.desc(), CompanionSamplingEventModel.id.desc())
+            .limit(min(max(limit, 1), 200))
+        )
+        return [_companion_sampling_event_to_domain(model) for model in self.db.scalars(stmt)]
 
 
 def _acquisition_state_to_domain(m: AcquisitionEventModel) -> AcquisitionState:

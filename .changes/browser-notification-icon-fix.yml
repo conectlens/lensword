@@ -1,0 +1,50 @@
+id: browser-notification-icon-fix
+products:
+  - browser-extension
+type: fixed
+summary: >-
+  Capture notifications ("Saved to LensWord", error notifications) now
+  show the LensWord icon instead of a broken image.
+technical_summary: >-
+  service-worker.js's three chrome.notifications.create() calls referenced
+  iconUrl: 'icon.svg'. Chrome's notifications API does not support SVG
+  icons (confirmed against Chrome's own extension documentation and a
+  matching real-world "Unable to download all specified images" bug
+  report). Fixed to reference icons/icon48.png, the PNG icon set added by
+  the brand-assets work.
+user_impact: >-
+  Every capture notification (success or failure) now renders with a real
+  icon instead of a missing-image placeholder.
+release_status: unreleased
+breaking: false
+migration: none
+known_limitations:
+  - Not confirmed by loading the extension into a real Chrome instance and
+    observing a live notification — chrome:// pages could not be driven by
+    this documentation session's browser automation. Fix is based on
+    Chrome's documented SVG limitation plus a matching reported failure,
+    not a directly observed broken/fixed notification.
+compatibility:
+  requires:
+    server_api: null
+verification:
+  automated_tests:
+    status: not_run
+    commands: []
+    workflow_url: null
+  artifact_build:
+    status: not_run
+    artifacts: []
+  manual_platform_checks:
+    macos: not_applicable
+    windows: not_run
+    linux: not_applicable
+  production_observation:
+    status: not_observed
+security_impact: none
+documentation_required: true
+date: '2026-08-07'
+references:
+  issues: [275]
+  pull_requests: [299]
+  commits: []

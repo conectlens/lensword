@@ -254,6 +254,10 @@ class RecallSettingsModel(Base):
     companion_sampling_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     companion_remote_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     companion_multimodal_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Same server_default requirement as the flags above (#189 TODO 2's
+    # developer-only domain-kernel spike flag) — 20260730_14's backfill
+    # INSERT predates this field and cannot name it.
+    domain_kernel_spike_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
 
 class PracticeExerciseModel(Base):
@@ -359,6 +363,12 @@ class DesktopNotificationModel(Base):
     # The action taken, and when. First one wins — see PerformNotificationAction.
     action: Mapped[str | None] = mapped_column(String(32), nullable=True)
     action_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # A `lensword://` deep link into a companion prompt or resumable session
+    # (#197 TODO 0), set only when the account has AI Companion enabled. This
+    # is the entire "push" surface the companion gets: LensWord decides a
+    # notification is owed exactly as it always has, and only adds where to
+    # go if the user opens it — MCP itself never sends anything unsolicited.
+    companion_deep_link: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     __table_args__ = (
         Index("ix_desktop_notifications_user_undelivered", "user_id", "delivered_at"),
@@ -611,6 +621,37 @@ class ConversationMessageModel(Base):
     session: Mapped[ConversationSessionModel] = relationship(back_populates="messages")
 
 
+class ConversationCorrectionFeedbackModel(Base):
+    """A learner's accept/reject/edit outcome on one correction the tutor
+    offered inside a `ConversationMessageModel.corrections` entry (#194
+    TODO 3).
+
+    A new append-only row per outcome, never an edit to the message or the
+    correction it targets — the same "a correction is a new record, not an
+    edit" posture `ObservationCorrectionModel` already uses for review
+    observations. This is low-trust telemetry about what the learner did
+    with a correction, not a mutation of any mastery-affecting state: it
+    never touches `WordModel`/`ReviewState`.
+    """
+
+    __tablename__ = "conversation_correction_feedback"
+    __table_args__ = (
+        Index("ix_conversation_correction_feedback_message", "message_id", "correction_index"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    message_id: Mapped[int] = mapped_column(ForeignKey("conversation_messages.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    # Position of the correction inside the message's `corrections` list —
+    # corrections are not independently identified rows, so this plus
+    # `message_id` is their only stable address.
+    correction_index: Mapped[int] = mapped_column(Integer)
+    # "accepted", "rejected", or "edited".
+    outcome: Mapped[str] = mapped_column(String(16))
+    edited_text: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+
+
 class ScenarioAttemptModel(Base):
     """One run at a role-play scenario (issue #136).
 
@@ -725,6 +766,28 @@ class ObservationCorrectionModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
 
 
+class ModalityPreferenceModel(Base):
+    """A learner's stated modality preference (issue #186 TODO 0) —
+    append-only, the same reasoning `LearningObservationModel` and
+    `ObservationCorrectionModel` above use: a changed mind is a new row, not
+    an edit to an old one. Never read by `intervention_efficacy.py`'s
+    estimate functions, which are built exclusively from
+    `LearningObservationModel`/`InterventionOutcomeModel` — this table
+    exists precisely so "I like images" and "images measurably help" stay
+    two separate facts.
+    """
+
+    __tablename__ = "modality_preferences"
+    __table_args__ = (
+        Index("ix_modality_preferences_user_stated", "user_id", "stated_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    modality: Mapped[str] = mapped_column(String(32))
+    stated_at: Mapped[datetime] = mapped_column(DateTime)
+
+
 class KnowledgeEdgeModel(Base):
     """One relation between two of a learner's own words (issue #138, #203).
 
@@ -800,6 +863,10 @@ class DiagnosisModel(Base):
     diagnosed_at: Mapped[datetime] = mapped_column(DateTime)
     sample_size: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     competing_hypotheses: Mapped[list] = mapped_column(JSON, default=list)
+    # The other word of a confusion pair, set only by ExactConfusionRule
+    # (#185 TODO 1) so the intervention planner can stage isolate/contrast
+    # without re-parsing evidence description text.
+    related_word_id: Mapped[int | None] = mapped_column(ForeignKey("words.id"), nullable=True)
 
 
 class InterventionPlanModel(Base):
@@ -827,6 +894,15 @@ class InterventionPlanModel(Base):
     rationale: Mapped[str] = mapped_column(String(500))
     planned_at: Mapped[datetime] = mapped_column(DateTime)
     scheduled_for: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # The other word of a confusion pair (#185 TODO 1) — set only when
+    # `strategy` is isolate/contrast. Lets a later phase (#206) recover the
+    # pair a diagnosis actually chose instead of only a graph guess.
+    second_word_id: Mapped[int | None] = mapped_column(ForeignKey("words.id"), nullable=True)
+    # Comma-separated word ids, ranked strongest-first, capped at 3 (#185
+    # TODO 2). A string column rather than a join table: this is a snapshot
+    # of what the planner ranked *at plan time*, not a live relation the
+    # graph should keep in sync.
+    prerequisite_ids: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
 
 class InterventionOutcomeModel(Base):
@@ -849,6 +925,12 @@ class InterventionOutcomeModel(Base):
     result: Mapped[str] = mapped_column(String(48))
     recorded_at: Mapped[datetime] = mapped_column(DateTime)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Which delayed checkpoint this outcome measures (#185 TODO 5):
+    # immediate/24h/7d/next_review. Defaulted rather than added as a new
+    # table so a plan's completion outcomes (TODO 4: resolved/abandoned/
+    # rejected/postponed, always "immediate") and its measured-effectiveness
+    # outcomes (TODO 5) share one append-only history per word/strategy.
+    horizon: Mapped[str] = mapped_column(String(16), default="immediate", server_default="immediate")
 
 
 class CompanionSessionModel(Base):
@@ -921,6 +1003,9 @@ class CompanionActivityModel(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime)
     updated_at: Mapped[datetime] = mapped_column(DateTime)
     revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    # How many times `request_hint` (#194 TODO 1) has been used on this
+    # activity, bounded by MAX_HINTS_PER_ACTIVITY at the domain layer.
+    hints_used: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default="0")
 
 
 class CompanionTaskModel(Base):
@@ -947,6 +1032,66 @@ class CompanionTaskModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime)
     updated_at: Mapped[datetime] = mapped_column(DateTime)
     revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    # Bounded execution parameters the background executor reads (#197);
+    # see CompanionTask.input.
+    input: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class CompanionLoopStateModel(Base):
+    """One durable bounded-workflow budget per session (#195 TODO 2).
+
+    `session_id` is the primary key: a session has at most one active loop
+    budget at a time, and starting a new workflow replaces it rather than
+    accumulating unrelated rows.
+    """
+
+    __tablename__ = "companion_loop_states"
+
+    session_id: Mapped[str] = mapped_column(ForeignKey("companion_sessions.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    budget_tool_calls: Mapped[int] = mapped_column(Integer)
+    budget_samples: Mapped[int] = mapped_column(Integer)
+    budget_elapsed_seconds: Mapped[float] = mapped_column(Float)
+    budget_generated_tokens: Mapped[int] = mapped_column(Integer)
+    budget_activities: Mapped[int] = mapped_column(Integer)
+    budget_writes: Mapped[int] = mapped_column(Integer)
+    tool_calls: Mapped[int] = mapped_column(Integer, default=0)
+    samples: Mapped[int] = mapped_column(Integer, default=0)
+    generated_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    activities: Mapped[int] = mapped_column(Integer, default=0)
+    writes: Mapped[int] = mapped_column(Integer, default=0)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
+    stopped_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime)
+    revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+
+class CompanionSamplingEventModel(Base):
+    """Append-only, hash-chained sampling provenance (#195 TODO 4).
+
+    Mirrors `MCPAuditEventModel`'s hash-chain shape deliberately: both are
+    produced through `mcp_policy.redact_and_chain`, and this table never
+    stores a raw prompt or raw learner fact, only a bounded reference to
+    them (`source_facts_ref`).
+    """
+
+    __tablename__ = "companion_sampling_events"
+    __table_args__ = (Index("ix_companion_sampling_events_session_created", "session_id", "created_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[str] = mapped_column(ForeignKey("companion_sessions.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    requester: Mapped[str] = mapped_column(String(255), index=True)
+    host_client_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    prompt_template_version: Mapped[str] = mapped_column(String(32))
+    source_facts_ref: Mapped[str] = mapped_column(String(128))
+    validation_result: Mapped[str] = mapped_column(String(255))
+    fallback_path: Mapped[str] = mapped_column(String(64))
+    previous_hash: Mapped[str] = mapped_column(String(64))
+    event_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
 
 
 class AcquisitionEventModel(Base):
@@ -994,3 +1139,97 @@ class AcquisitionEventModel(Base):
     # before the field existed — never re-derived after the fact.
     entry_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
     operation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class MCPOAuthClientModel(Base):
+    """A registered remote MCP companion (issue #196, TODO 1).
+
+    `client_secret_hash` is null for public clients — the expected shape for
+    an MCP host, which cannot keep a secret (RFC 8252) and instead relies on
+    PKCE. A confidential client (a server-side integration that can hold a
+    secret) may set it; the token endpoint requires the matching secret only
+    when it is present.
+    """
+
+    __tablename__ = "mcp_oauth_clients"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    client_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    client_name: Mapped[str] = mapped_column(String(255))
+    redirect_uris: Mapped[list] = mapped_column(JSON)
+    client_secret_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Nullable: RFC 7591 dynamic client registration (which the MCP spec
+    # recommends a compliant server support) happens before any user is
+    # involved — an MCP host registers itself once, then each user
+    # separately authorizes it. Registration is rate-limited (see
+    # rate_limit_mcp_oauth_attempts) rather than gated behind login, or no
+    # off-the-shelf remote MCP host could complete it. When the caller
+    # happens to already be logged in, this records who — useful context in
+    # the audit trail, never an authorization check.
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class MCPOAuthAuthorizationCodeModel(Base):
+    """A single-use authorization code from the code+PKCE flow (issue #196).
+
+    Stores a SHA-256 hash of the code, never the code itself, the same
+    posture `MCPOAuthTokenModel` takes for access/refresh tokens below — a
+    read of this table (a backup, a logging pipeline) must not itself be a
+    credential leak.
+    """
+
+    __tablename__ = "mcp_oauth_authorization_codes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    client_id: Mapped[str] = mapped_column(String(64), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    redirect_uri: Mapped[str] = mapped_column(String(2048))
+    code_challenge: Mapped[str] = mapped_column(String(128))
+    code_challenge_method: Mapped[str] = mapped_column(String(16))
+    scope: Mapped[str] = mapped_column(String(512))
+    workspace: Mapped[str] = mapped_column(String(1024))
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class MCPOAuthTokenModel(Base):
+    """One issued access/refresh token pair (issue #196, TODO 1 and TODO 4).
+
+    Access and refresh tokens are opaque (`secrets.token_urlsafe`), not JWTs
+    — this is the token issued to *external* MCP hosts, and issue #196 is
+    explicit that it must never be the user's normal login JWT nor share its
+    signing key, so giving it a visually different, unparseable shape is a
+    deliberate anti-confusion measure on top of the functional separation.
+    Both are stored only as SHA-256 hashes.
+
+    `rotated_from_id` chains a refresh token to the one it replaced. Reusing
+    an already-rotated refresh token (`rotated_from_id` pointing at a row
+    that is itself revoked) revokes the whole family — replay protection for
+    a stolen-and-later-reused refresh token, per RFC 6749 section 10.4.
+    """
+
+    __tablename__ = "mcp_oauth_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    access_token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    refresh_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True, index=True, nullable=True)
+    client_id: Mapped[str] = mapped_column(String(64), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    scope: Mapped[str] = mapped_column(String(512))
+    workspace: Mapped[str] = mapped_column(String(1024))
+    access_expires_at: Mapped[datetime] = mapped_column(DateTime)
+    refresh_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    rotated_from_id: Mapped[int | None] = mapped_column(ForeignKey("mcp_oauth_tokens.id"), nullable=True)
+    # Shared by every access/refresh pair descended from one authorization
+    # code, through every rotation. Reusing an already-rotated (revoked)
+    # refresh token revokes every row sharing this id in one query — the
+    # whole family, not just the one row that was reused — which is what
+    # makes replaying a stolen-but-already-rotated refresh token also kill
+    # the legitimate client's current, still-valid token.
+    family_id: Mapped[str] = mapped_column(String(32), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

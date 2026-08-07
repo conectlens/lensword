@@ -1,0 +1,86 @@
+id: cloudflare-deployment-infra
+products:
+  - web
+  - backend
+  - mcp-server
+type: none
+reason: >-
+  Adds Cloudflare deployment infrastructure (Dockerfile, wrangler.toml,
+  GitHub Actions workflows) for web (Pages), backend (Containers), and the
+  MCP server's remote transport (Containers). No application code changed
+  — this is deploy tooling only, and nothing deploys automatically until
+  the required Cloudflare secrets are configured (see
+  docs/internal/cloudflare-deployment.md).
+summary: >-
+  No user-observable change — adds optional Cloudflare deployment
+  infrastructure, inert until secrets are configured.
+technical_summary: >-
+  apps/backend and apps/mcp gain a wrangler.toml + cf-worker/index.ts
+  (Cloudflare Container config: a small Worker forwards requests via a
+  Durable Object binding to the existing Docker image, run unchanged) and
+  a package.json for the TS-only deploy tooling; apps/mcp additionally
+  gains a Dockerfile (none existed) that runs the remote Streamable HTTP
+  transport (LENSWORD_MCP_TRANSPORT=http, LENSWORD_MCP_REMOTE_ENABLED=1 —
+  the stdio transport, this package's default, has no server to deploy).
+  apps/frontend gains a wrangler.toml for Cloudflare Pages (plain static
+  deploy, no Container). Three new workflows
+  (.github/workflows/deploy-{backend,mcp,frontend}.yml) trigger on push to
+  main, path-filtered to each app directory, using the official
+  cloudflare/wrangler-action. Cloudflare does not host Postgres —
+  DATABASE_URL must point at an external instance. Config verified with
+  `wrangler deploy --dry-run` (which builds the real Docker image and
+  resolves bindings) against @cloudflare/containers@0.3.7's actual type
+  definitions and Cloudflare's current documented Containers/Pages
+  wrangler.toml schema — not against a live deploy, since this session has
+  no Cloudflare account credentials.
+user_impact: >-
+  None yet. Once a maintainer configures the Cloudflare secrets documented
+  in docs/internal/cloudflare-deployment.md, merges to main will deploy
+  the backend/MCP/frontend automatically.
+release_status: unreleased
+breaking: false
+migration: none
+known_limitations:
+  - Not verified against a real Cloudflare account/deploy — `wrangler
+    deploy --dry-run` validates config parsing and Docker builds, not an
+    actual live deployment, container startup, or Postgres connectivity.
+  - Cloudflare Containers is a comparatively new product; the wrangler.toml
+    schema was confirmed against current docs at the time this was
+    written but should be re-checked if a deploy fails with a config
+    error.
+  - No health-check configuration is wired for either Container (the
+    documented example config doesn't include one) — a broken deploy
+    would need to be caught by other means (manual check, or the app's
+    own /api/v1/health endpoint hit manually) until that's added.
+compatibility:
+  requires:
+    server_api: null
+verification:
+  automated_tests:
+    status: passed
+    commands:
+      - cd apps/backend && npm ci && npx wrangler deploy --dry-run (real Docker build + binding resolution, verified)
+      - cd apps/mcp && npm ci && npx wrangler deploy --dry-run (real Docker build + binding resolution, verified)
+      - cd apps/frontend && npm run build && npx wrangler pages deploy dist --project-name=lensword-frontend (fails on auth as expected — no token in this environment — confirms command/config syntax)
+      - docker build -q -t lensword-backend-verify apps/backend (existing CI docker-build job, unaffected by the new files)
+      - cd apps/backend && npx tsc --noEmit / cd apps/mcp && npx tsc --noEmit (Worker glue type-checks clean)
+    workflow_url: null
+  artifact_build:
+    status: passed
+    artifacts:
+      - apps/backend Container image (built via wrangler deploy --dry-run)
+      - apps/mcp Container image (built via wrangler deploy --dry-run)
+      - apps/frontend dist/ (built via npm run build)
+  manual_platform_checks:
+    macos: not_applicable
+    windows: not_applicable
+    linux: not_applicable
+  production_observation:
+    status: not_observed
+security_impact: none
+documentation_required: false
+date: '2026-08-07'
+references:
+  issues: []
+  pull_requests: []
+  commits: []

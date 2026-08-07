@@ -9,6 +9,8 @@ import re
 from dataclasses import dataclass
 from typing import Mapping
 
+from app.domain.services.diagnosis_contracts import Diagnosis, InterventionPlan
+
 
 class CoachContentRejected(ValueError):
     """Raised when provider content cannot be tied to supplied evidence."""
@@ -102,6 +104,70 @@ def validate_generated_content(
     if _FORBIDDEN_CLAIMS.search(text):
         raise CoachContentRejected("coach content contains an unsupported learning claim")
     return CoachContent(text=text.strip(), evidence_ids=evidence_ids, content_type=content_type, provider=provider, model=model)
+
+
+# The task string is free text built from bounded inputs (a strategy name
+# and a content type, both from closed sets), but CoachRequest itself still
+# enforces a 500-character ceiling — slicing here keeps that bound visible
+# at the call site instead of relying on the dataclass to raise.
+_MAX_TASK_CHARS = 500
+
+
+def build_coach_request(
+    plan: InterventionPlan,
+    diagnosis: Diagnosis | None,
+    *,
+    target_language: str,
+    content_type: str,
+) -> CoachRequest:
+    """Turn a persisted `InterventionPlan` (and, when still available, the
+    `Diagnosis` that produced it) into a bounded, evidence-only coach
+    request (#187 TODO 2).
+
+    Only deterministic, code-generated strings ever become evidence here:
+    `DiagnosisEvidence.description` (diagnosis_engine.py) is templated from
+    observation counts, ids and category names, and `InterventionPlan.
+    rationale` (intervention_planning.py) is one of a fixed set of authored
+    sentences — neither ever echoes a learner's raw submitted answer. That
+    is what makes #187 TODO 1's "hostile learner text can't ... cause
+    invented diagnoses" hold structurally: there is no path from an
+    attempted answer into this request at all, not merely a prompt asking
+    a model to ignore one.
+
+    Falls back to the plan's own rationale as the sole evidence record when
+    no diagnosis matching the plan's exact outcome is found (e.g. it aged
+    out of `DiagnosisRepository`'s retention, or a plan was seeded directly
+    in a test) — the rationale is itself evidence-derived, so it is safe to
+    cite here too.
+    """
+    if diagnosis is not None and diagnosis.outcome == plan.diagnosis_outcome and diagnosis.evidence:
+        evidence = tuple(
+            CoachEvidence(
+                evidence_id=f"evidence-{index}",
+                fact=item.description[:1_000],
+                source=item.kind or "diagnosis_evidence",
+            )
+            for index, item in enumerate(diagnosis.evidence[:20])
+        )
+    else:
+        evidence = (
+            CoachEvidence(
+                evidence_id="plan-rationale",
+                fact=(plan.rationale[:1_000] or "No further detail was recorded for this plan."),
+                source="intervention_plan",
+            ),
+        )
+    task = (
+        f"Generate {content_type} content for the '{plan.strategy}' intervention "
+        "chosen for this diagnosis."
+    )
+    return CoachRequest(
+        task=task[:_MAX_TASK_CHARS],
+        target_language=target_language or "the learner's target language",
+        intervention_type=content_type,
+        evidence=evidence,
+        allowed_claims=(f"the diagnosed cause ({plan.diagnosis_outcome}) and the cited evidence",),
+    )
 
 
 def deterministic_fallback(request: CoachRequest, *, content_type: str = "explanation") -> CoachContent:

@@ -136,7 +136,7 @@ class _RecordingChannel:
     def __init__(self):
         self.calls: list[tuple[User, str, str]] = []
 
-    def send(self, user, message, channel):
+    def send(self, user, message, channel, companion_deep_link=None):
         self.calls.append((user, message, channel))
 
 

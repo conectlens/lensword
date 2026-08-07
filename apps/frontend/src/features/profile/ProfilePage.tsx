@@ -8,8 +8,9 @@ import { Spinner } from '../../components/ui/Spinner'
 import { WeaknessesTab } from './WeaknessesTab'
 import { CefrProgressTab } from './CefrProgressTab'
 import { ObservationHistoryTab } from './ObservationHistoryTab'
+import { LearningDnaTab } from './LearningDnaTab'
 
-type Tab = 'overview' | 'weaknesses' | 'levels' | 'history'
+type Tab = 'overview' | 'weaknesses' | 'levels' | 'history' | 'learning dna'
 
 export function ProfilePage() {
   const { user } = useAuth()
@@ -35,7 +36,7 @@ export function ProfilePage() {
       </div>
 
       <div className="flex gap-2 border-b border-white/10">
-        {(['overview', 'weaknesses', 'levels', 'history'] as const).map((name) => (
+        {(['overview', 'weaknesses', 'levels', 'history', 'learning dna'] as const).map((name) => (
           <button
             key={name}
             type="button"
@@ -53,6 +54,7 @@ export function ProfilePage() {
       {tab === 'weaknesses' && <WeaknessesTab />}
       {tab === 'levels' && <CefrProgressTab />}
       {tab === 'history' && <ObservationHistoryTab />}
+      {tab === 'learning dna' && <LearningDnaTab />}
 
       {tab === 'overview' && (
       <>

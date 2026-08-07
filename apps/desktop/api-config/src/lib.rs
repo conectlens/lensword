@@ -137,8 +137,22 @@ pub struct Resolved {
 }
 
 /// The endpoint used when nothing is configured: a local backend on its
-/// documented development port.
-pub const DEFAULT_API_BASE: &str = "http://127.0.0.1:8000";
+/// documented development port — *unless* `LENSWORD_RELEASE_API_BASE` was
+/// set at compile time (`option_env!`, evaluated by rustc and baked into
+/// the binary; not `std::env::var`, which reads at runtime and would do
+/// nothing here). Only the release-build CI jobs
+/// (.github/workflows/release.yml, release-continuous.yml) set that
+/// variable, pointing a downloaded installer at the hosted production API
+/// by default. `cargo build`/`cargo tauri dev` never set it, so local
+/// development is unaffected, and `LENSWORD_API_URL` (runtime) and the
+/// `api-endpoint` config file both still outrank this constant either way
+/// (see `resolve` below) — a release build remains fully self-hostable by
+/// anyone who sets one of those, it's only the zero-config default that
+/// changes.
+pub const DEFAULT_API_BASE: &str = match option_env!("LENSWORD_RELEASE_API_BASE") {
+    Some(v) => v,
+    None => "http://127.0.0.1:8000",
+};
 
 /// What crosses the process boundary into the webview.
 ///

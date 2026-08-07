@@ -9,6 +9,7 @@ would produce and persists the result, mirroring how
 from __future__ import annotations
 
 from app.application.use_cases.acquisition import EnterAcquisitionUseCase
+from app.application.use_cases.intervention import EvaluateInterventionOutcomesUseCase
 from app.application.use_cases.knowledge_graph import nodes_for
 from app.domain.repositories import (
     AcquisitionStateRepository,
@@ -19,7 +20,7 @@ from app.domain.repositories import (
     WordRepository,
 )
 from app.domain.services.diagnosis_engine import DiagnosisContext, diagnose
-from app.domain.services.intervention_planning import plan_intervention
+from app.domain.services.intervention_planning import is_duplicate_of_active_plan, plan_intervention
 from app.domain.services.knowledge_graph import KnowledgeGraph
 
 
@@ -79,8 +80,19 @@ class RunDiagnosisForWordUseCase:
             EnterAcquisitionUseCase(self.acquisition_repo).execute(user_id, word_id, diagnosis=result)
 
         if self.intervention_repo is not None:
-            plan = plan_intervention(result)
-            if plan is not None:
+            prior_plans = tuple(self.intervention_repo.list_plans_for_word(user_id, word_id))
+            prior_outcomes = tuple(self.intervention_repo.list_outcomes_for_word(user_id, word_id))
+            plan = plan_intervention(result, graph=graph, prior_plans=prior_plans, prior_outcomes=prior_outcomes)
+            # TODO 4's idempotency guarantee: re-diagnosing a standing
+            # confusion every time the learner answers again must not pile
+            # up a fresh plan each time — only once the prior one has a
+            # terminal outcome (or genuinely changed strategy, e.g. the
+            # isolate->contrast escalation) does a new plan get created.
+            if plan is not None and not is_duplicate_of_active_plan(plan, prior_plans, prior_outcomes):
                 self.intervention_repo.add_plan(plan)
+
+            EvaluateInterventionOutcomesUseCase(self.intervention_repo, self.observation_repo).execute(
+                user_id, word_id
+            )
 
         return result
