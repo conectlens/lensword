@@ -170,3 +170,73 @@ def test_delete_closes_the_session(running_server):
         headers={"Authorization": "Bearer user-token", "Content-Type": "application/json", SESSION_ID_HEADER: session_id},
     )
     assert status == 404
+
+
+# -- OAuth discovery (RFC 9728) — this server is the *resource*, the
+# backend named by oauth_issuer is the *authorization server*. -------------
+
+
+@pytest.fixture()
+def running_server_with_oauth():
+    transport = StreamableHTTPMCPServer(
+        lambda token: FakeBackend(),
+        host="127.0.0.1",
+        port=0,
+        allowed_origins=frozenset({"https://allowed.example"}),
+        oauth_issuer="https://backend.example",
+    )
+    port = transport.bind()
+    thread = threading.Thread(target=transport.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield transport, f"http://127.0.0.1:{port}"
+    finally:
+        transport.shutdown()
+        thread.join(timeout=5)
+
+
+def _get(url, *, headers=None):
+    request = urllib.request.Request(url, method="GET", headers=headers or {})
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return response.status, dict(response.headers), (response.read() or b"{}")
+    except urllib.error.HTTPError as exc:
+        return exc.code, dict(exc.headers), exc.read()
+
+
+def test_protected_resource_metadata_names_the_backend_as_the_authorization_server(running_server_with_oauth):
+    _transport, base = running_server_with_oauth
+    status, headers, body = _get(f"{base}/.well-known/oauth-protected-resource")
+    assert status == 200
+    assert headers["Content-Type"] == "application/json"
+    payload = json.loads(body)
+    assert payload["authorization_servers"] == ["https://backend.example"]
+    assert payload["resource"] == base
+
+
+def test_protected_resource_metadata_is_404_when_oauth_issuer_not_configured(running_server):
+    """The default (issue #196's existing behavior, unchanged): an operator
+    who hasn't set an issuer gets no discovery metadata at all, not a
+    metadata document pointing nowhere useful."""
+    _transport, url = running_server
+    base = url.removesuffix("/mcp")
+    status, _, _ = _get(f"{base}/.well-known/oauth-protected-resource")
+    assert status == 404
+
+
+def test_401_carries_a_www_authenticate_challenge_when_oauth_issuer_is_configured(running_server_with_oauth):
+    _transport, base = running_server_with_oauth
+    status, headers, _ = _post(f"{base}/mcp", {"jsonrpc": "2.0", "id": 1, "method": "initialize"}, headers={"Content-Type": "application/json"})
+    assert status == 401
+    assert headers["WWW-Authenticate"] == f'Bearer resource_metadata="{base}/.well-known/oauth-protected-resource"'
+
+
+def test_401_has_no_www_authenticate_header_when_oauth_issuer_not_configured(running_server):
+    """Matches this test file's pre-existing test_missing_bearer_token_is_rejected
+    — restated here specifically to pin the *absence* of the new header
+    when nothing asked for it, so this transport's default (unconfigured)
+    behavior provably didn't change."""
+    _transport, url = running_server
+    status, headers, _ = _post(url, {"jsonrpc": "2.0", "id": 1, "method": "initialize"}, headers={"Content-Type": "application/json"})
+    assert status == 401
+    assert "WWW-Authenticate" not in headers

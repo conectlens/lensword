@@ -56,6 +56,7 @@ from .server import BackendClient, MCPServer
 MAX_HTTP_BODY_BYTES = 1_048_576
 
 SESSION_ID_HEADER = "Mcp-Session-Id"
+WELL_KNOWN_PROTECTED_RESOURCE_PATH = "/.well-known/oauth-protected-resource"
 
 
 def _hash(value: str) -> str:
@@ -86,6 +87,17 @@ class StreamableHTTPMCPServer:
         # forever.
         request_timeout_seconds: float = 30.0,
         session_ttl_seconds: float = 3600.0,
+        # The backend's public URL — the OAuth *authorization server* for
+        # this MCP *resource* server (RFC 9728 draws that distinction
+        # deliberately; they don't have to be, and here aren't, the same
+        # process). The backend already implements the full authorization
+        # server (apps/backend/app/api/routers/mcp_oauth.py: dynamic client
+        # registration, authorize, token, revoke) behind
+        # REMOTE_MCP_ENABLED — this server just needs to say where it is.
+        # None (the default) serves no discovery metadata at all, matching
+        # this transport's behavior before this parameter existed: a client
+        # gets a bare 401 with no WWW-Authenticate hint, same as always.
+        oauth_issuer: str | None = None,
     ):
         # backend_factory(bearer_token) -> BackendClient. Called once per new
         # session at `initialize`, so the workspace/API URL and the caller's
@@ -97,6 +109,7 @@ class StreamableHTTPMCPServer:
         self.allowed_origins = allowed_origins
         self.request_timeout_seconds = request_timeout_seconds
         self.session_ttl_seconds = session_ttl_seconds
+        self.oauth_issuer = oauth_issuer.rstrip("/") if oauth_issuer else None
         self._sessions: dict[str, _Session] = {}
         self._lock = threading.Lock()
         self._httpd: ThreadingHTTPServer | None = None
@@ -215,6 +228,36 @@ class _MCPHTTPRequestHandler(BaseHTTPRequestHandler):
     def _wrong_path(self) -> bool:
         return urlparse(self.path).path != self.server_transport.path
 
+    def _resource_metadata_url(self) -> str:
+        """This server's own base URL, for the `resource_metadata` pointer
+        a 401 challenge carries — derived from the request's own Host
+        header rather than a separately-configured "public URL" setting,
+        since a reverse-proxied deployment's externally-visible host is
+        exactly what's already in that header and nothing else here needs
+        to know it independently."""
+        scheme = "https" if self.headers.get("X-Forwarded-Proto") == "https" else "http"
+        host = self.headers.get("Host", f"{self.server_transport.host}:{self.server_transport.port}")
+        return f"{scheme}://{host}{WELL_KNOWN_PROTECTED_RESOURCE_PATH}"
+
+    def _send_unauthorized(self) -> None:
+        """A bare 401 with no `WWW-Authenticate` header (`oauth_issuer`
+        unset) is unchanged from this transport's behavior before OAuth
+        discovery existed. With it set, the header is what lets an
+        MCP-Authorization-spec-compliant client find the protected-resource
+        metadata on its own, instead of the operator having to tell every
+        user how to configure a client manually."""
+        if self.server_transport.oauth_issuer:
+            self.send_response(401)
+            self.send_header("Content-Type", "application/json")
+            www_authenticate = f'Bearer resource_metadata="{self._resource_metadata_url()}"'
+            self.send_header("WWW-Authenticate", self._safe_header_value(www_authenticate))
+            body = json.dumps({"error": "missing_bearer_token"}).encode("utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self._send_json(401, {"error": "missing_bearer_token"})
+
     # -- HTTP methods ----------------------------------------------------
 
     def do_POST(self) -> None:  # noqa: N802 - stdlib naming
@@ -226,7 +269,7 @@ class _MCPHTTPRequestHandler(BaseHTTPRequestHandler):
             return
         token = self._bearer_token()
         if token is None:
-            self._send_json(401, {"error": "missing_bearer_token"})
+            self._send_unauthorized()
             return
 
         length_header = self.headers.get("Content-Length")
@@ -274,9 +317,32 @@ class _MCPHTTPRequestHandler(BaseHTTPRequestHandler):
         self._send_json(200, response, session_id=session_id)
 
     def do_GET(self) -> None:  # noqa: N802
+        if urlparse(self.path).path == WELL_KNOWN_PROTECTED_RESOURCE_PATH:
+            self._send_protected_resource_metadata()
+            return
         # Server-initiated SSE streaming is not implemented — see this
         # module's docstring for why that is a deliberate, documented gap.
         self._send_json(405, {"error": "sse_not_supported"})
+
+    def _send_protected_resource_metadata(self) -> None:
+        # RFC 9728. `authorization_servers` names the backend
+        # (apps/backend/app/api/routers/mcp_oauth.py), not this process —
+        # this server is the OAuth *resource*, not the *authorization
+        # server*, and RFC 9728 draws that distinction on purpose so one
+        # deployment's MCP resource server(s) and its authorization
+        # server don't have to be the same origin, or even the same
+        # codebase, which they in fact are not here.
+        if not self.server_transport.oauth_issuer:
+            self._send_json(404, {"error": "not_found"})
+            return
+        self._send_json(
+            200,
+            {
+                "resource": self._resource_metadata_url().removesuffix(WELL_KNOWN_PROTECTED_RESOURCE_PATH),
+                "authorization_servers": [self.server_transport.oauth_issuer],
+                "bearer_methods_supported": ["header"],
+            },
+        )
 
     def do_DELETE(self) -> None:  # noqa: N802
         session_id = self.headers.get(SESSION_ID_HEADER)
