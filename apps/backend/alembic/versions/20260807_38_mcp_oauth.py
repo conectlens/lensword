@@ -1,13 +1,20 @@
 """Remote MCP OAuth clients, authorization codes, and tokens (issue #196).
 
-Revision ID: 20260807_34_mcp_oauth
-Revises: 20260807_33_companion_tasks
+Revision ID: 20260807_38_mcp_oauth
+Revises: 20260807_37
+
+Originally chained onto 20260807_33_companion_tasks (the head at the time
+this branch started); renumbered and re-pointed at 20260807_37 once
+development had moved past it — 20260807_34 was already claimed by
+intervention_plan_pairs by the time this was rebased, so this keeps
+history linear instead of adding another merge-heads migration for a fork
+that was never actually run against a shared database.
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "20260807_34_mcp_oauth"
-down_revision = "20260807_33_companion_tasks"
+revision = "20260807_38_mcp_oauth"
+down_revision = "20260807_37"
 branch_labels = None
 depends_on = None
 
