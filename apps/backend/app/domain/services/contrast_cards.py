@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from app.domain.entities import Word
+from app.domain.services.diagnosis_contracts import InterventionPlan
 from app.domain.services.knowledge_graph import KnowledgeGraph, Relation
 
 DEFAULT_MIN_STABILITY_DAYS = 21.0
@@ -172,6 +173,26 @@ def build_contrast_cards(
         if len(cards) >= min(limit, MAX_CONTRAST_CARDS):
             break
     return tuple(cards)
+
+
+def pair_decisions_from_plans(plans: tuple[InterventionPlan, ...]) -> tuple[InterventionPairDecision, ...]:
+    """Issue #206 TODO 5: source pair decisions from #185's real planner
+    output rather than only the graph fallback. `plans` should already be
+    filtered to the caller's *active* plans (`intervention.active_plans`) —
+    a resolved/rejected/abandoned plan's pair is no longer a live decision.
+
+    Only isolate/contrast plans carry a pair at all (`second_word_id` is
+    unset for every other strategy); anything else is silently skipped
+    rather than raising, since a caller may reasonably pass every active
+    plan for a word regardless of strategy.
+    """
+    return tuple(
+        InterventionPairDecision(
+            first_word_id=plan.word_id, second_word_id=plan.second_word_id, strategy=plan.strategy,
+        )
+        for plan in plans
+        if plan.second_word_id is not None and plan.strategy in {"isolate", "contrast"}
+    )
 
 
 def answer_contrast_card(
