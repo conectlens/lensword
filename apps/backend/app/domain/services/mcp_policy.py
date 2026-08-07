@@ -7,6 +7,7 @@ outbound adapters enforce the identical policy.
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -82,3 +83,33 @@ def redact_and_chain(previous_hash: str, event: dict) -> tuple[dict, str]:
     redacted = redact(event)
     encoded = dumps({"previous_hash": previous_hash, "event": redacted}, sort_keys=True, separators=(",", ":"))
     return redacted, sha256(encoded.encode()).hexdigest()
+
+
+def verify_chain(links: Iterable[tuple[str, dict, str]]) -> int | None:
+    """Recompute an MCP audit hash chain and report the first broken link.
+
+    `links` is the persisted `(previous_hash, event, event_hash)` triple for
+    each `MCPAuditEventModel` row, oldest first. Each link's `event_hash` is
+    recomputed from its own `previous_hash`/`event` (via `redact_and_chain`,
+    which is idempotent on an already-redacted event) and compared against
+    the stored value; each link's `previous_hash` is also compared against
+    the prior link's stored `event_hash`. Either mismatch means the stored
+    row was mutated after the fact (an attacker with direct database access
+    editing an audit event, or corruption) rather than genuinely produced by
+    this chain.
+
+    Returns the zero-based index of the first link that fails to verify, or
+    `None` if the whole chain is intact. issue #199 TODO 2: this is the
+    verification half of `redact_and_chain`'s tamper-evidence claim — a hash
+    chain nothing ever recomputes and compares is not actually tamper
+    *evident*, only tamper-shaped.
+    """
+    prior_event_hash: str | None = None
+    for index, (previous_hash, event, event_hash) in enumerate(links):
+        if prior_event_hash is not None and previous_hash != prior_event_hash:
+            return index
+        _, recomputed_hash = redact_and_chain(previous_hash, event)
+        if recomputed_hash != event_hash:
+            return index
+        prior_event_hash = event_hash
+    return None
