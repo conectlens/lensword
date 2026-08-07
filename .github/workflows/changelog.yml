@@ -59,7 +59,15 @@ jobs:
       - name: Regenerate changelog pages and diff against committed output
         run: |
           python scripts/changelog/generate.py
-          if ! git diff --exit-code -- docs/reference/changelog docs/reference/releases docs/reference/trust/compatibility.md; then
+          # main-branch-activity.md is excluded on purpose: unlike every other
+          # page generate.py writes, its content comes from `git log`, not
+          # from .changes/ fragments + the product registry. That makes it
+          # structurally unable to satisfy this check on the exact commit
+          # that last touched it — regenerating it always reflects history
+          # up to (but not including) the commit doing the regenerating,
+          # since that commit's own SHA doesn't exist yet at generation
+          # time. Gating merges on it chases a target that can never be hit.
+          if ! git diff --exit-code -- docs/reference/changelog docs/reference/releases docs/reference/trust/compatibility.md ':!docs/reference/changelog/main-branch-activity.md'; then
             echo ""
             echo "::error::Generated changelog pages don't match what's committed." \
               "Run 'python scripts/changelog/generate.py' locally and commit the result."

@@ -143,7 +143,9 @@ npm test        # vitest run
 - Branch off `development` — the shared integration branch feature work lands
   on. `main` tracks the last released state; `development` is promoted to
   `main` as a separate, explicit release step, not as part of normal feature
-  work.
+  work. See [BRANCH.md](BRANCH.md) for the full rule: `main` only changes via
+  a merged `development → main` pull request — never a direct push or a
+  cherry-picked commit.
 - Use short, descriptive branch names (e.g. `fix/review-session-timer`,
   `feat/mnemolab-voting`).
 - Write commit messages that explain *why* a change was made, not just what

@@ -11,6 +11,7 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 
 | Date | Commit | Author | Subject | Changelog fragment |
 |---|---|---|---|---|
+| 2026-08-07 | [5aad283](https://github.com/conectlens/lensword/commit/5aad283aa25e5cc516c35ac9fa38aeb08726e908) | Lenser | Fix changelog schema violation blocking PR #312 (type: none requires documentation_required: false) | none (predates this system) |
 | 2026-08-07 | [a0c63d6](https://github.com/conectlens/lensword/commit/a0c63d625337883fcbf39a14ea17b4b93b43d0db) | Ömer Faruk Coşkun | Merge branch 'main' into development | none (predates this system) |
 | 2026-08-07 | [99041c0](https://github.com/conectlens/lensword/commit/99041c0ebc3f5be6e5133214298912ff309d9f10) | Lenser | Fix Docs deploy branch mismatch; correct Supabase pooler guidance; label README links with real domains | none (predates this system) |
 | 2026-08-07 | [4dac579](https://github.com/conectlens/lensword/commit/4dac57911fdab493305984d85514a167e20320f5) | Lenser | Fix Docs deploy branch mismatch; correct Supabase pooler guidance; label README links with real domains | none (predates this system) |
@@ -50,6 +51,5 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 | 2026-08-07 | [4897b47](https://github.com/conectlens/lensword/commit/4897b475c4cc84b237121c8658fab78000857c31) | Ömer Faruk Coşkun | Document and verify LensWord MCP Server and local CLI integrations (#276) (#300) | [mcp-read-tool-request-id-fix](/reference/changelog/#mcp-read-tool-request-id-fix) |
 | 2026-08-07 | [ccaa283](https://github.com/conectlens/lensword/commit/ccaa283a5e0d22180055e24952b333cb88b2b6bc) | Ömer Faruk Coşkun | Document and verify the LensWord Browser Extension workflow (#275) (#299) | [browser-notification-icon-fix](/reference/changelog/#browser-notification-icon-fix) |
 | 2026-08-07 | [902f880](https://github.com/conectlens/lensword/commit/902f88049a92fbc8d7ca5b09bcb6a3679a4441a6) | Ömer Faruk Coşkun | Document and verify the LensWord Desktop Application on macOS, Windows, and Linux (#274) (#298) | none (predates this system) |
-| 2026-08-07 | [4d30cb6](https://github.com/conectlens/lensword/commit/4d30cb622100b23f87309a6be11c75e626de9b65) | Ömer Faruk Coşkun | Write verified Web Application and self-hosting use-case guides (#273) (#296) | none (predates this system) |
 
 Generated from `git log -40 development` — 40 commits shown.
