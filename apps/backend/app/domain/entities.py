@@ -541,6 +541,10 @@ class DesktopNotification:
     expires_at: datetime | None = None
     action: str | None = None
     action_at: datetime | None = None
+    # A `lensword://` deep link into a companion prompt or resumable session
+    # (#197 TODO 0). Set only when the recipient has AI Companion enabled;
+    # `None` otherwise, so an account that never opted in never gets one.
+    companion_deep_link: str | None = None
 
     @property
     def pending(self) -> bool:

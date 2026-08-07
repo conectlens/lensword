@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import (
-    CompanionActivityRepo, CompanionSessionRepo, CurrentUser, DbSession, DiagnosisRepo, GroupRepo,
+    CompanionActivityRepo, CompanionSessionRepo, CompanionTaskRepo, CurrentUser, DbSession, DiagnosisRepo, GroupRepo,
     LearningObservationRepo, OptionalAIProvider, PracticeExerciseRepo, RecallSettingsRepo, ReviewSessionRepo,
     WordRepo,
 )
@@ -63,7 +63,7 @@ def preview(payload: PlanPreviewRequest, current_user: CurrentUser, groups: Grou
 async def execute(
     plan_id: str, payload: PlanExecuteRequest, current_user: CurrentUser, db: DbSession, groups: GroupRepo,
     words: WordRepo, sessions: ReviewSessionRepo, exercises: PracticeExerciseRepo, provider: OptionalAIProvider,
-    companion_sessions: CompanionSessionRepo, recall_settings: RecallSettingsRepo,
+    companion_sessions: CompanionSessionRepo, companion_tasks: CompanionTaskRepo, recall_settings: RecallSettingsRepo,
     diagnoses: DiagnosisRepo, observations: LearningObservationRepo, companion_activities: CompanionActivityRepo,
 ) -> dict:
     stored = _get_plan(plan_id, current_user.id or 0)
@@ -83,7 +83,7 @@ async def execute(
     results = []
     for step in stored.plan.steps:
         try:
-            result = await invoke(InvokeRequest(tool=step.tool, workspace=stored.request.workspace, payload=step.payload), actor, db, groups, words, sessions, exercises, provider, companion_sessions, recall_settings, diagnoses, observations, companion_activities)
+            result = await invoke(InvokeRequest(tool=step.tool, workspace=stored.request.workspace, payload=step.payload), actor, db, groups, words, sessions, exercises, provider, companion_sessions, companion_tasks, recall_settings, diagnoses, observations, companion_activities)
             results.append({"id": step.id, "tool": step.tool, "status": "completed", "result": result})
         except HTTPException as exc:
             results.append({"id": step.id, "tool": step.tool, "status": "failed", "detail": exc.detail})

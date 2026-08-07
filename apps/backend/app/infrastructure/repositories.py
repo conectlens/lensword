@@ -1181,6 +1181,7 @@ def _desktop_notification_to_domain(m: DesktopNotificationModel) -> DesktopNotif
         expires_at=m.expires_at,
         action=m.action,
         action_at=m.action_at,
+        companion_deep_link=m.companion_deep_link,
     )
 
 
@@ -1214,6 +1215,7 @@ class SqlAlchemyDesktopNotificationRepository:
             expires_at=notification.expires_at,
             action=notification.action,
             action_at=notification.action_at,
+            companion_deep_link=notification.companion_deep_link,
         )
         self.db.add(model)
         self.db.flush()
@@ -2675,6 +2677,7 @@ def _companion_task_to_domain(m: CompanionTaskModel) -> CompanionTask:
         created_at=m.created_at,
         updated_at=m.updated_at,
         revision=m.revision,
+        input=dict(m.input) if m.input is not None else None,
     )
 
 
@@ -2700,6 +2703,7 @@ class SqlAlchemyCompanionTaskRepository:
             created_at=task.created_at,
             updated_at=task.updated_at,
             revision=task.revision,
+            input=task.input,
         )
         self.db.add(model)
         self.db.flush()
@@ -2750,6 +2754,26 @@ class SqlAlchemyCompanionTaskRepository:
             )
         )
         return _companion_task_to_domain(model) if model else None
+
+    def list_runnable(self, now: datetime, limit: int = 20) -> list[CompanionTask]:
+        # EXTRACTION only: PLAN_GENERATION already has a real, synchronous
+        # lifecycle of its own (generate-plan/confirm-plan in
+        # app.api.routers.companion_tasks, #194 TODO 4) that this poller
+        # would otherwise race — see companion_task_dispatch.py's module
+        # docstring for the full explanation.
+        stmt = (
+            select(CompanionTaskModel)
+            .where(
+                CompanionTaskModel.status.in_(
+                    (CompanionTaskStatus.PENDING.value, CompanionTaskStatus.RUNNING.value)
+                ),
+                CompanionTaskModel.task_type == CompanionTaskType.EXTRACTION.value,
+                CompanionTaskModel.expires_at > now,
+            )
+            .order_by(CompanionTaskModel.created_at.asc(), CompanionTaskModel.id.asc())
+            .limit(min(max(limit, 1), 100))
+        )
+        return [_companion_task_to_domain(model) for model in self.db.scalars(stmt)]
 
 
 def _companion_loop_state_to_domain(m: CompanionLoopStateModel) -> CompanionLoopState:

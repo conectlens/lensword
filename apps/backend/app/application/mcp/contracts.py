@@ -54,6 +54,22 @@ TOOL_CONTRACTS = tuple(ToolContract(name, f"https://lensword.app/mcp/{CONTRACT_V
     ("lensword.generate_exercises", AccessClass.WRITE, _schema({"word_id":{"type":"integer","minimum":1}, "kind":{"enum":["translation","definition","cloze"]}}, ["word_id"], write=True)),
     ("lensword.get_learning_progress", AccessClass.READ, _schema({"week":{"type":"string","maxLength":32}})),
     ("lensword.record_answer", AccessClass.WRITE, _schema({"session_id":{"type":"integer","minimum":1}, "word_id":{"type":"integer","minimum":1}, "outcome":{"enum":["correct","incorrect","skipped"]}}, ["session_id","word_id","outcome"], write=True)),
+    # Companion task tools (#197 TODO 2): genuinely long-running work only.
+    # `start_extraction_task` wraps the existing companion_tasks.py state
+    # machine and the background executor in
+    # app.infrastructure.jobs.companion_task_dispatch — it never does the
+    # work synchronously itself, only creates the durable task record. The
+    # MCP transport (apps/mcp/lensword_mcp/server.py) gates exposing it on
+    # the client having declared task capability during initialize.
+    # `get_companion_task`/`cancel_companion_task` are generic and cover any
+    # task type, including `plan_generation` tasks created through
+    # `app.api.routers.companion_tasks`'s own generate-plan/confirm-plan
+    # flow (#194 TODO 4) — there is deliberately no `start_plan_generation_
+    # task` tool here, since that flow already exists and this would only
+    # duplicate it (see companion_task_dispatch.py's module docstring).
+    ("lensword.start_extraction_task", AccessClass.WRITE, _schema({"companion_session_id":{"type":"string","minLength":1,"maxLength":64}, "text":{"type":"string","minLength":1,"maxLength":8000}, "target_language":{"type":"string","minLength":1,"maxLength":64}, "max_terms":{"type":"integer","minimum":1,"maximum":50}}, ["companion_session_id","text","target_language"], write=True)),
+    ("lensword.get_companion_task", AccessClass.READ, _schema({"companion_session_id":{"type":"string","minLength":1,"maxLength":64}, "task_id":{"type":"string","minLength":1,"maxLength":64}}, ["companion_session_id","task_id"])),
+    ("lensword.cancel_companion_task", AccessClass.WRITE, _schema({"companion_session_id":{"type":"string","minLength":1,"maxLength":64}, "task_id":{"type":"string","minLength":1,"maxLength":64}}, ["companion_session_id","task_id"], write=True)),
     # Durable companion sessions (#193 TODO 1). `session_id` is the opaque
     # hex id `CompanionSession.id` — bounded to 64 chars to match
     # CompanionSessionModel.id (String(64)), same as every other resource

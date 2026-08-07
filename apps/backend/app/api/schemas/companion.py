@@ -132,6 +132,10 @@ class CompanionTaskCreateRequest(BaseModel):
     total_units: int = Field(ge=1, le=10000)
     expires_in_seconds: int = Field(default=300, ge=1, le=86400)
     operation_id: str | None = Field(default=None, max_length=128)
+    # Bounded execution parameters for the background executor (#197 TODO 3),
+    # e.g. precomputed extraction candidates. Only meaningful for task types
+    # the executor actually runs; anything else is simply never read.
+    input: dict[str, Any] | None = Field(default=None)
 
 
 class CompanionTaskProgressRequest(BaseModel):
@@ -157,6 +161,7 @@ class CompanionTaskResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     revision: int
+    input: dict[str, Any] | None = None
 
 
 # --- Bounded companion loop budgets (#195 TODO 2) --------------------------

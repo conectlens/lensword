@@ -363,6 +363,12 @@ class DesktopNotificationModel(Base):
     # The action taken, and when. First one wins — see PerformNotificationAction.
     action: Mapped[str | None] = mapped_column(String(32), nullable=True)
     action_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # A `lensword://` deep link into a companion prompt or resumable session
+    # (#197 TODO 0), set only when the account has AI Companion enabled. This
+    # is the entire "push" surface the companion gets: LensWord decides a
+    # notification is owed exactly as it always has, and only adds where to
+    # go if the user opens it — MCP itself never sends anything unsolicited.
+    companion_deep_link: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     __table_args__ = (
         Index("ix_desktop_notifications_user_undelivered", "user_id", "delivered_at"),
@@ -1026,6 +1032,9 @@ class CompanionTaskModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime)
     updated_at: Mapped[datetime] = mapped_column(DateTime)
     revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    # Bounded execution parameters the background executor reads (#197);
+    # see CompanionTask.input.
+    input: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class CompanionLoopStateModel(Base):

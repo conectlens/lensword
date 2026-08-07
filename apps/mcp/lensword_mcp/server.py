@@ -10,6 +10,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 import uuid
@@ -26,6 +27,33 @@ from .companion_workflows import (
 )
 
 SUPPORTED_PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18")
+
+# Tools that create/read/cancel a durable companion task (#197 TODO 2). These
+# wrap real background execution (app.infrastructure.jobs.companion_task_
+# dispatch on the backend), not a fast read, and MCP's task primitive exists
+# for exactly that distinction — a host that never said it understands tasks
+# should not be offered a tool whose whole point is a task it cannot track.
+_TASK_TOOL_NAMES = frozenset(
+    {
+        "lensword.start_extraction_task",
+        "lensword.get_companion_task",
+        "lensword.cancel_companion_task",
+    }
+)
+
+# Resources a host may ask to be told about, without turning MCP into an
+# unsolicited push channel (#197 TODO 1). Subscribing is always the host's
+# choice; nothing here is offered unprompted, and nothing is sent unless the
+# host already asked and a *material* change (see MCPServer._fingerprint)
+# actually happened.
+_SUBSCRIBABLE_EXACT_URIS = frozenset({"lensword://me/today", "lensword://me/due"})
+_SUBSCRIBABLE_PREFIX = "lensword://session/"
+
+# Minimum time between two notifications for the *same* uri. A burst of
+# small changes (several words answered a few seconds apart) collapses into
+# one notification rather than one per change; the actual current state is
+# still whatever the next `resources/read` returns.
+DEFAULT_COALESCE_SECONDS = 5.0
 
 # The bounded catalog of structured fields #195 TODO 1 names. Presenting
 # only fields from this catalog, built through `ElicitationField`, is what
@@ -366,6 +394,8 @@ class MCPServer:
         sampler: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
         elicitor: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
         requester: str = "lensword-mcp",
+        clock: Callable[[], float] = time.monotonic,
+        coalesce_seconds: float = DEFAULT_COALESCE_SECONDS,
     ):
         self.backend = backend
         self.server_version = server_version
@@ -377,6 +407,11 @@ class MCPServer:
         self._requester = requester
         self._client_capabilities: dict[str, Any] = {}
         self._client_info: dict[str, Any] = {}
+        # uri -> {"fingerprint": ..., "notified_fingerprint": ..., "last_notified": float | None}
+        # (#197 TODO 1)
+        self._subscriptions: dict[str, dict[str, Any]] = {}
+        self._clock = clock
+        self._coalesce_seconds = coalesce_seconds
 
     def handle(self, message: dict[str, Any]) -> dict[str, Any] | None:
         if message.get("jsonrpc") != "2.0":
@@ -403,6 +438,10 @@ class MCPServer:
             return self._resources_read(request_id, message.get("params") or {})
         if method == "resources/templates/list":
             return self._resource_templates_list(request_id)
+        if method == "resources/subscribe":
+            return self._resources_subscribe(request_id, message.get("params") or {})
+        if method == "resources/unsubscribe":
+            return self._resources_unsubscribe(request_id, message.get("params") or {})
         if method == "prompts/list":
             return self._prompts_list(request_id)
         if method == "prompts/get":
@@ -437,28 +476,41 @@ class MCPServer:
             "result": {
                 "protocolVersion": requested,
                 # `listChanged` stays honestly False for both catalogs
-                # (issue #192 TODO 4). Two things would both have to be
-                # true before it could be True: a resource/prompt whose
-                # *set* actually varies at runtime (every entry in
-                # `_RESOURCE_DESCRIPTORS`, `_RESOURCE_TEMPLATES` and
-                # `_PROMPTS` is a fixed module-level constant — nothing
-                # here is ever added or removed while a server is running,
-                # so there is no real event to notify about), and a
-                # transport that can send a message the client did not ask
-                # for. `StdioMCPServer.run` is a synchronous
-                # request-then-respond loop (`for line in
-                # self.input_stream: ... write one response`) with no
-                # concurrency primitive to interleave an unsolicited
-                # notification while blocked on the next read — that is
-                # the harder half of this TODO, and advertising `True`
-                # without it would be a capability with nothing behind it.
-                # Deferred until a resource with genuinely dynamic
-                # membership exists to justify building the notification
-                # path for.
-                "capabilities": {"tools": {}, "resources": {"subscribe": False, "listChanged": False}, "prompts": {"listChanged": False}, "completions": {}},
+                # (issue #192 TODO 4): every entry in `_RESOURCE_DESCRIPTORS`,
+                # `_RESOURCE_TEMPLATES` and `_PROMPTS` is a fixed module-level
+                # constant — nothing here is ever added or removed while a
+                # server is running, so there is no real "the set changed"
+                # event to notify about.
+                #
+                # `resources.subscribe` is real as of #197 TODO 1, though:
+                # `resources/subscribe`/`resources/unsubscribe` and
+                # server-initiated `notifications/resources/updated` are
+                # implemented below. `StdioMCPServer.run` is still a
+                # synchronous request-then-respond loop with no concurrency
+                # primitive to interleave a push mid-read, so "server-
+                # initiated" here means "written before the next response,
+                # riding the cadence the host's own messages already drive"
+                # — see `poll_subscriptions`'s docstring — rather than a
+                # true asynchronous push. That is enough to make `subscribe`
+                # honestly True: nothing about the semantics MCP promises
+                # (a bounded, coalesced, opt-in update) requires the
+                # transport to be able to interrupt an in-flight read.
+                "capabilities": {"tools": {}, "resources": {"subscribe": True, "listChanged": False}, "prompts": {"listChanged": False}, "completions": {}},
                 "serverInfo": {"name": "lensword", "version": self.server_version},
             },
         }
+
+    def _client_supports_tasks(self) -> bool:
+        """Whether the client declared MCP task capability during initialize.
+
+        Gates the companion task tools (#197 TODO 2): a host that never said
+        it can track a task should not be offered one to create. Checked by
+        key presence, not truthiness — `"tasks": {}` is the normal MCP way
+        to say "yes", matching how `_sampling_available`/`_elicitation_
+        available` already check `"sampling"`/`"elicitation" in
+        self._client_capabilities` rather than a truthy value.
+        """
+        return "tasks" in self._client_capabilities
 
     def _tools_list(self, request_id: Any) -> dict[str, Any]:
         try:
@@ -467,6 +519,8 @@ class MCPServer:
             return self._error(request_id, -32003, exc.detail)
         tools = []
         for descriptor in capabilities.get("tools", []):
+            if descriptor["name"] in _TASK_TOOL_NAMES and not self._client_supports_tasks():
+                continue
             tools.append(
                 {
                     "name": descriptor["name"],
@@ -490,6 +544,20 @@ class MCPServer:
             return self._companion_reply(request_id, arguments)
         if name == "lensword.companion_elicit":
             return self._companion_elicit(request_id, arguments)
+        if name in _TASK_TOOL_NAMES and not self._client_supports_tasks():
+            return {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {
+                    "isError": True,
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": f"{name} requires the client to declare task capability during initialize",
+                        }
+                    ],
+                },
+            }
         try:
             result = self.backend.invoke(name, arguments)
         except BackendError as exc:
@@ -834,6 +902,95 @@ class MCPServer:
         }
 
     @staticmethod
+    def _subscribable(uri: str) -> bool:
+        return uri in _SUBSCRIBABLE_EXACT_URIS or uri.startswith(_SUBSCRIBABLE_PREFIX)
+
+    @staticmethod
+    def _fingerprint(uri: str, value: Any) -> Any:
+        """The bounded fact whose *change* is "material" for this uri.
+
+        Not "the resource changed at all" — a due-review resource returning
+        the same words in a different field order is not material, but its
+        count going from 4 to 3 is. A session resource's fingerprint is its
+        status, because that is the fact a host watching a companion session
+        actually needs to react to (paused, finished, revoked).
+        """
+        if isinstance(value, dict):
+            if uri.startswith(_SUBSCRIBABLE_PREFIX):
+                return value.get("status")
+            items = value.get("items")
+            if isinstance(items, list):
+                return len(items)
+        return json.dumps(value, sort_keys=True, default=str)
+
+    def _resources_subscribe(self, request_id: Any, params: dict[str, Any]) -> dict[str, Any]:
+        uri = params.get("uri")
+        if not isinstance(uri, str) or len(uri) > 512:
+            return self._error(request_id, -32602, "resources/subscribe requires a bounded uri")
+        if not self._subscribable(uri):
+            return self._error(request_id, -32602, "This resource does not support subscriptions")
+        try:
+            value = self.backend.resource(uri)
+        except BackendError as exc:
+            return self._error(request_id, -32003, exc.detail, {"status": exc.status})
+        fingerprint = self._fingerprint(uri, value)
+        self._subscriptions[uri] = {
+            "fingerprint": fingerprint,
+            "notified_fingerprint": fingerprint,
+            "last_notified": None,
+        }
+        return {"jsonrpc": "2.0", "id": request_id, "result": {}}
+
+    def _resources_unsubscribe(self, request_id: Any, params: dict[str, Any]) -> dict[str, Any]:
+        uri = params.get("uri")
+        if not isinstance(uri, str):
+            return self._error(request_id, -32602, "resources/unsubscribe requires a uri")
+        self._subscriptions.pop(uri, None)
+        return {"jsonrpc": "2.0", "id": request_id, "result": {}}
+
+    def poll_subscriptions(self) -> list[dict[str, Any]]:
+        """Check every subscribed resource for a material, un-notified change.
+
+        Returns zero or more server-initiated `notifications/resources/
+        updated` JSON-RPC notifications (no `id`, per spec) ready to write to
+        the transport. This is the entire "push" mechanism: it never invents
+        a reason to notify, only reports a fingerprint that has genuinely
+        moved since the last notification, and coalesces anything within
+        `_coalesce_seconds` of the last one for the same uri into silence —
+        the next poll after the window elapses will still see the change and
+        notify once. A host that never calls resources/subscribe is
+        unaffected: resources/read keeps working on its own, which is the
+        polling fallback for hosts that don't support subscriptions at all.
+
+        Called by `StdioMCPServer.run` after every processed message —
+        there is no independent timer thread, so this rides the cadence the
+        host's own requests already drive rather than firing on a real
+        clock. See that method's comment for why that is still a genuine,
+        if bounded, form of server-initiated push over a synchronous
+        request/response transport.
+        """
+        now = self._clock()
+        notifications: list[dict[str, Any]] = []
+        for uri, state in self._subscriptions.items():
+            try:
+                value = self.backend.resource(uri)
+            except BackendError:
+                continue  # a transient read failure is not a "material change"
+            fingerprint = self._fingerprint(uri, value)
+            state["fingerprint"] = fingerprint
+            if fingerprint == state["notified_fingerprint"]:
+                continue
+            last_notified = state["last_notified"]
+            if last_notified is not None and now - last_notified < self._coalesce_seconds:
+                continue
+            state["notified_fingerprint"] = fingerprint
+            state["last_notified"] = now
+            notifications.append(
+                {"jsonrpc": "2.0", "method": "notifications/resources/updated", "params": {"uri": uri}}
+            )
+        return notifications
+
+    @staticmethod
     def _prompts_list(request_id: Any) -> dict[str, Any]:
         return {
             "jsonrpc": "2.0",
@@ -969,6 +1126,17 @@ class StdioMCPServer:
                 response = self.server._error(None, -32700, "Parse error")
             if response is not None:
                 self.output_stream.write(json.dumps(response, separators=(",", ":")) + "\n")
+                self.output_stream.flush()
+            # Every processed message is a natural opportunity to check
+            # subscribed resources (#197 TODO 1): this is a synchronous
+            # line-at-a-time transport with no independent timer thread, so
+            # "server-initiated" here means "written before the next
+            # response, on the cadence the host is already driving" rather
+            # than truly asynchronous. A host that wants faster updates than
+            # its own request cadence provides can still poll resources/read
+            # directly — see MCPServer.poll_subscriptions's docstring.
+            for notification in self.server.poll_subscriptions():
+                self.output_stream.write(json.dumps(notification, separators=(",", ":")) + "\n")
                 self.output_stream.flush()
 
 

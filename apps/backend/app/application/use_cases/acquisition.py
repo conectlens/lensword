@@ -19,6 +19,7 @@ from app.domain.repositories import (
     WordRepository,
 )
 from app.domain.services.acquisition import AcquisitionScheduler, graduate, should_enter_acquisition
+from app.domain.services.companion_deep_link import companion_notification_deep_link
 from app.domain.services.diagnosis_contracts import AcquisitionState, Diagnosis
 from app.domain.services.notification_channel import NotificationChannel
 from app.domain.services.recall_delivery import RecallDeliveryPolicy
@@ -155,5 +156,9 @@ class DispatchOneAcquisitionReminderUseCase:
             self.clock().replace(tzinfo=timezone.utc).astimezone(zone_for(user.time_zone)).replace(tzinfo=None)
         )
         allowed = RecallDeliveryPolicy.decide(settings, now_local)
+        # A stabilizing word is an in-progress weakness, so its deep link
+        # points at the review-weakness prompt rather than the generic daily
+        # check-in (#197 TODO 0) — still gated on the same companion opt-in.
+        deep_link = companion_notification_deep_link(settings.ai_companion_enabled, prompt="review_weakness")
         for target in sorted(allowed, key=lambda c: c.value):
-            self.channel.send(user, ACQUISITION_MESSAGE, target.value)
+            self.channel.send(user, ACQUISITION_MESSAGE, target.value, deep_link)

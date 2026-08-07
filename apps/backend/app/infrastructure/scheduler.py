@@ -26,6 +26,8 @@ from app.infrastructure.jobs import dev_heartbeat
 from app.infrastructure.jobs.acquisition_dispatch import AcquisitionDispatcher
 from app.infrastructure.jobs.acquisition_dispatch import JOB_ID as ACQUISITION_DISPATCH_JOB_ID
 from app.infrastructure.jobs.claim_maintenance import JOB_ID as PURGE_CLAIMS_JOB_ID, ClaimPurger
+from app.infrastructure.jobs.companion_task_dispatch import CompanionTaskExecutor
+from app.infrastructure.jobs.companion_task_dispatch import JOB_ID as COMPANION_TASK_DISPATCH_JOB_ID
 from app.infrastructure.notifications import LogNotificationChannel
 from app.infrastructure.reminders import restore_reminder_jobs
 
@@ -122,6 +124,25 @@ def register_jobs(
         "interval",
         minutes=5,
         id=ACQUISITION_DISPATCH_JOB_ID,
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    # Advances every runnable companion task (#197 TODO 3). Ten seconds
+    # rather than acquisition's five minutes: a companion task is
+    # interactive — a user is plausibly waiting on it inside a live
+    # session — where a due-word nudge is not. Nothing about correctness
+    # depends on this exact interval; a slower poll only means slower
+    # progress, never lost or duplicated work (see companion_task_dispatch's
+    # module docstring for why).
+    if scheduler.get_job(COMPANION_TASK_DISPATCH_JOB_ID) is not None:
+        scheduler.remove_job(COMPANION_TASK_DISPATCH_JOB_ID)
+    scheduler.add_job(
+        CompanionTaskExecutor(session_factory),
+        "interval",
+        seconds=10,
+        id=COMPANION_TASK_DISPATCH_JOB_ID,
         replace_existing=True,
         coalesce=True,
         max_instances=1,

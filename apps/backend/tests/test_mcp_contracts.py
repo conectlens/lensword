@@ -4,13 +4,17 @@ from app.application.mcp.dispatcher import MCPDispatcher, UnboundMCPToolError, U
 import pytest
 
 def test_contracts_are_versioned_bounded_and_classified():
-    # 8 original tools, 5 learner-aware dev-workflow tools (#188 TODO 3), 5
-    # durable-companion-session tools (#193 TODO 1): start/get/resume/
-    # pause/finish_companion_session, and 6 measurable-activity/companion-
-    # action tools (#194 TODO 1): begin_learning_activity/
-    # submit_activity_response/get_activity_result/finish_learning_activity/
-    # request_hint/explain_evidence.
-    assert CONTRACT_VERSION == "1.0.0" and len(TOOL_CONTRACTS) == 24
+    # 8 original tools, 3 companion task tools (#197 TODO 2):
+    # start_extraction_task/get_companion_task/cancel_companion_task (no
+    # start_plan_generation_task — #194 TODO 4 already gave plan_generation
+    # tasks a real generate-plan/confirm-plan lifecycle, so this doesn't
+    # duplicate it), 5 learner-aware dev-workflow tools (#188 TODO 3), 5
+    # durable-companion-session tools (#193 TODO 1): start/get/resume/pause/
+    # finish_companion_session, and 6 measurable-activity/companion-action
+    # tools (#194 TODO 1): begin_learning_activity/submit_activity_response/
+    # get_activity_result/finish_learning_activity/request_hint/
+    # explain_evidence.
+    assert CONTRACT_VERSION == "1.0.0" and len(TOOL_CONTRACTS) == 27
     for tool in TOOL_CONTRACTS:
         assert tool.schema_id.endswith(".schema.json")
         assert tool.input_schema["additionalProperties"] is False

@@ -15,17 +15,18 @@ from app.application.mcp.contracts import CONTRACT_VERSION, capabilities, valida
 from app.application.mcp.dispatcher import MCPDispatcher, UnboundMCPToolError, UnknownMCPToolError
 from app.application.mcp.idempotency import IdempotencyStore
 from app.application.mcp.bindings import (
-    add_word_handler, begin_learning_activity_handler, check_known_term_handler, create_study_session_handler,
-    due_reviews_handler, explain_evidence_handler, explain_for_user_handler, extract_vocabulary_handler,
-    finish_companion_session_handler, finish_learning_activity_handler, generate_exercises_handler,
-    get_activity_result_handler, get_companion_session_handler, language_profile_handler,
-    learning_progress_handler, pause_companion_session_handler, record_answer_handler,
-    record_context_occurrence_handler, request_hint_handler, resume_companion_session_handler,
-    search_words_handler, start_companion_session_handler, submit_activity_response_handler,
-    suggest_stretch_vocabulary_handler,
+    add_word_handler, begin_learning_activity_handler, cancel_companion_task_handler, check_known_term_handler,
+    create_study_session_handler, due_reviews_handler, explain_evidence_handler, explain_for_user_handler,
+    extract_vocabulary_handler, finish_companion_session_handler, finish_learning_activity_handler,
+    generate_exercises_handler, get_activity_result_handler, get_companion_session_handler,
+    get_companion_task_handler, language_profile_handler, learning_progress_handler,
+    pause_companion_session_handler, record_answer_handler, record_context_occurrence_handler,
+    request_hint_handler, resume_companion_session_handler, search_words_handler,
+    start_companion_session_handler, start_extraction_task_handler,
+    submit_activity_response_handler, suggest_stretch_vocabulary_handler,
 )
 from app.api.deps import (
-    CompanionActivityRepo, CompanionSessionRepo, DbSession, DiagnosisRepo, GroupRepo,
+    CompanionActivityRepo, CompanionSessionRepo, CompanionTaskRepo, DbSession, DiagnosisRepo, GroupRepo,
     LearningObservationRepo, OptionalAIProvider, PracticeExerciseRepo, RecallSettingsRepo, ReviewSessionRepo,
     WordRepo,
 )
@@ -75,13 +76,15 @@ def _audit(db, requester: str, request: InvokeRequest, decision: str, *, payload
     db.add(MCPAuditEventModel(requester=requester, tool=request.tool, decision=decision, event=event, previous_hash=previous.event_hash if previous else "0" * 64, event_hash=event_hash, created_at=utcnow()))
     db.flush()
 
-
-def _handlers(groups, words, sessions, exercises, provider, companion_sessions, recall_settings, diagnoses, observations, companion_activities) -> dict:
+def _handlers(groups, words, sessions, exercises, provider, companion_sessions, companion_tasks, recall_settings, diagnoses, observations, companion_activities) -> dict:
     return {
         "lensword.add_word": add_word_handler(words, groups), "lensword.search_words": search_words_handler(words, groups),
         "lensword.get_due_reviews": due_reviews_handler(words), "lensword.create_study_session": create_study_session_handler(sessions, words),
         "lensword.generate_exercises": generate_exercises_handler(exercises, words, groups), "lensword.get_learning_progress": learning_progress_handler(sessions),
         "lensword.record_answer": record_answer_handler(sessions, words, SpacedRepetitionScheduler()), "lensword.extract_vocabulary": extract_vocabulary_handler(groups, provider),
+        "lensword.start_extraction_task": start_extraction_task_handler(companion_tasks, companion_sessions, recall_settings),
+        "lensword.get_companion_task": get_companion_task_handler(companion_tasks, companion_sessions, recall_settings),
+        "lensword.cancel_companion_task": cancel_companion_task_handler(companion_tasks, companion_sessions, recall_settings),
         "lensword.start_companion_session": start_companion_session_handler(companion_sessions, recall_settings),
         "lensword.get_companion_session": get_companion_session_handler(companion_sessions, recall_settings),
         "lensword.resume_companion_session": resume_companion_session_handler(companion_sessions, recall_settings),
@@ -115,7 +118,7 @@ def _handlers(groups, words, sessions, exercises, provider, companion_sessions, 
 async def invoke(
     request: InvokeRequest, actor: CurrentMCPActor, db: DbSession, groups: GroupRepo, words: WordRepo,
     sessions: ReviewSessionRepo, exercises: PracticeExerciseRepo, provider: OptionalAIProvider,
-    companion_sessions: CompanionSessionRepo, recall_settings: RecallSettingsRepo,
+    companion_sessions: CompanionSessionRepo, companion_tasks: CompanionTaskRepo, recall_settings: RecallSettingsRepo,
     diagnoses: DiagnosisRepo, observations: LearningObservationRepo, companion_activities: CompanionActivityRepo,
 ) -> dict:
     requester = actor.requester
@@ -124,7 +127,7 @@ async def invoke(
         _audit(db, requester, request, "invalid_workspace", payload_bytes=payload_bytes)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid_workspace")
     grants = [MCPGrant(item.requester, item.server, item.tool, AccessClass(item.access), item.workspace, GrantMode(item.mode), item.expires_at, item.revoked_at, item.consumed_at) for item in db.query(MCPGrantModel)]
-    dispatcher = MCPDispatcher(_handlers(groups, words, sessions, exercises, provider, companion_sessions, recall_settings, diagnoses, observations, companion_activities))
+    dispatcher = MCPDispatcher(_handlers(groups, words, sessions, exercises, provider, companion_sessions, companion_tasks, recall_settings, diagnoses, observations, companion_activities))
     try: contract = dispatcher.contract_for(request.tool)
     except UnknownMCPToolError as exc:
         _audit(db, requester, request, "unknown_tool", payload_bytes=payload_bytes)
@@ -167,7 +170,7 @@ async def invoke(
 async def read_resource(
     uri: str, workspace: str, actor: CurrentMCPActor, db: DbSession, groups: GroupRepo, words: WordRepo,
     sessions: ReviewSessionRepo, exercises: PracticeExerciseRepo, provider: OptionalAIProvider,
-    companion_sessions: CompanionSessionRepo, recall_settings: RecallSettingsRepo,
+    companion_sessions: CompanionSessionRepo, companion_tasks: CompanionTaskRepo, recall_settings: RecallSettingsRepo,
     diagnoses: DiagnosisRepo, observations: LearningObservationRepo, companion_activities: CompanionActivityRepo,
 ) -> dict:
     """Scoped resource read for both local and remote MCP callers.
@@ -199,7 +202,7 @@ async def read_resource(
     if not is_valid_workspace(workspace):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid_workspace")
     tool = resource_to_tool[uri]
-    dispatcher = MCPDispatcher(_handlers(groups, words, sessions, exercises, provider, companion_sessions, recall_settings, diagnoses, observations, companion_activities))
+    dispatcher = MCPDispatcher(_handlers(groups, words, sessions, exercises, provider, companion_sessions, companion_tasks, recall_settings, diagnoses, observations, companion_activities))
     contract = dispatcher.contract_for(tool)
     grants = [MCPGrant(item.requester, item.server, item.tool, AccessClass(item.access), item.workspace, GrantMode(item.mode), item.expires_at, item.revoked_at, item.consumed_at) for item in db.query(MCPGrantModel)]
     decision = MCPPolicyGate(grants, calls=_request_calls).authorize(requester, "lensword", tool, contract.access, workspace, 0, utcnow())

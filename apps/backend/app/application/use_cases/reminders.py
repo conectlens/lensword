@@ -12,6 +12,7 @@ from app.domain.repositories import (
     ReminderRepository,
     UserRepository,
 )
+from app.domain.services.companion_deep_link import companion_notification_deep_link
 from app.domain.services.notification_channel import NotificationChannel
 from app.domain.services.recall_delivery import RecallDeliveryPolicy
 from app.domain.services.reminder_catalog import JobKind, LearnerFacts, ReminderCatalog
@@ -207,7 +208,12 @@ class DeliverReminderUseCase:
 
         message = f"{due_count} words are due for review." if due_count is not None else REMINDER_MESSAGE
 
+        # A deep link into the daily check-in prompt, but only for accounts
+        # that opted into the companion (#197 TODO 0) — reusing exactly the
+        # settings flag the companion's own endpoints gate on, not a new one.
+        deep_link = companion_notification_deep_link(settings.ai_companion_enabled)
+
         # Sorted so delivery order is deterministic rather than dependent on
         # set iteration order, which makes failures reproducible.
         for target in sorted(allowed, key=lambda c: c.value):
-            self.channel.send(user, message, target.value)
+            self.channel.send(user, message, target.value, deep_link)
