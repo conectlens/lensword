@@ -102,9 +102,12 @@ def render_product_page(products_at_route: list[dict], fragments: list[dict]) ->
     # A route can serve more than one registry product (mcp-server and
     # local-cli both live in apps/mcp and share /reference/changelog/mcp) —
     # render the union of their fragments rather than letting the second
-    # product silently overwrite the first's page.
+    # product silently overwrite the first's page. type: none fragments are
+    # a reviewed "no changelog entry" record (see .changes/README.md), not a
+    # user-facing change, so they're excluded here and surfaced instead in
+    # the overview's "No changelog entry" appendix.
     ids_at_route = {p["id"] for p in products_at_route}
-    relevant = [f for f in fragments if ids_at_route & set(f["products"])]
+    relevant = [f for f in fragments if ids_at_route & set(f["products"]) and f["type"] != "none"]
     title = " / ".join(p["name"] for p in products_at_route)
     statuses = ", ".join(f"{p['name']}: **{p.get('releaseStatus', 'unknown')}**" for p in products_at_route)
     lines = [
@@ -165,7 +168,9 @@ def render_overview(products: list[dict], fragments: list[dict]) -> str:
     lines.append("")
     lines.append("## Latest changes, all products")
     lines.append("")
-    for f in fragments:
+    visible = [f for f in fragments if f["type"] != "none"]
+    none_type = [f for f in fragments if f["type"] == "none"]
+    for f in visible:
         product_names = ", ".join(
             next(p["name"] for p in products if p["id"] == pid) for pid in f["products"]
         )
@@ -174,17 +179,48 @@ def render_overview(products: list[dict], fragments: list[dict]) -> str:
         lines.append(render_entry(f))
     lines.append("Also see [Main Branch Activity](/reference/changelog/main-branch-activity) — what's merged but not yet part of any release, and [Releases](/reference/releases/) — published, immutable release records (none exist yet).")
     lines.append("")
+    if none_type:
+        lines.append("## No changelog entry")
+        lines.append("")
+        lines.append(
+            "Changes reviewed and confirmed to have no user-observable effect "
+            "(internal-only, CI-only, docs-only) — see "
+            "[CONTRIBUTING.md](https://github.com/conectlens/lensword/blob/development/CONTRIBUTING.md) "
+            "for the fragment policy. Listed here for reviewer visibility, not "
+            "rendered on any product's changelog page."
+        )
+        lines.append("")
+        lines.append("| Date | Products | Reason | References |")
+        lines.append("|---|---|---|---|")
+        for f in none_type:
+            product_names = ", ".join(
+                next(p["name"] for p in products if p["id"] == pid) for pid in f["products"]
+            )
+            refs = f["references"]
+            ref_bits = [f"[#{i}](https://github.com/conectlens/lensword/issues/{i})" for i in refs.get("issues", [])]
+            ref_bits += [f"[PR #{pr}](https://github.com/conectlens/lensword/pull/{pr})" for pr in refs.get("pull_requests", [])]
+            lines.append(f"| {f['date']} | {product_names} | {f['reason']} | {', '.join(ref_bits) or '—'} |")
+        lines.append("")
     return "\n".join(lines)
 
 
 def git_log_entries(limit: int = 40) -> list[dict]:
     fmt = "%H%x1f%h%x1f%ad%x1f%an%x1f%s"
-    try:
-        raw = subprocess.run(
-            ["git", "log", f"-{limit}", "--date=short", f"--pretty=format:{fmt}", "development"],
-            cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", check=True,
-        ).stdout
-    except subprocess.CalledProcessError:
+    # A checkout that only fetched a pull request's merge ref (CI's default
+    # for pull_request events) has no local 'development' branch — only
+    # 'origin/development' — so that's tried first with a local fallback for
+    # a normal developer checkout, and HEAD as a last resort rather than
+    # silently emitting an empty ledger.
+    for ref in ("development", "origin/development", "HEAD"):
+        try:
+            raw = subprocess.run(
+                ["git", "log", f"-{limit}", "--date=short", f"--pretty=format:{fmt}", ref],
+                cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", check=True,
+            ).stdout
+            break
+        except subprocess.CalledProcessError:
+            continue
+    else:
         return []
     entries = []
     for line in raw.splitlines():

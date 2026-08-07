@@ -1,0 +1,78 @@
+id: enforce-changelog-ci
+products:
+  - web
+  - desktop
+  - browser-extension
+  - mcp-server
+  - local-cli
+  - backend
+type: none
+reason: >-
+  Adds CI enforcement (registry validation, fragment schema, product-impact
+  detection, generation idempotency) for the changelog/release-transparency
+  system #281 introduced. No product's runtime behavior changes — this is
+  contributor-workflow and CI tooling only.
+summary: >-
+  No user-observable change — contributor workflow and CI tooling only.
+technical_summary: >-
+  Adds scripts/changelog/validate_registry.py (registry structural/nav
+  consistency checks), scripts/changelog/check_product_impact.py (fails a
+  PR that touches a registered product's source with no changelog fragment;
+  warns, does not fail, on path/fragment product mismatches per #282's
+  "path detection is an aid, not proof" requirement), a type: none fragment
+  type with a mandatory reason for internal-only changes, evidence
+  requirements for "passed" verification claims (a command/workflow_url or
+  artifact reference, not just the word "passed"), and
+  .github/workflows/changelog.yml wiring all of it plus a
+  generate-then-diff idempotency check into pull_request CI. Deferred to a
+  later pass, documented in the PR: full historical Git evidence mining
+  (squash-merge/cherry-pick/bot-commit disambiguation beyond the existing
+  git-log ledger), and release-artifact/checksum/signing validation, since
+  no LensWord release has ever been cut to validate against. Branch
+  protection was not modified to require this new check — that is a
+  repository-admin setting change, left to the user.
+user_impact: >-
+  None — internal change. Contributors seem the same product-level docs;
+  what changes is that a PR touching a product's source without a
+  changelog fragment now fails CI instead of relying on a reviewer
+  checklist item.
+release_status: unreleased
+breaking: false
+migration: none
+known_limitations:
+  - Product-impact path detection uses a simple sourcePath prefix match; a
+    change that affects a product without touching files under its
+    registered path (e.g. a shared contract consumed indirectly) won't be
+    caught by the blocking check, only by the advisory warning if a
+    fragment happens to name a mismatched product.
+  - Release-evidence validation (tag format, duplicate versions, checksums,
+    signing claims) is not implemented — no release has ever been cut, so
+    there is nothing real to validate against yet.
+compatibility:
+  requires:
+    server_api: null
+verification:
+  automated_tests:
+    status: passed
+    commands:
+      - cd scripts/changelog && python -m pytest -v
+      - python scripts/changelog/validate_registry.py
+      - python scripts/changelog/schema.py .changes/*.yml
+      - python scripts/changelog/generate.py (idempotency confirmed via git diff --exit-code)
+    workflow_url: null
+  artifact_build:
+    status: not_run
+    artifacts: []
+  manual_platform_checks:
+    macos: not_applicable
+    windows: not_applicable
+    linux: not_applicable
+  production_observation:
+    status: not_applicable
+security_impact: none
+documentation_required: false
+date: '2026-08-07'
+references:
+  issues: [282]
+  pull_requests: []
+  commits: []

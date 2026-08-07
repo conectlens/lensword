@@ -17,7 +17,7 @@ id: unique-stable-kebab-case-id       # matches the filename (without .yml)
 products:                              # product IDs from docs/internal/product-registry.json
   - web
   - desktop
-type: added                            # added | changed | fixed | security | deprecated | removed | performance | documentation
+type: added                            # added | changed | fixed | security | deprecated | removed | performance | documentation | none
 summary: Concise, user-facing description of what changed.
 technical_summary: null                # optional — maintainer-facing detail the summary omits
 user_impact: What changes for someone using the product, in plain language.
@@ -30,11 +30,11 @@ compatibility:
     server_api: null                   # a version constraint string, or null if not declared
 verification:
   automated_tests:
-    status: not_run                    # passed | failed | not_run | unavailable
+    status: not_run                    # passed | failed | not_run | unavailable — "passed" requires commands or workflow_url below
     commands: []
     workflow_url: null
   artifact_build:
-    status: not_run                    # passed | failed | not_run | unavailable
+    status: not_run                    # passed | failed | not_run | unavailable — "passed" requires at least one artifact below
     artifacts: []
   manual_platform_checks:
     macos: not_run                     # passed | failed | not_run | not_applicable
@@ -49,6 +49,25 @@ references:
   issues: []
   pull_requests: []
   commits: []
+```
+
+**`type: none`** — the explicit "this change needs no changelog entry" fragment.
+Requires a mandatory `reason` field (a top-level key alongside the ones
+above) and `documentation_required: false`. It's excluded from every
+product's rendered changelog page, but still validated by the schema and
+listed in a "No changelog entry" appendix on the
+[changelog overview](../docs/reference/changelog/index.md) for reviewer
+visibility — this is what makes it a reviewed decision rather than a
+silent skip:
+
+```yaml
+id: ci-workflow-cleanup
+products: [web]
+type: none
+reason: Renamed a CI job for clarity; no user-observable effect.
+documentation_required: false
+# ...the rest of the required fields still apply (summary, user_impact,
+# verification, date, references, etc.) — only 'reason' is added on top.
 ```
 
 **Verification status is never inflated.** A passing backend test proves
@@ -66,24 +85,41 @@ every affected product's changelog from that one file, so the four views
 can't drift out of sync with each other.
 
 **Internal-only changes** (no externally observable behavior — a CI fix, a
-refactor, an internal test) still get a fragment; set
-`documentation_required: false` and use a `user_impact` of `None — internal
-change.` rather than skipping the fragment. A CI-enforced
-`changelog: none` escape hatch with a mandatory reason (for truly
-non-observable changes like typo fixes in code comments) is planned as
-part of #282's CI enforcement; it doesn't exist yet, so every change
-described in a pull request gets a real fragment for now.
+refactor, an internal test) still get a fragment; use `type: none` with a
+`reason` (see above) and `documentation_required: false`, and a
+`user_impact` of `None — internal change.`, rather than skipping the
+fragment.
+
+## CI enforcement (#282)
+
+`.github/workflows/changelog.yml` runs on every pull request and fails the
+build if:
+
+- `docs/internal/product-registry.json` is structurally invalid or out of
+  sync with the docs navigation (`validate_registry.py`)
+- any fragment under `.changes/` fails schema validation, including a
+  `passed` verification claim with no referenced commands, workflow, or
+  artifacts (`schema.py`)
+- the PR touches a registered product's source (`apps/frontend`,
+  `apps/backend`, `apps/desktop`, `apps/browser`, `apps/mcp`) and adds no
+  fragment at all (`check_product_impact.py`) — a fragment naming a product
+  the diff doesn't touch, or vice versa, is a warning, not a failure: path
+  detection is an aid, not proof
+- the generated changelog/releases/compatibility pages don't match what
+  `generate.py` actually produces from the current fragments + registry
 
 ## Validating fragments
 
 ```bash
+python scripts/changelog/validate_registry.py
 python scripts/changelog/schema.py .changes/*.yml
+python scripts/changelog/check_product_impact.py --base origin/development --head HEAD
 ```
 
-Exits non-zero and prints every problem found (unknown product ID, invalid
-enum value, missing required field, breaking change with no migration
-steps, security claim with `security_impact: none`, etc.) rather than
-stopping at the first one.
+`schema.py` exits non-zero and prints every problem found (unknown product
+ID, invalid enum value, missing required field, breaking change with no
+migration steps, security claim with `security_impact: none`, a `passed`
+status with no evidence, etc.) rather than stopping at the first one.
 
 ## Regenerating the changelog pages
 

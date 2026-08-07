@@ -190,7 +190,22 @@ npm test        # vitest run
    [`.changes/README.md`](.changes/README.md) for the schema, and
    [docs/reference/trust/release-process.md](docs/reference/trust/release-process.md)
    for how it's used downstream. Internal-only changes (refactors, CI
-   fixes) still get a fragment, marked `documentation_required: false`.
+   fixes) still get a fragment — use `type: none` with a `reason` (see
+   `.changes/README.md`) rather than `documentation_required: false` alone,
+   since the changelog CI check below looks for a fragment's presence, not
+   its content.
+
+   **This is enforced in CI** (`.github/workflows/changelog.yml`, #282): a
+   PR touching a registered product's source (`apps/frontend`,
+   `apps/backend`, `apps/desktop`, `apps/browser`, `apps/mcp`) fails if it
+   adds no fragment at all. Run the same checks locally before pushing:
+
+   ```bash
+   python scripts/changelog/validate_registry.py
+   python scripts/changelog/schema.py .changes/*.yml
+   python scripts/changelog/check_product_impact.py --base origin/development --head HEAD
+   python scripts/changelog/generate.py   # then check `git diff` is empty
+   ```
 4. Run the checks above.
 5. Open a pull request using the provided template, describing what changed
    and how it was tested.
