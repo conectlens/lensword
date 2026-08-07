@@ -30,6 +30,8 @@ from app.infrastructure.repositories import (
     SqlAlchemyCompanionSessionRepository,
     SqlAlchemyCompanionActivityRepository,
     SqlAlchemyCompanionTaskRepository,
+    SqlAlchemyCompanionLoopStateRepository,
+    SqlAlchemyCompanionSamplingEventRepository,
     SqlAlchemyAcquisitionStateRepository,
     SqlAlchemyMnemonicRepository,
     SqlAlchemyRecallSettingsRepository,
@@ -142,6 +144,14 @@ def get_companion_task_repository(db: DbSession) -> SqlAlchemyCompanionTaskRepos
     return SqlAlchemyCompanionTaskRepository(db)
 
 
+def get_companion_loop_state_repository(db: DbSession) -> SqlAlchemyCompanionLoopStateRepository:
+    return SqlAlchemyCompanionLoopStateRepository(db)
+
+
+def get_companion_sampling_event_repository(db: DbSession) -> SqlAlchemyCompanionSamplingEventRepository:
+    return SqlAlchemyCompanionSamplingEventRepository(db)
+
+
 def get_acquisition_state_repository(db: DbSession) -> SqlAlchemyAcquisitionStateRepository:
     return SqlAlchemyAcquisitionStateRepository(db)
 
@@ -244,6 +254,12 @@ CompanionActivityRepo = Annotated[
 ]
 CompanionTaskRepo = Annotated[
     SqlAlchemyCompanionTaskRepository, Depends(get_companion_task_repository)
+]
+CompanionLoopStateRepo = Annotated[
+    SqlAlchemyCompanionLoopStateRepository, Depends(get_companion_loop_state_repository)
+]
+CompanionSamplingEventRepo = Annotated[
+    SqlAlchemyCompanionSamplingEventRepository, Depends(get_companion_sampling_event_repository)
 ]
 AcquisitionStateRepo = Annotated[
     SqlAlchemyAcquisitionStateRepository, Depends(get_acquisition_state_repository)

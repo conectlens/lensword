@@ -41,6 +41,8 @@ from app.domain.services.companion_sessions import CompanionSession, CompanionTu
 from app.domain.services.companion_activities import LearningActivity
 from app.domain.services.companion_tasks import CompanionTask
 from app.domain.services.conversation import CorrectionFeedback
+from app.domain.services.companion_loop import CompanionLoopState
+from app.domain.services.companion_sampling_audit import CompanionSamplingEvent
 from app.domain.services.knowledge_graph import KnowledgeEdge
 
 
@@ -288,6 +290,24 @@ class CompanionTaskRepository(Protocol):
     def update(self, task: CompanionTask) -> CompanionTask: ...
     def list_for_session(self, user_id: int, session_id: str, limit: int = 50) -> list[CompanionTask]: ...
     def find_by_operation(self, user_id: int, session_id: str, operation_id: str) -> CompanionTask | None: ...
+
+
+class CompanionLoopStateRepository(Protocol):
+    """One durable loop-budget row per session (#195 TODO 2). `start`
+    replaces any prior state for the session — a fresh workflow gets a
+    fresh budget rather than inheriting a previous, possibly-stopped one."""
+
+    def get(self, user_id: int, session_id: str) -> CompanionLoopState | None: ...
+    def start(self, state: CompanionLoopState) -> CompanionLoopState: ...
+    def update(self, state: CompanionLoopState) -> CompanionLoopState: ...
+
+
+class CompanionSamplingEventRepository(Protocol):
+    """Append-only, hash-chained provenance records (#195 TODO 4)."""
+
+    def add(self, event: CompanionSamplingEvent) -> CompanionSamplingEvent: ...
+    def latest_hash(self) -> str | None: ...
+    def list_for_session(self, user_id: int, session_id: str, limit: int = 100) -> list[CompanionSamplingEvent]: ...
 
 
 class AcquisitionStateRepository(Protocol):

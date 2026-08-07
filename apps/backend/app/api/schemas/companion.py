@@ -157,3 +157,95 @@ class CompanionTaskResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     revision: int
+
+
+# --- Bounded companion loop budgets (#195 TODO 2) --------------------------
+
+
+class CompanionLoopStartRequest(BaseModel):
+    tool_calls: int = Field(default=8, ge=0, le=1000)
+    samples: int = Field(default=3, ge=0, le=1000)
+    elapsed_seconds: float = Field(default=300.0, ge=0, le=86400)
+    generated_tokens: int = Field(default=2_000, ge=0, le=1_000_000)
+    activities: int = Field(default=10, ge=0, le=1000)
+    writes: int = Field(default=10, ge=0, le=1000)
+
+
+class CompanionLoopReserveRequest(BaseModel):
+    kind: str = Field(min_length=1, max_length=16)
+    amount: int = Field(default=1, ge=1, le=1_000_000)
+
+
+class CompanionLoopStopRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=32)
+
+
+class CompanionLoopStateResponse(BaseModel):
+    session_id: str
+    tool_calls: int
+    samples: int
+    generated_tokens: int
+    activities: int
+    writes: int
+    consecutive_failures: int
+    stopped_reason: str | None
+    started_at: datetime
+    updated_at: datetime
+    revision: int
+
+
+# --- Sampling provenance/audit (#195 TODO 4) --------------------------------
+
+
+class CompanionSamplingEventCreateRequest(BaseModel):
+    requester: str = Field(min_length=1, max_length=255)
+    host_client_id: str | None = Field(default=None, max_length=128)
+    model: str | None = Field(default=None, max_length=128)
+    prompt_template_version: str = Field(min_length=1, max_length=32)
+    source_facts_ref: str = Field(min_length=1, max_length=128)
+    validation_result: str = Field(min_length=1, max_length=255)
+    fallback_path: str = Field(min_length=1, max_length=64)
+
+
+class CompanionSamplingEventResponse(BaseModel):
+    id: int
+    session_id: str
+    requester: str
+    host_client_id: str | None
+    model: str | None
+    prompt_template_version: str
+    source_facts_ref: str
+    validation_result: str
+    fallback_path: str
+    event_hash: str
+    created_at: datetime
+
+
+# --- Local-AI/deterministic companion reply fallback (#195 TODO 0) ---------
+# The client-sampling path itself lives in apps/mcp (only the MCP process
+# talks to the host); this endpoint is only the fallback #187's coach
+# discipline already defines: a local AI provider if one is configured,
+# otherwise deterministic content. Never diagnosis/mastery/retention truth.
+
+
+class CompanionReplyEvidenceRequest(BaseModel):
+    evidence_id: str = Field(min_length=1, max_length=64)
+    fact: str = Field(min_length=1, max_length=1_000)
+    source: str = Field(min_length=1, max_length=128)
+
+
+class CompanionReplyRequest(BaseModel):
+    task: str = Field(min_length=1, max_length=500)
+    target_language: str = Field(min_length=1, max_length=64)
+    intervention_type: str = Field(min_length=1, max_length=32)
+    evidence: list[CompanionReplyEvidenceRequest] = Field(min_length=1, max_length=20)
+    allowed_claims: list[str] = Field(default_factory=list, max_length=20)
+
+
+class CompanionReplyResponse(BaseModel):
+    text: str
+    evidence_ids: list[str]
+    content_type: str
+    provider: str
+    model: str | None
+    editable: bool

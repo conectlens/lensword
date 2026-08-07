@@ -1028,6 +1028,63 @@ class CompanionTaskModel(Base):
     revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
 
+class CompanionLoopStateModel(Base):
+    """One durable bounded-workflow budget per session (#195 TODO 2).
+
+    `session_id` is the primary key: a session has at most one active loop
+    budget at a time, and starting a new workflow replaces it rather than
+    accumulating unrelated rows.
+    """
+
+    __tablename__ = "companion_loop_states"
+
+    session_id: Mapped[str] = mapped_column(ForeignKey("companion_sessions.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    budget_tool_calls: Mapped[int] = mapped_column(Integer)
+    budget_samples: Mapped[int] = mapped_column(Integer)
+    budget_elapsed_seconds: Mapped[float] = mapped_column(Float)
+    budget_generated_tokens: Mapped[int] = mapped_column(Integer)
+    budget_activities: Mapped[int] = mapped_column(Integer)
+    budget_writes: Mapped[int] = mapped_column(Integer)
+    tool_calls: Mapped[int] = mapped_column(Integer, default=0)
+    samples: Mapped[int] = mapped_column(Integer, default=0)
+    generated_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    activities: Mapped[int] = mapped_column(Integer, default=0)
+    writes: Mapped[int] = mapped_column(Integer, default=0)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
+    stopped_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime)
+    revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+
+class CompanionSamplingEventModel(Base):
+    """Append-only, hash-chained sampling provenance (#195 TODO 4).
+
+    Mirrors `MCPAuditEventModel`'s hash-chain shape deliberately: both are
+    produced through `mcp_policy.redact_and_chain`, and this table never
+    stores a raw prompt or raw learner fact, only a bounded reference to
+    them (`source_facts_ref`).
+    """
+
+    __tablename__ = "companion_sampling_events"
+    __table_args__ = (Index("ix_companion_sampling_events_session_created", "session_id", "created_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[str] = mapped_column(ForeignKey("companion_sessions.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    requester: Mapped[str] = mapped_column(String(255), index=True)
+    host_client_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    prompt_template_version: Mapped[str] = mapped_column(String(32))
+    source_facts_ref: Mapped[str] = mapped_column(String(128))
+    validation_result: Mapped[str] = mapped_column(String(255))
+    fallback_path: Mapped[str] = mapped_column(String(64))
+    previous_hash: Mapped[str] = mapped_column(String(64))
+    event_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+
+
 class AcquisitionEventModel(Base):
     """One transition of a same-day acquisition ladder (issue #184).
 

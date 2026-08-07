@@ -42,6 +42,8 @@ from app.domain.services.companion_sessions import (
 from app.domain.services.companion_activities import ActivityStatus, ActivityType, LearningActivity
 from app.domain.services.companion_tasks import CompanionTask, CompanionTaskStatus, CompanionTaskType
 from app.domain.services.conversation import CorrectionFeedback, CorrectionOutcome
+from app.domain.services.companion_loop import CompanionLoopBudget, CompanionLoopState
+from app.domain.services.companion_sampling_audit import CompanionSamplingEvent, SamplingFallbackPath
 from app.domain.services.diagnosis_contracts import (
     AcquisitionState,
     Diagnosis,
@@ -100,6 +102,8 @@ from app.infrastructure.models import (
     CompanionTurnModel,
     CompanionActivityModel,
     CompanionTaskModel,
+    CompanionLoopStateModel,
+    CompanionSamplingEventModel,
 )
 
 logger = logging.getLogger(__name__)
@@ -2746,6 +2750,154 @@ class SqlAlchemyCompanionTaskRepository:
             )
         )
         return _companion_task_to_domain(model) if model else None
+
+
+def _companion_loop_state_to_domain(m: CompanionLoopStateModel) -> CompanionLoopState:
+    return CompanionLoopState(
+        session_id=m.session_id,
+        user_id=m.user_id,
+        budget=CompanionLoopBudget(
+            tool_calls=m.budget_tool_calls,
+            samples=m.budget_samples,
+            elapsed_seconds=m.budget_elapsed_seconds,
+            generated_tokens=m.budget_generated_tokens,
+            activities=m.budget_activities,
+            writes=m.budget_writes,
+        ),
+        started_at=m.started_at,
+        updated_at=m.updated_at,
+        tool_calls=m.tool_calls,
+        samples=m.samples,
+        generated_tokens=m.generated_tokens,
+        activities=m.activities,
+        writes=m.writes,
+        consecutive_failures=m.consecutive_failures,
+        stopped_reason=m.stopped_reason,
+        revision=m.revision,
+    )
+
+
+class SqlAlchemyCompanionLoopStateRepository:
+    """One durable loop-budget row per session (#195 TODO 2)."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get(self, user_id: int, session_id: str) -> CompanionLoopState | None:
+        model = self.db.scalar(
+            select(CompanionLoopStateModel).where(
+                CompanionLoopStateModel.session_id == session_id,
+                CompanionLoopStateModel.user_id == user_id,
+            )
+        )
+        return _companion_loop_state_to_domain(model) if model else None
+
+    def start(self, state: CompanionLoopState) -> CompanionLoopState:
+        # A fresh workflow replaces any prior state for the session rather
+        # than accumulating unrelated rows or inheriting a stopped budget.
+        existing = self.db.get(CompanionLoopStateModel, state.session_id)
+        if existing is not None:
+            self.db.delete(existing)
+            self.db.flush()
+        model = CompanionLoopStateModel(
+            session_id=state.session_id,
+            user_id=state.user_id,
+            budget_tool_calls=state.budget.tool_calls,
+            budget_samples=state.budget.samples,
+            budget_elapsed_seconds=state.budget.elapsed_seconds,
+            budget_generated_tokens=state.budget.generated_tokens,
+            budget_activities=state.budget.activities,
+            budget_writes=state.budget.writes,
+            tool_calls=state.tool_calls,
+            samples=state.samples,
+            generated_tokens=state.generated_tokens,
+            activities=state.activities,
+            writes=state.writes,
+            consecutive_failures=state.consecutive_failures,
+            stopped_reason=state.stopped_reason,
+            started_at=state.started_at,
+            updated_at=state.updated_at,
+            revision=state.revision,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _companion_loop_state_to_domain(model)
+
+    def update(self, state: CompanionLoopState) -> CompanionLoopState:
+        model = self.db.get(CompanionLoopStateModel, state.session_id)
+        if model is None or model.user_id != state.user_id:
+            raise ValueError("Companion loop state not found")
+        model.tool_calls = state.tool_calls
+        model.samples = state.samples
+        model.generated_tokens = state.generated_tokens
+        model.activities = state.activities
+        model.writes = state.writes
+        model.consecutive_failures = state.consecutive_failures
+        model.stopped_reason = state.stopped_reason
+        model.updated_at = state.updated_at
+        model.revision = state.revision
+        self.db.flush()
+        return _companion_loop_state_to_domain(model)
+
+
+def _companion_sampling_event_to_domain(m: CompanionSamplingEventModel) -> CompanionSamplingEvent:
+    return CompanionSamplingEvent(
+        id=m.id,
+        session_id=m.session_id,
+        user_id=m.user_id,
+        requester=m.requester,
+        host_client_id=m.host_client_id,
+        model=m.model,
+        prompt_template_version=m.prompt_template_version,
+        source_facts_ref=m.source_facts_ref,
+        validation_result=m.validation_result,
+        fallback_path=SamplingFallbackPath(m.fallback_path),
+        previous_hash=m.previous_hash,
+        event_hash=m.event_hash,
+        created_at=m.created_at,
+    )
+
+
+class SqlAlchemyCompanionSamplingEventRepository:
+    """Append-only, hash-chained sampling provenance (#195 TODO 4)."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add(self, event: CompanionSamplingEvent) -> CompanionSamplingEvent:
+        model = CompanionSamplingEventModel(
+            session_id=event.session_id,
+            user_id=event.user_id,
+            requester=event.requester,
+            host_client_id=event.host_client_id,
+            model=event.model,
+            prompt_template_version=event.prompt_template_version,
+            source_facts_ref=event.source_facts_ref,
+            validation_result=event.validation_result,
+            fallback_path=event.fallback_path.value,
+            previous_hash=event.previous_hash,
+            event_hash=event.event_hash,
+            created_at=event.created_at,
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _companion_sampling_event_to_domain(model)
+
+    def latest_hash(self) -> str | None:
+        model = self.db.scalar(select(CompanionSamplingEventModel).order_by(CompanionSamplingEventModel.id.desc()))
+        return model.event_hash if model else None
+
+    def list_for_session(self, user_id: int, session_id: str, limit: int = 100) -> list[CompanionSamplingEvent]:
+        stmt = (
+            select(CompanionSamplingEventModel)
+            .where(
+                CompanionSamplingEventModel.user_id == user_id,
+                CompanionSamplingEventModel.session_id == session_id,
+            )
+            .order_by(CompanionSamplingEventModel.created_at.desc(), CompanionSamplingEventModel.id.desc())
+            .limit(min(max(limit, 1), 200))
+        )
+        return [_companion_sampling_event_to_domain(model) for model in self.db.scalars(stmt)]
 
 
 def _acquisition_state_to_domain(m: AcquisitionEventModel) -> AcquisitionState:
