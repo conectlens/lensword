@@ -17,7 +17,14 @@
   <a href="mailto:lensword@conectlens.com"><img src="https://img.shields.io/badge/contact-lensword%40conectlens.com-blue?logo=maildotcom&logoColor=white" alt="Contact" /></a>
 </p>
 
-No release has shipped yet (see [Current status and known limitations](#current-status-and-known-limitations)) — this is an active, evidence-documented open-source project, not a finished product.
+<p align="center">
+  <a href="https://lensword-frontend.pages.dev"><strong>Try the web app</strong></a> ·
+  <a href="https://conectlens.github.io/lensword/">Documentation</a> ·
+  <a href="https://github.com/conectlens/lensword/blob/development/docs/internal/render-deployment.md">API</a> ·
+  <a href="https://github.com/conectlens/lensword/blob/development/docs/reference/mcp-remote-transport.md">MCP server</a>
+</p>
+
+No release has shipped yet (see [Current status and known limitations](#current-status-and-known-limitations)) — this is an active, evidence-documented open-source project, not a finished product. The links above reflect real, current deployment status, not aspirational ones: the web app and docs site are live; the hosted API and MCP server are not deployed yet (see the linked docs for what that will look like once they are).
 
 ## What can I do with LensWord?
 

@@ -11,6 +11,8 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 
 | Date | Commit | Author | Subject | Changelog fragment |
 |---|---|---|---|---|
+| 2026-08-07 | [e6f51af](https://github.com/conectlens/lensword/commit/e6f51af10c9d2bc172eaa5be3790882a423cdcad) | Lenser | Fix render.yaml (real validation error) and a frontend URL-construction bug | none (predates this system) |
+| 2026-08-07 | [a400b2d](https://github.com/conectlens/lensword/commit/a400b2d0574733141d4b82aea378459b05bab352) | Lenser | Add Render.com as a free deployment path for backend/MCP | none (predates this system) |
 | 2026-08-07 | [57f2d45](https://github.com/conectlens/lensword/commit/57f2d45dc57364a887429ba6b9c53d1b895161e7) | Lenser | Auto-create the Cloudflare Pages project before deploying to it | none (predates this system) |
 | 2026-08-07 | [660933c](https://github.com/conectlens/lensword/commit/660933cac7ae276656028b647eef55cf955803db) | Lenser | Bump deploy workflows to Node 22 - wrangler@4.120.0 requires it | none (predates this system) |
 | 2026-08-07 | [8467fc8](https://github.com/conectlens/lensword/commit/8467fc8dbea6743af8a572caa488ae07818fd231) | Lenser | Scope deploy workflows to the production GitHub Environment | none (predates this system) |
@@ -49,7 +51,5 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 | 2026-08-07 | [41a8fd5](https://github.com/conectlens/lensword/commit/41a8fd549d54ac8fd260977de9c2e0ba978b14be) | Ömer Faruk Coşkun | Wire the evidence-grounded companion coach into the intervention flow (issue #187) (#277) | none (predates this system) |
 | 2026-08-07 | [0fdcef0](https://github.com/conectlens/lensword/commit/0fdcef0996ee5514723762a057e36b2f8429d0a9) | Ömer Faruk Coşkun | Fix MCP companion privacy leak and finish #192's resource/completion gaps (#279) | none (predates this system) |
 | 2026-08-07 | [c7b7cdb](https://github.com/conectlens/lensword/commit/c7b7cdb34f85ca2c9dafbe6313452d371261f4ae) | Ömer Faruk Coşkun | Build the Learning DNA efficacy model, attribution, exploration policy, and UI (issue #186) (#267) | none (predates this system) |
-| 2026-08-07 | [588259b](https://github.com/conectlens/lensword/commit/588259b03220927c579504b50d4e245343350d57) | Ömer Faruk Coşkun | Complete diagnosis-to-intervention planner and wire contrast cards to it (#185, #206) (#265) | none (predates this system) |
-| 2026-08-07 | [8d232f1](https://github.com/conectlens/lensword/commit/8d232f13f6846be83a13775139eb44bfb72b2fb7) | Ömer Faruk Coşkun | Merge pull request #261 from conectlens/issue-252-final-integration | none (predates this system) |
 
 Generated from `git log -40 development` — 40 commits shown.
