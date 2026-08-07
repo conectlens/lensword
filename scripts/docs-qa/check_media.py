@@ -96,7 +96,9 @@ def check_secrets_and_paths(media_dir: pathlib.Path) -> list[str]:
                 errors.append(f"{rel}: looks like it contains a {label} — verify and remove before committing")
         for email in EMAIL_RE.findall(text):
             if not FIXTURE_EMAIL_ALLOWLIST.search(email):
-                errors.append(f"{rel}: contains an email address not on an allowlisted fixture domain ({email!r}) — confirm this isn't a real address")
+                errors.append(
+                    f"{rel}: contains an email address not on an allowlisted fixture domain — confirm this isn't a real address"
+                )
     return errors
 
 
