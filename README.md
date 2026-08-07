@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/logo/webp/lensword-lockup-white.webp">
+    <img src="brand/logo/webp/lensword-lockup-ink.webp" alt="LensWord" width="280">
+  </picture>
+</p>
+
 # LensWord
 
 [![CI](https://github.com/conectlens/lensword/actions/workflows/ci.yml/badge.svg)](https://github.com/conectlens/lensword/actions/workflows/ci.yml)
