@@ -10,6 +10,21 @@ from app.domain.services.mcp_policy import AccessClass
 CONTRACT_VERSION = "1.0.0"
 MAX_PAGE_SIZE = 100
 
+# Bounded, closed vocabulary of where a developer-context sighting came from
+# (issue #188 TODOs 2/4). Kept here, beside the contract that names it in a
+# tool schema, so the schema and the use case that enforces it again
+# (app.application.use_cases.mcp_dev_workflow) can never quietly diverge.
+CONTEXT_KINDS = (
+    "commit_message",
+    "pull_request",
+    "readme",
+    "documentation",
+    "terminal_output",
+    "prompt",
+    "explanation",
+    "stack_trace",
+)
+
 @dataclass(frozen=True, slots=True)
 class ToolContract:
     name: str
@@ -32,6 +47,17 @@ TOOL_CONTRACTS = tuple(ToolContract(name, f"https://lensword.app/mcp/{CONTRACT_V
     ("lensword.generate_exercises", AccessClass.WRITE, _schema({"word_id":{"type":"integer","minimum":1}, "kind":{"enum":["translation","definition","cloze"]}}, ["word_id"], write=True)),
     ("lensword.get_learning_progress", AccessClass.READ, _schema({"week":{"type":"string","maxLength":32}})),
     ("lensword.record_answer", AccessClass.WRITE, _schema({"session_id":{"type":"integer","minimum":1}, "word_id":{"type":"integer","minimum":1}, "outcome":{"enum":["correct","incorrect","skipped"]}}, ["session_id","word_id","outcome"], write=True)),
+    # Learner-aware developer-workflow tools (issue #188 TODO 3). Every one
+    # of these but the last is read-only by construction: none of them can
+    # mark a word mastered or create a Diagnosis. record_context_occurrence
+    # is the sole write, and it writes a single low-trust LearningObservation
+    # (never a Word/ReviewState mutation) — see
+    # app.application.use_cases.mcp_dev_workflow for why that boundary holds.
+    ("lensword.get_language_profile", AccessClass.READ, _schema({})),
+    ("lensword.check_known_term", AccessClass.READ, _schema({"term":{"type":"string","minLength":1,"maxLength":255}}, ["term"])),
+    ("lensword.explain_for_user", AccessClass.READ, _schema({"word_id":{"type":"integer","minimum":1}}, ["word_id"])),
+    ("lensword.suggest_stretch_vocabulary", AccessClass.READ, _schema({"group_id":{"type":"integer","minimum":1}, "limit":{"type":"integer","minimum":1,"maximum":50}})),
+    ("lensword.record_context_occurrence", AccessClass.WRITE, _schema({"word_id":{"type":"integer","minimum":1}, "context_kind":{"enum":list(CONTEXT_KINDS)}, "outcome":{"enum":["correct","incorrect"]}, "confirmed":{"type":"boolean"}}, ["word_id","context_kind","outcome","confirmed"], write=True)),
 ))
 
 def capabilities() -> dict:
@@ -75,4 +101,6 @@ def validate_payload(contract: ToolContract, payload: dict) -> str | None:
             item_rules = rules.get("items", {})
             if item_rules.get("type") == "string" and any(not isinstance(item, str) or len(item) > item_rules.get("maxLength", float("inf")) for item in value):
                 return f"{name} contains an invalid item"
+        elif expected == "boolean" and not isinstance(value, bool):
+            return f"{name} must be a boolean"
     return None
