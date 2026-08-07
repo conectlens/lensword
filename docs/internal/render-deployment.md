@@ -35,9 +35,11 @@ to `wrangler deploy --dry-run` available here). The safer first attempt:
 4. **Environment variables** — set these (see
    `apps/backend/.env.example` for what each one does):
    - `ENVIRONMENT=production`
-   - `DATABASE_URL` — **your Supabase project's *direct* connection
-     string** (port `5432`), not the pgbouncer pooler (port `6543`). See
-     "Supabase-specific: which connection string" below for why.
+   - `DATABASE_URL` — **your Supabase project's *Session pooler* connection
+     string** (port `5432`, host `aws-0-<region>.pooler.supabase.com`) —
+     not Direct connection (IPv6-only, unreachable from Render) and not
+     Transaction pooler (port `6543`). See "Supabase-specific: which
+     connection string" below for why.
    - `SECRET_KEY` — generate with `openssl rand -hex 32`, or let Render's
      "Generate" button do it.
    - `CORS_ORIGINS=["https://lensword.conectlens.com","https://lensword-frontend.pages.dev"]`
@@ -71,25 +73,54 @@ or workflow is needed.
 
 ## Supabase-specific: which connection string
 
-Supabase gives you two connection strings for the same database:
+**Use the Session pooler string, not the Direct connection string.** This
+page originally recommended Direct connection (reasoning below is still
+correct on its own terms — it's just beaten by a bigger, unrelated
+problem). Confirmed wrong by a real Render deploy failure:
 
-- **Direct connection** (port `5432`) — a normal Postgres connection, no
-  pooler in front of it.
-- **Pooler / Transaction mode** (port `6543`, pgbouncer) — built for
-  serverless functions that open/close many short-lived connections
-  quickly. Transaction-mode pgbouncer does not support some things
-  SQLAlchemy and Alembic use (server-side prepared statements, certain
-  session-level operations), which can surface as confusing migration or
-  query failures that don't look like a connection problem at first.
+```
+psycopg.OperationalError: connection is bad: connection to server at
+"2406:da12:557:f800:...", port 5432 failed: Network is unreachable
+```
+
+Supabase's Direct connection hostname (`db.<ref>.supabase.co`) resolves to
+an **IPv6-only** address for most projects today (Supabase dropped the
+free IPv4 address for new/existing direct-connection hosts; it's a paid
+add-on now). Render's network — at least on the plans used here — has no
+IPv6 egress, so the connection never leaves the container. This has
+nothing to do with pgbouncer/prepared-statement behavior; it's a plain
+network-reachability failure, and it happens before any query runs (this
+is why it surfaced inside Alembic's very first `connectable.connect()`
+call, not as an app-level error).
+
+Supabase gives you three connection strings for the same database
+(Database settings page in the dashboard):
+
+- **Direct connection** (port `5432`, host `db.<ref>.supabase.co`) — IPv6
+  only on most projects now. Don't use this from Render.
+- **Session pooler** (port `5432`, host
+  `aws-0-<region>.pooler.supabase.com`) — Supavisor in session mode: each
+  client holds a dedicated server-side connection for the life of the
+  session, so it behaves like a direct connection for everything
+  SQLAlchemy/Alembic need (prepared statements, `SET`, etc.), and it's
+  **IPv4-compatible**. This is the one to use here.
+- **Transaction pooler** (port `6543`, same pooler host) — connections are
+  handed back to the pool between transactions, so server-side prepared
+  statements and some session-level operations don't work reliably.
+  Avoid for this app regardless of the IPv4/IPv6 question.
 
 This app already does its own connection pooling in-process
 (`DB_POOL_SIZE`/`DB_MAX_OVERFLOW` in `apps/backend/.env.example`) and runs
-as a persistent container (not a serverless function), so it has no need
-for Supabase's pooler layer at this scale — **use the direct connection
-string** for `DATABASE_URL` and this entire class of problem doesn't come
-up. Supabase's dashboard labels both clearly on the project's Database
-settings page; copy the one marked "Direct connection," not "Transaction
-pooler" or "Session pooler."
+as a persistent container, so Session pooler's per-client dedicated
+connection isn't wasted the way it would be for a serverless function —
+it's just the IPv4-reachable equivalent of Direct connection. Copy the
+string labeled **"Session pooler"**, not "Direct connection" or
+"Transaction pooler."
+
+Not yet verified by a successful deploy — this is the diagnosis from the
+real error above; applying it (updating `DATABASE_URL` on the Render
+dashboard to the Session pooler string and redeploying) is still an open
+step.
 
 Separately — Supabase's (and Neon's, and Railway's) default copy-paste
 string is `postgresql://...`, not `postgresql+psycopg://...`. This used

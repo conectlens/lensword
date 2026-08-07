@@ -11,6 +11,7 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 
 | Date | Commit | Author | Subject | Changelog fragment |
 |---|---|---|---|---|
+| 2026-08-07 | [1a97578](https://github.com/conectlens/lensword/commit/1a975782e6ffe93eb0ac6a2c85e36c77bc657c72) | Lenser | Add OAuth discovery (RFC 9728) to the remote MCP server | none (predates this system) |
 | 2026-08-07 | [2aa0bb5](https://github.com/conectlens/lensword/commit/2aa0bb55a73f8bea31c84b71024d03c8d9612452) | Lenser | Remove Cloudflare Containers config for backend/MCP; fix a real Postgres driver bug | none (predates this system) |
 | 2026-08-07 | [8d6ec3f](https://github.com/conectlens/lensword/commit/8d6ec3f2cc4656a2d96a8e272dfd995823228e66) | Lenser | Add production links to README, close the loop on the API-URL bug fix | none (predates this system) |
 | 2026-08-07 | [e6f51af](https://github.com/conectlens/lensword/commit/e6f51af10c9d2bc172eaa5be3790882a423cdcad) | Lenser | Fix render.yaml (real validation error) and a frontend URL-construction bug | none (predates this system) |
@@ -50,6 +51,5 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 | 2026-08-07 | [261d892](https://github.com/conectlens/lensword/commit/261d8925ad0600d03565d446bc858bc7db5311b4) | Ömer Faruk Coşkun | Close remaining gaps in durable companion sessions (#193) (#285) | none (predates this system) |
 | 2026-08-07 | [21daddf](https://github.com/conectlens/lensword/commit/21daddf85b1bf27d9a28d8c86d236a096173ec03) | Ömer Faruk Coşkun | Domain-neutral diagnosis kernel and extension contract (issue #189) (#284) | none (predates this system) |
 | 2026-08-07 | [b21a399](https://github.com/conectlens/lensword/commit/b21a399715793e62f0c108d2be5bbfadd52ed6a0) | Ömer Faruk Coşkun | Issue #188: CLI commands add/explain/diagnose/review, learner-aware MCP tools, context ranking (#266) | none (predates this system) |
-| 2026-08-07 | [41a8fd5](https://github.com/conectlens/lensword/commit/41a8fd549d54ac8fd260977de9c2e0ba978b14be) | Ömer Faruk Coşkun | Wire the evidence-grounded companion coach into the intervention flow (issue #187) (#277) | none (predates this system) |
 
 Generated from `git log -40 development` — 40 commits shown.
