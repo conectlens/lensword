@@ -5,13 +5,21 @@ Maintainer/ops reference, not part of the published docs site (`srcExclude:
 for this repo and exactly what to configure before they can run
 successfully.
 
+> **Cloudflare Containers (backend/MCP) requires the Workers Paid plan
+> ($5/mo minimum)** — confirmed by an actual "Unauthorized" failure
+> deploying against a Free-plan account, not assumed from pricing docs.
+> `deploy-backend.yml`/`deploy-mcp.yml` are manual-trigger only
+> (`workflow_dispatch`) until that's upgraded. **[render-deployment.md](./render-deployment.md)**
+> is the free path in active use today for those two services — Pages
+> (frontend) has no such gate and is unaffected.
+
 ## What's deployed, and how
 
 | Service | Cloudflare product | Config | Workflow |
 |---|---|---|---|
 | `apps/frontend` | Pages (static assets) | `apps/frontend/wrangler.toml` | `.github/workflows/deploy-frontend.yml` |
-| `apps/backend` | Containers (real Docker image, FastAPI/Alembic/Postgres unchanged) | `apps/backend/wrangler.toml` + `cf-worker/index.ts` | `.github/workflows/deploy-backend.yml` |
-| `apps/mcp` | Containers (remote Streamable HTTP transport only — the default stdio transport has no server to deploy) | `apps/mcp/wrangler.toml` + `cf-worker/index.ts` | `.github/workflows/deploy-mcp.yml` |
+| `apps/backend` | Containers (real Docker image, FastAPI/Alembic/Postgres unchanged) — **requires Workers Paid**, see banner above | `apps/backend/wrangler.toml` + `cf-worker/index.ts` | `.github/workflows/deploy-backend.yml` (manual) |
+| `apps/mcp` | Containers (remote Streamable HTTP transport only — the default stdio transport has no server to deploy) — **requires Workers Paid** | `apps/mcp/wrangler.toml` + `cf-worker/index.ts` | `.github/workflows/deploy-mcp.yml` (manual) |
 
 **Why Containers, not classic Workers, for backend/MCP:** both are real
 Python processes (FastAPI+uvicorn+Alembic+psycopg for the backend; a

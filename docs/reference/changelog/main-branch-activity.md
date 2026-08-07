@@ -11,6 +11,10 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 
 | Date | Commit | Author | Subject | Changelog fragment |
 |---|---|---|---|---|
+| 2026-08-07 | [57f2d45](https://github.com/conectlens/lensword/commit/57f2d45dc57364a887429ba6b9c53d1b895161e7) | Lenser | Auto-create the Cloudflare Pages project before deploying to it | none (predates this system) |
+| 2026-08-07 | [660933c](https://github.com/conectlens/lensword/commit/660933cac7ae276656028b647eef55cf955803db) | Lenser | Bump deploy workflows to Node 22 - wrangler@4.120.0 requires it | none (predates this system) |
+| 2026-08-07 | [8467fc8](https://github.com/conectlens/lensword/commit/8467fc8dbea6743af8a572caa488ae07818fd231) | Lenser | Scope deploy workflows to the production GitHub Environment | none (predates this system) |
+| 2026-08-07 | [802d1d7](https://github.com/conectlens/lensword/commit/802d1d73846b12e8a082109a2774a9f14036b025) | Lenser | Fix real CI failures from the first-ever run on main: desktop build path bug, wrangler version conflict, docker-compose env gaps | none (predates this system) |
 | 2026-08-07 | [47927b7](https://github.com/conectlens/lensword/commit/47927b7fd247d50c5b9912f009f256d6b5bb39ae) | Ömer Faruk Coşkun | Add Cloudflare deployment infrastructure (backend/MCP Containers, frontend Pages) (#310) | none (predates this system) |
 | 2026-08-07 | [9d52f69](https://github.com/conectlens/lensword/commit/9d52f69f4378a8a34f5eae475ba089717e949cc2) | Lenser | Regenerate changelog ledger against current development | none (predates this system) |
 | 2026-08-07 | [e58dd7d](https://github.com/conectlens/lensword/commit/e58dd7d5e6817010649f8d8c8e83dacc068d9fd7) | Lenser | Regenerate changelog ledger against current development | none (predates this system) |
@@ -47,9 +51,5 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 | 2026-08-07 | [c7b7cdb](https://github.com/conectlens/lensword/commit/c7b7cdb34f85ca2c9dafbe6313452d371261f4ae) | Ömer Faruk Coşkun | Build the Learning DNA efficacy model, attribution, exploration policy, and UI (issue #186) (#267) | none (predates this system) |
 | 2026-08-07 | [588259b](https://github.com/conectlens/lensword/commit/588259b03220927c579504b50d4e245343350d57) | Ömer Faruk Coşkun | Complete diagnosis-to-intervention planner and wire contrast cards to it (#185, #206) (#265) | none (predates this system) |
 | 2026-08-07 | [8d232f1](https://github.com/conectlens/lensword/commit/8d232f13f6846be83a13775139eb44bfb72b2fb7) | Ömer Faruk Coşkun | Merge pull request #261 from conectlens/issue-252-final-integration | none (predates this system) |
-| 2026-08-07 | [8af2c45](https://github.com/conectlens/lensword/commit/8af2c45b269aa6e89ba4cbb810f464f4a5b8686f) | ÖMER FARUK COŞKUN | Add bounded offline context import CLI | none (predates this system) |
-| 2026-08-07 | [399d138](https://github.com/conectlens/lensword/commit/399d138b6320fb78b36ffe185100ecfa5a30d15c) | ÖMER FARUK COŞKUN | Audit companion task tenant isolation | none (predates this system) |
-| 2026-08-07 | [3d6232b](https://github.com/conectlens/lensword/commit/3d6232bdba9eec39e09db72241d309292b06e022) | ÖMER FARUK COŞKUN | Add durable companion task lifecycle | none (predates this system) |
-| 2026-08-07 | [b3d78fa](https://github.com/conectlens/lensword/commit/b3d78fae77908c4b65d4c15af844bdd389832c8f) | ÖMER FARUK COŞKUN | Trigger CI for consolidated companion implementation | none (predates this system) |
 
 Generated from `git log -40 development` — 40 commits shown.

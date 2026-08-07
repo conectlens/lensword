@@ -1,18 +1,19 @@
 name: Deploy Backend (Cloudflare)
 
 # Deploys apps/backend as a Cloudflare Container (see apps/backend/wrangler.toml
-# and cf-worker/index.ts) whenever main receives changes under apps/backend/.
-# Postgres itself is NOT hosted by Cloudflare — DATABASE_URL must point at a
-# real external Postgres (Neon/Supabase/Railway/RDS/etc.); see
-# docs/internal/cloudflare-deployment.md for the full one-time setup,
-# including exactly which token scopes to create and how to add the
-# required secrets without ever pasting them into chat or committing them.
+# and cf-worker/index.ts). Postgres itself is NOT hosted by Cloudflare —
+# DATABASE_URL must point at a real external Postgres (Neon/Supabase/
+# Railway/RDS/etc.); see docs/internal/cloudflare-deployment.md for the
+# full one-time setup.
+#
+# Manual-trigger only, not on push: Cloudflare Containers requires the
+# Workers Paid plan ($5/mo minimum) even to attempt a deploy — confirmed
+# by a real "Unauthorized" failure against a Free-plan account. render.yaml
+# (repo root) is the actual free deployment path in use today; this stays
+# here, working and ready, for whenever the account is upgraded or this
+# becomes the preferred path again. Run manually via the Actions tab or
+# `gh workflow run "Deploy Backend (Cloudflare)"` once that's true.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "apps/backend/**"
-      - ".github/workflows/deploy-backend.yml"
   workflow_dispatch: {}
 
 permissions:

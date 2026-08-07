@@ -1,17 +1,16 @@
 name: Deploy MCP Server (Cloudflare)
 
 # Deploys apps/mcp's remote Streamable HTTP transport as a Cloudflare
-# Container (see apps/mcp/wrangler.toml and cf-worker/index.ts) whenever
-# main receives changes under apps/mcp/. The stdio transport (this
-# package's default, and the only transport most installs use) has no
-# server to deploy — this workflow only concerns the opt-in remote
-# transport (issue #196).
+# Container (see apps/mcp/wrangler.toml and cf-worker/index.ts). The stdio
+# transport (this package's default, and the only transport most installs
+# use) has no server to deploy — this workflow only concerns the opt-in
+# remote transport (issue #196).
+#
+# Manual-trigger only, not on push — see deploy-backend.yml's identical
+# comment: Cloudflare Containers needs the Workers Paid plan, confirmed
+# unavailable right now by a real "Unauthorized" failure. render.yaml is
+# the current free path.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "apps/mcp/**"
-      - ".github/workflows/deploy-mcp.yml"
   workflow_dispatch: {}
 
 permissions:
