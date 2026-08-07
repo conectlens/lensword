@@ -1,0 +1,67 @@
+id: render-supabase-ipv4-pooler-fix
+products:
+  - backend
+  - mcp-server
+type: none
+reason: >-
+  Corrects docs/internal/render-deployment.md's Supabase connection-string
+  guidance, which was wrong in a way that broke a real deploy. No
+  application code changed — the fix is which connection string an
+  operator pastes into Render's dashboard, not anything this repo runs.
+summary: >-
+  No user-observable change — docs/internal/render-deployment.md now
+  recommends Supabase's Session pooler connection string instead of
+  Direct connection for Render deployments.
+technical_summary: >-
+  A real Render deploy of lensword-backend (commit 2074c3c) failed inside
+  Alembic's first connection attempt: `psycopg.OperationalError: ...
+  Network is unreachable` against an IPv6 address. Root cause: Supabase's
+  Direct connection hostname (db.<ref>.supabase.co) resolves IPv6-only on
+  most projects today (the free IPv4 address for direct connections was
+  dropped; it's a paid add-on now), and Render's network has no IPv6
+  egress on the plans used here. This is unrelated to the
+  pgbouncer/prepared-statement reasoning the doc previously used to
+  justify Direct connection over the Transaction pooler (6543) — that
+  reasoning was correct on its own terms but beaten by a plain
+  network-reachability problem. The doc now recommends Supabase's Session
+  pooler (port 5432, host aws-0-<region>.pooler.supabase.com): IPv4-
+  compatible, and — unlike Transaction pooler — each client holds a
+  dedicated server-side connection for the session, so it behaves like a
+  direct connection for SQLAlchemy/Alembic's needs (prepared statements,
+  SET, etc.).
+user_impact: >-
+  None — internal deployment-process correction. Operators following the
+  old guidance would hit an unreachable-database failure on first deploy;
+  the corrected connection string avoids it.
+release_status: unreleased
+breaking: false
+migration: none
+known_limitations:
+  - Diagnosed from the real error above; not yet confirmed by a
+    successful deploy with the corrected connection string — that step
+    is still open.
+compatibility:
+  requires:
+    server_api: null
+verification:
+  automated_tests:
+    status: passed
+    commands:
+      - python scripts/docs-qa/check_code_blocks.py (docs-internal is excluded from published docs, unaffected)
+    workflow_url: null
+  artifact_build:
+    status: not_run
+    artifacts: []
+  manual_platform_checks:
+    macos: not_applicable
+    windows: not_applicable
+    linux: not_applicable
+  production_observation:
+    status: observed
+security_impact: none
+documentation_required: true
+date: '2026-08-07'
+references:
+  issues: []
+  pull_requests: []
+  commits: []
