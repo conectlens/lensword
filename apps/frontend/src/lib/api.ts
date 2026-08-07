@@ -1,6 +1,6 @@
 import type {
   AdminStats, AcquisitionState, Group, MnemonicNote, ProfileOverview, RecallSettings, Room,
-  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile, CefrProgress, Prerequisites, RelatedWord, WordRevision, AiState, OllamaProbe, LearningPath, GeneratePathResult, Conversation, ConversationMessage, SendMessageResult, Difficulty, Scenario, ScenarioAttempt, ScenarioVocabulary, ObservationHistoryResponse, ObservationCorrection, ObservationCorrectionReason, QueuedOperation, SyncOperationResult, SyncConflict,
+  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile, CefrProgress, Prerequisites, RelatedWord, WordRevision, AiState, OllamaProbe, LearningPath, GeneratePathResult, Conversation, ConversationMessage, SendMessageResult, Difficulty, Scenario, ScenarioAttempt, ScenarioVocabulary, ObservationHistoryResponse, ObservationCorrection, ObservationCorrectionReason, QueuedOperation, SyncOperationResult, SyncConflict, EfficacyEstimate, ModalityPreference,
 } from './types'
 import { resolveApiBase } from './runtimeConfig'
 
@@ -291,6 +291,16 @@ export const settingsApi = {
   profile: () => request<ProfileOverview>('/api/v1/profile'),
   weaknesses: () => request<WeaknessProfile>('/api/v1/me/weaknesses'),
   cefrProgress: () => request<CefrProgress>('/api/v1/me/cefr-progress'),
+}
+
+export const learningDnaApi = {
+  efficacy: () => request<EfficacyEstimate[]>('/api/v1/me/learning-dna/efficacy'),
+  modalityPreference: () => request<ModalityPreference | null>('/api/v1/me/learning-dna/modality-preference'),
+  setModalityPreference: (modality: string) =>
+    request<ModalityPreference>('/api/v1/me/learning-dna/modality-preference', {
+      method: 'POST',
+      body: JSON.stringify({ modality }),
+    }),
 }
 
 export const observationsApi = {

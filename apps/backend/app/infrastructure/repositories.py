@@ -46,6 +46,7 @@ from app.domain.services.diagnosis_contracts import (
     InterventionOutcome,
     InterventionPlan,
     LearningObservation,
+    ModalityPreference,
     ObservationCorrection,
     ObservationCorrectionReason,
 )
@@ -89,6 +90,7 @@ from app.infrastructure.models import (
     DiagnosisModel,
     InterventionPlanModel,
     InterventionOutcomeModel,
+    ModalityPreferenceModel,
     AcquisitionEventModel,
     CompanionSessionModel,
     CompanionTurnModel,
@@ -561,6 +563,7 @@ def _delete_user_dependents(db: Session, user_id: int) -> None:
         WeeklyLearningReportModel,
         DesktopNotificationModel,
         SyncOperationModel,
+        ModalityPreferenceModel,
     ):
         for row in db.scalars(select(model).where(model.user_id == user_id)):
             db.delete(row)
@@ -2279,6 +2282,44 @@ class SqlAlchemyInterventionRepository:
             .order_by(InterventionOutcomeModel.recorded_at.desc())
         )
         return [_intervention_outcome_to_domain(m) for m in self.db.scalars(stmt)]
+
+
+def _modality_preference_to_domain(m: ModalityPreferenceModel) -> ModalityPreference:
+    return ModalityPreference(id=m.id, user_id=m.user_id, modality=m.modality, stated_at=m.stated_at)
+
+
+class SqlAlchemyModalityPreferenceRepository:
+    """Append-only store of stated modality preferences (issue #186 TODO 0)
+    — the same shape `SqlAlchemyInterventionRepository` above uses for its
+    own append-only tables."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add(self, preference: ModalityPreference) -> ModalityPreference:
+        model = ModalityPreferenceModel(
+            user_id=preference.user_id, modality=preference.modality, stated_at=preference.stated_at
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _modality_preference_to_domain(model)
+
+    def latest_for_user(self, user_id: int) -> ModalityPreference | None:
+        stmt = (
+            select(ModalityPreferenceModel)
+            .where(ModalityPreferenceModel.user_id == user_id)
+            .order_by(ModalityPreferenceModel.stated_at.desc())
+        )
+        model = self.db.scalars(stmt).first()
+        return _modality_preference_to_domain(model) if model is not None else None
+
+    def list_for_user(self, user_id: int) -> list[ModalityPreference]:
+        stmt = (
+            select(ModalityPreferenceModel)
+            .where(ModalityPreferenceModel.user_id == user_id)
+            .order_by(ModalityPreferenceModel.stated_at.desc())
+        )
+        return [_modality_preference_to_domain(m) for m in self.db.scalars(stmt)]
 
 
 def _companion_session_to_domain(m: CompanionSessionModel) -> CompanionSession:

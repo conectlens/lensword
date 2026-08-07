@@ -250,6 +250,28 @@ class InterventionOutcome:
 
 
 @dataclass(frozen=True, slots=True)
+class ModalityPreference:
+    """A learner's stated modality preference ("I like images") — issue
+    #186 TODO 0's required separation between what a learner *says* they
+    prefer and what `LearningObservation`/`InterventionOutcome` data shows
+    is actually effective for them.
+
+    Deliberately its own record, not a field on any effectiveness type:
+    `intervention_efficacy.EfficacyEstimate` is built exclusively from
+    observed outcomes and must never read from this table, and nothing here
+    is ever derived from measured performance. See
+    `intervention_efficacy.build_modality_insight`, the one function allowed
+    to look at both — and it keeps them in two separate fields rather than
+    merging them into one verdict.
+    """
+
+    user_id: int
+    modality: str
+    stated_at: datetime
+    id: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class AcquisitionState:
     """Position in the same-day graduated-recall ladder (#184), distinct
     from `ReviewState`: this is ephemeral, sub-day scheduling state, not a
