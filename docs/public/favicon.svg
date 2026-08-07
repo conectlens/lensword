@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100" role="img" aria-label="LensWord icon">
+  <title>LensWord icon</title>
+  <rect width="100" height="100" rx="22" fill="#121212"/>
+  <circle cx="40" cy="40" r="22" fill="none" stroke="#ffde59" stroke-width="10"/>
+  <line x1="55.6" y1="55.6" x2="82" y2="82" stroke="#ffde59" stroke-width="10" stroke-linecap="round"/>
+  <rect x="28" y="35" width="24" height="7" rx="3.5" fill="#ffde59"/>
+  <rect x="28" y="46" width="16" height="7" rx="3.5" fill="#ffde59"/>
+</svg>

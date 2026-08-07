@@ -9,7 +9,7 @@ owned by the backend.
 For the full setup walkthrough (local stdio, remote OAuth, permissions and
 scopes, daily session examples, privacy/export/deletion behavior, what "AI
 Companion" claims are actually verified vs. not), see
-[`docs/mcp-companion-guide.md`](../../docs/mcp-companion-guide.md) in the
+[`docs/mcp-companion-guide.md`](../../docs/reference/mcp-companion-guide.md) in the
 repository root. This README only covers running the process itself.
 
 ## Run (local stdio — the default and only transport most installs need)
@@ -34,7 +34,7 @@ variable, it is harmless (the server simply never reads it) but does nothing.
 
 ## Run (remote Streamable HTTP — opt-in, off by default)
 
-See [`docs/mcp-remote-transport.md`](../../docs/mcp-remote-transport.md) for
+See [`docs/mcp-remote-transport.md`](../../docs/reference/mcp-remote-transport.md) for
 the full remote OAuth + Streamable HTTP setup, TLS requirements, and an
 honest list of what is and is not implemented for that transport.
 

@@ -1,0 +1,65 @@
+name: Docs
+
+on:
+  push:
+    branches: [development, main]
+  pull_request:
+    branches: [development, main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build VitePress site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+
+      - name: Install
+        working-directory: docs
+        run: npm ci
+
+      - name: Build
+        working-directory: docs
+        # This repo has no custom domain configured, so GitHub Pages would
+        # serve a project site at /lensword/, not the root — see the base
+        # override note in .vitepress/config.mts. Local dev/preview is
+        # unaffected: DOCS_BASE is only set here, in CI.
+        env:
+          DOCS_BASE: /lensword/
+        run: npm run docs:build
+
+      - name: Upload build artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/.vitepress/dist
+
+  # Publishes to GitHub Pages. This requires a one-time manual step before it
+  # can succeed: a repository admin must set Settings -> Pages -> Source to
+  # "GitHub Actions". Until that's done, this job will fail — harmlessly,
+  # since it's independent of the `build` job and of the required CI checks
+  # in ci.yml. See docs/internal/repo-audit.md for why no hosting decision
+  # has been made in this repository yet.
+  deploy:
+    name: Deploy to GitHub Pages
+    if: github.event_name == 'push' && github.ref == 'refs/heads/development'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
