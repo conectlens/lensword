@@ -7,8 +7,6 @@ through the same MCPDispatcher/MCPPolicyGate, not a parallel path.
 """
 from __future__ import annotations
 
-import os
-
 from app.domain.entities import RecallSettings
 from app.infrastructure.jobs.companion_task_dispatch import CompanionTaskExecutor
 from app.infrastructure.models import MCPGrantModel
@@ -18,16 +16,30 @@ from app.infrastructure.repositories import (
     SqlAlchemyUserRepository,
 )
 
-# `_valid_workspace` in app/api/routers/mcp.py checks `PurePath(...).is_absolute()`
-# using the platform's own path flavour, so a POSIX-style "/approved" is not
-# absolute under PureWindowsPath. Computed once so these tests are agnostic
-# to which OS they run on, matching what a real workspace path looks like.
-_WORKSPACE = os.path.abspath(os.sep + "approved")
+# `is_valid_workspace` in app/api/routers/mcp.py deliberately checks
+# `PurePosixPath(...).is_absolute()` rather than the platform-dependent
+# `pathlib.PurePath` (a real bug that fix closed) — every workspace string
+# in this codebase is POSIX-style, matching test_mcp_security.py's own
+# "/approved" convention, and that is true on every host this now runs on.
+_WORKSPACE = "/approved"
 
 
-def _grant(db_session, *, tool, access):
+def _owner_id(db_session):
+    return SqlAlchemyUserRepository(db_session).get_by_email("alex@example.com").id
+
+
+def _requester(owner_id):
+    # Caller identity for a login-JWT-authenticated /invoke call is derived
+    # server-side by `MCPActor.for_login` (app/api/mcp_auth.py, issue #196
+    # TODO 2) as `f"user:{user.id}"` — never a caller-supplied string, which
+    # is exactly the deputy-attack surface that fix closed. Grants must be
+    # written against that same derived identity to ever match.
+    return f"user:{owner_id}"
+
+
+def _grant(db_session, *, owner_id, tool, access):
     item = MCPGrantModel(
-        requester="fixture-client", server="lensword", tool=tool, access=access,
+        requester=_requester(owner_id), server="lensword", tool=tool, access=access,
         workspace=_WORKSPACE, mode="always",
     )
     db_session.add(item)
@@ -39,12 +51,8 @@ def _invoke(client, headers, *, tool, payload):
     return client.post(
         "/api/v1/mcp/invoke",
         headers=headers,
-        json={"requester": "fixture-client", "workspace": _WORKSPACE, "tool": tool, "payload": payload},
+        json={"workspace": _WORKSPACE, "tool": tool, "payload": payload},
     )
-
-
-def _owner_id(db_session):
-    return SqlAlchemyUserRepository(db_session).get_by_email("alex@example.com").id
 
 
 def _enable(db_session, user_id):
@@ -70,7 +78,7 @@ def test_start_extraction_task_creates_a_durable_task_the_executor_can_finish(cl
     owner_id = _owner_id(db_session)
     _enable(db_session, owner_id)
     session_id = _start_session(client, headers)
-    _grant(db_session, tool="lensword.start_extraction_task", access="write")
+    _grant(db_session, owner_id=owner_id, tool="lensword.start_extraction_task", access="write")
 
     response = _invoke(
         client,
@@ -81,6 +89,7 @@ def test_start_extraction_task_creates_a_durable_task_the_executor_can_finish(cl
             "text": "The cat sat on the mat",
             "target_language": "es",
             "max_terms": 10,
+            "request_id": "req-create",
         },
     )
     assert response.status_code == 200, response.text
@@ -100,7 +109,7 @@ def test_start_extraction_task_is_idempotent_on_request_id(client, auth_headers,
     owner_id = _owner_id(db_session)
     _enable(db_session, owner_id)
     session_id = _start_session(client, headers)
-    _grant(db_session, tool="lensword.start_extraction_task", access="write")
+    _grant(db_session, owner_id=owner_id, tool="lensword.start_extraction_task", access="write")
 
     payload = {
         "companion_session_id": session_id,
@@ -122,16 +131,22 @@ def test_get_and_cancel_companion_task_tools_wrap_the_same_state(client, auth_he
     owner_id = _owner_id(db_session)
     _enable(db_session, owner_id)
     session_id = _start_session(client, headers)
-    _grant(db_session, tool="lensword.start_extraction_task", access="write")
-    _grant(db_session, tool="lensword.get_companion_task", access="read")
-    _grant(db_session, tool="lensword.cancel_companion_task", access="write")
+    _grant(db_session, owner_id=owner_id, tool="lensword.start_extraction_task", access="write")
+    _grant(db_session, owner_id=owner_id, tool="lensword.get_companion_task", access="read")
+    _grant(db_session, owner_id=owner_id, tool="lensword.cancel_companion_task", access="write")
 
     created = _invoke(
         client,
         headers,
         tool="lensword.start_extraction_task",
-        payload={"companion_session_id": session_id, "text": "hola mundo amigo", "target_language": "es"},
+        payload={
+            "companion_session_id": session_id,
+            "text": "hola mundo amigo",
+            "target_language": "es",
+            "request_id": "req-create",
+        },
     ).json()
+    assert "id" in created, created
 
     fetched = _invoke(
         client,
@@ -146,7 +161,7 @@ def test_get_and_cancel_companion_task_tools_wrap_the_same_state(client, auth_he
         client,
         headers,
         tool="lensword.cancel_companion_task",
-        payload={"companion_session_id": session_id, "task_id": created["id"]},
+        payload={"companion_session_id": session_id, "task_id": created["id"], "request_id": "req-cancel"},
     )
     assert cancelled.status_code == 200
     assert cancelled.json()["status"] == "cancelled"
@@ -163,7 +178,7 @@ def test_companion_task_tools_are_refused_without_ai_companion_enabled(client, a
     owner_id = _owner_id(db_session)
     _enable(db_session, owner_id)
     session_id = _start_session(client, headers)
-    _grant(db_session, tool="lensword.start_extraction_task", access="write")
+    _grant(db_session, owner_id=owner_id, tool="lensword.start_extraction_task", access="write")
 
     # Turned back off after the session already exists: the task tool must
     # re-check the flag itself rather than trust that an active session
@@ -178,6 +193,11 @@ def test_companion_task_tools_are_refused_without_ai_companion_enabled(client, a
         client,
         headers,
         tool="lensword.start_extraction_task",
-        payload={"companion_session_id": session_id, "text": "hola", "target_language": "es"},
+        payload={
+            "companion_session_id": session_id,
+            "text": "hola",
+            "target_language": "es",
+            "request_id": "req-disabled",
+        },
     )
     assert response.status_code == 400

@@ -65,7 +65,9 @@ def test_initialize_advertises_real_subscription_support():
     result = server.handle(
         {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-11-25"}}
     )
-    assert result["result"]["capabilities"]["resources"] == {"subscribe": True, "listChanged": True}
+    # listChanged stays False: the resource *catalog* is still a fixed set
+    # (issue #192 TODO 4) — only per-resource content subscriptions are new.
+    assert result["result"]["capabilities"]["resources"] == {"subscribe": True, "listChanged": False}
 
 
 def test_task_tools_are_hidden_and_refused_without_client_task_capability():
@@ -74,7 +76,9 @@ def test_task_tools_are_hidden_and_refused_without_client_task_capability():
 
     listed = server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
     names = {tool["name"] for tool in listed["result"]["tools"]}
-    assert names == {"lensword.search_words"}
+    # companion_reply/companion_elicit are always appended locally (#195) —
+    # unrelated to task capability, so they're present either way.
+    assert names == {"lensword.search_words", "lensword.companion_reply", "lensword.companion_elicit"}
 
     called = server.handle(
         {
@@ -95,7 +99,9 @@ def test_task_tools_are_exposed_and_callable_with_client_task_capability():
 
     listed = server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
     names = {tool["name"] for tool in listed["result"]["tools"]}
-    assert names == {"lensword.search_words", *_TASK_TOOL_NAMES}
+    assert names == {
+        "lensword.search_words", "lensword.companion_reply", "lensword.companion_elicit", *_TASK_TOOL_NAMES,
+    }
 
     called = server.handle(
         {

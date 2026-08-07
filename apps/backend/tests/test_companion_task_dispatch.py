@@ -181,7 +181,11 @@ def test_plan_generation_tasks_are_never_touched_by_this_executor(client, auth_h
             updated_at=now,
         )
     )
-    db_session.flush()
+    # See test_a_cancelled_task_is_never_advanced...'s identical comment: a
+    # PLAN_GENERATION task is never runnable, so the executor never reaches
+    # its own commit and its `db.close()` would otherwise roll back this
+    # test's still-uncommitted setup.
+    db_session.commit()
 
     CompanionTaskExecutor(lambda: db_session)()
 

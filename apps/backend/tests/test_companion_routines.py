@@ -10,7 +10,15 @@ from app.domain.services.companion_routines import (
 )
 from app.domain.services.intervention_efficacy import EfficacyContext, EfficacyEstimate, EfficacyStatus
 
-CONTEXT = EfficacyContext("recall", "es", "l2_to_l1", "beginner", 3)
+CONTEXT = EfficacyContext(
+    learner_id=1,
+    item_class="recall",
+    language="es",
+    prompt_direction="l2_to_l1",
+    difficulty="beginner",
+    modality="text",
+    horizon_days=3,
+)
 
 
 def test_daily_check_in_is_bounded_and_factual():
