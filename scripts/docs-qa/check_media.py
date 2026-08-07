@@ -14,6 +14,12 @@ filesystem paths in the sidecar JSON/text files that accompany the media
 (e.g. provenance.json), which a screenshot-content scan wouldn't touch
 either.
 
+Findings never echo the actual matched value (secret, email, path) into
+their message — only the file and finding type. CI logs are often more
+broadly retained/visible than the source file itself, so a tool whose job
+is catching accidentally-committed sensitive data shouldn't itself become
+a second place that data leaks to.
+
 Usage:
     python scripts/docs-qa/check_media.py
 """
@@ -106,12 +112,13 @@ def main(argv: list[str]) -> int:
     errors = check_file_sizes(MEDIA_DIR) + check_secrets_and_paths(MEDIA_DIR)
 
     if errors:
+        # Messages never include the actual matched secret/email/path value —
+        # only the file and finding type — so CI logs (often more broadly
+        # retained/visible than the source file itself) don't end up echoing
+        # PII or credential-shaped strings. See check_secrets_and_paths().
         print(f"{len(errors)} problem(s) found:\n", file=sys.stderr)
         for e in errors:
-            # Avoid logging potential sensitive payloads (for example, specific
-            # matched addresses) while still reporting actionable context.
-            safe_error = re.sub(r"\s*\([^)]*\)\s*", " (redacted) ", e).strip()
-            print(f"  - {safe_error}", file=sys.stderr)
+            print(f"  - {e}", file=sys.stderr)
         return 1
 
     count = sum(1 for p in MEDIA_DIR.rglob("*") if p.is_file()) if MEDIA_DIR.exists() else 0

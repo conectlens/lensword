@@ -77,7 +77,10 @@ def test_non_fixture_email_flagged(tmp_path):
     media.mkdir()
     (media / "notes.json").write_text('{"email": "realperson@gmail.com"}', encoding="utf-8")
     errors = check_secrets_and_paths(media)
-    assert any(e.endswith("realperson@gmail.com") for e in errors)
+    # The message deliberately omits the actual email — see check_media.py's
+    # module docstring and main()'s comment on not echoing PII into CI logs.
+    assert any("allowlisted fixture domain" in e for e in errors)
+    assert not any("realperson@gmail.com" in e for e in errors)
 
 
 def test_binary_image_content_not_scanned(tmp_path):
