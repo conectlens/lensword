@@ -33,7 +33,7 @@ def test_preview_requires_confirmation_and_can_be_cancelled(client, auth_headers
     headers = auth_headers()
     created = client.post("/api/v1/groups", headers=headers, json={"name": "Spanish", "target_language": "Spanish"})
     assert created.status_code == 201
-    preview = client.post("/api/v1/mcp/plans/preview", headers=headers, json={"command": "prepare a 15-minute session in Spanish", "requester": "planner", "workspace": "/approved"})
+    preview = client.post("/api/v1/mcp/plans/preview", headers=headers, json={"command": "prepare a 15-minute session in Spanish", "workspace": "/approved"})
     assert preview.status_code == 200 and preview.json()["requires_confirmation"]
     plan_id = preview.json()["id"]
     assert client.post(f"/api/v1/mcp/plans/{plan_id}/execute", headers=headers, json={}).status_code == 409
@@ -42,12 +42,16 @@ def test_preview_requires_confirmation_and_can_be_cancelled(client, auth_headers
 
 def test_execution_returns_per_step_denial_without_rolling_back_preview(client, auth_headers, db_session):
     headers = auth_headers()
+    user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
     created = client.post("/api/v1/groups", headers=headers, json={"name": "Spanish", "target_language": "Spanish"})
     assert created.status_code == 201
     assert client.post(f"/api/v1/groups/{created.json()['id']}/words", headers=headers, json={"term": "hola", "target_language": "Spanish", "translations": ["hello"]}).status_code == 201
-    preview = client.post("/api/v1/mcp/plans/preview", headers=headers, json={"command": "prepare a 15-minute session in Spanish", "requester": "planner", "workspace": "/approved"}).json()
+    preview = client.post("/api/v1/mcp/plans/preview", headers=headers, json={"command": "prepare a 15-minute session in Spanish", "workspace": "/approved"}).json()
     denied = client.post(f"/api/v1/mcp/plans/{preview['id']}/execute", headers=headers, json={"confirmed": True})
     assert denied.status_code == 200 and denied.json()["status"] == "partial_failure"
-    db_session.add(MCPGrantModel(requester="planner", server="lensword", tool="lensword.create_study_session", access="write", workspace="/approved", mode="always")); db_session.flush()
-    retry = client.post("/api/v1/mcp/plans/preview", headers=headers, json={"command": "prepare a 15-minute session in Spanish", "requester": "planner", "workspace": "/approved"}).json()
+    # Identity is now derived server-side from the authenticated user
+    # (issue #196 TODO 2), so the grant must be bound to that user's real
+    # requester string ("user:{id}"), not an arbitrary caller-chosen label.
+    db_session.add(MCPGrantModel(requester=f"user:{user_id}", server="lensword", tool="lensword.create_study_session", access="write", workspace="/approved", mode="always")); db_session.flush()
+    retry = client.post("/api/v1/mcp/plans/preview", headers=headers, json={"command": "prepare a 15-minute session in Spanish", "workspace": "/approved"}).json()
     assert client.post(f"/api/v1/mcp/plans/{retry['id']}/execute", headers=headers, json={"confirmed": True}).json()["status"] == "completed"

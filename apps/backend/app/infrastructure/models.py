@@ -1073,3 +1073,97 @@ class AcquisitionEventModel(Base):
     # before the field existed — never re-derived after the fact.
     entry_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
     operation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class MCPOAuthClientModel(Base):
+    """A registered remote MCP companion (issue #196, TODO 1).
+
+    `client_secret_hash` is null for public clients — the expected shape for
+    an MCP host, which cannot keep a secret (RFC 8252) and instead relies on
+    PKCE. A confidential client (a server-side integration that can hold a
+    secret) may set it; the token endpoint requires the matching secret only
+    when it is present.
+    """
+
+    __tablename__ = "mcp_oauth_clients"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    client_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    client_name: Mapped[str] = mapped_column(String(255))
+    redirect_uris: Mapped[list] = mapped_column(JSON)
+    client_secret_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Nullable: RFC 7591 dynamic client registration (which the MCP spec
+    # recommends a compliant server support) happens before any user is
+    # involved — an MCP host registers itself once, then each user
+    # separately authorizes it. Registration is rate-limited (see
+    # rate_limit_mcp_oauth_attempts) rather than gated behind login, or no
+    # off-the-shelf remote MCP host could complete it. When the caller
+    # happens to already be logged in, this records who — useful context in
+    # the audit trail, never an authorization check.
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class MCPOAuthAuthorizationCodeModel(Base):
+    """A single-use authorization code from the code+PKCE flow (issue #196).
+
+    Stores a SHA-256 hash of the code, never the code itself, the same
+    posture `MCPOAuthTokenModel` takes for access/refresh tokens below — a
+    read of this table (a backup, a logging pipeline) must not itself be a
+    credential leak.
+    """
+
+    __tablename__ = "mcp_oauth_authorization_codes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    client_id: Mapped[str] = mapped_column(String(64), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    redirect_uri: Mapped[str] = mapped_column(String(2048))
+    code_challenge: Mapped[str] = mapped_column(String(128))
+    code_challenge_method: Mapped[str] = mapped_column(String(16))
+    scope: Mapped[str] = mapped_column(String(512))
+    workspace: Mapped[str] = mapped_column(String(1024))
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class MCPOAuthTokenModel(Base):
+    """One issued access/refresh token pair (issue #196, TODO 1 and TODO 4).
+
+    Access and refresh tokens are opaque (`secrets.token_urlsafe`), not JWTs
+    — this is the token issued to *external* MCP hosts, and issue #196 is
+    explicit that it must never be the user's normal login JWT nor share its
+    signing key, so giving it a visually different, unparseable shape is a
+    deliberate anti-confusion measure on top of the functional separation.
+    Both are stored only as SHA-256 hashes.
+
+    `rotated_from_id` chains a refresh token to the one it replaced. Reusing
+    an already-rotated refresh token (`rotated_from_id` pointing at a row
+    that is itself revoked) revokes the whole family — replay protection for
+    a stolen-and-later-reused refresh token, per RFC 6749 section 10.4.
+    """
+
+    __tablename__ = "mcp_oauth_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    access_token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    refresh_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True, index=True, nullable=True)
+    client_id: Mapped[str] = mapped_column(String(64), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    scope: Mapped[str] = mapped_column(String(512))
+    workspace: Mapped[str] = mapped_column(String(1024))
+    access_expires_at: Mapped[datetime] = mapped_column(DateTime)
+    refresh_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    rotated_from_id: Mapped[int | None] = mapped_column(ForeignKey("mcp_oauth_tokens.id"), nullable=True)
+    # Shared by every access/refresh pair descended from one authorization
+    # code, through every rotation. Reusing an already-rotated (revoked)
+    # refresh token revokes every row sharing this id in one query — the
+    # whole family, not just the one row that was reused — which is what
+    # makes replaying a stolen-but-already-rotated refresh token also kill
+    # the legitimate client's current, still-valid token.
+    family_id: Mapped[str] = mapped_column(String(32), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

@@ -212,6 +212,29 @@ def rate_limit_login(request: Request, limiter: RateLimiter) -> None:
     _enforce_rate_limit(limiter, "auth_login", f"ip:{_client_host(request)}", rule)
 
 
+def rate_limit_mcp_oauth(request: Request, limiter: RateLimiter) -> None:
+    """Independent budget for the remote MCP OAuth endpoints (issue #196
+    TODO 4: registration, the authorization-code/refresh token exchange,
+    and revocation). Keyed by IP like rate_limit_login, for the same
+    reason: a code/refresh-token exchange attempt has no account bound to
+    it until it either succeeds or is rejected.
+
+    This is a single-process limiter — see rate_limiter.py's module
+    docstring for the documented "more than one instance" gap that applies
+    identically here. TODO 4 asks for shared rate limiting across
+    instances; this repo has no distributed limiter infrastructure (no
+    Redis or equivalent) to build that on, so this scopes down to the same
+    honest single-instance posture the rest of the app already has rather
+    than fabricating a fake distributed one.
+    """
+    settings_ = get_settings()
+    rule = RateLimitRule(
+        limit=settings_.rate_limit_mcp_oauth_attempts,
+        window=timedelta(seconds=settings_.rate_limit_mcp_oauth_window_seconds),
+    )
+    _enforce_rate_limit(limiter, "mcp_oauth", f"ip:{_client_host(request)}", rule)
+
+
 UserRepo = Annotated[SqlAlchemyUserRepository, Depends(get_user_repository)]
 GroupRepo = Annotated[SqlAlchemyGroupRepository, Depends(get_group_repository)]
 WordRepo = Annotated[SqlAlchemyWordRepository, Depends(get_word_repository)]

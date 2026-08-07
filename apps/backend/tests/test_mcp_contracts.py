@@ -40,7 +40,9 @@ def test_companion_session_tools_are_registered_with_the_right_access_class():
         assert name in by_name, f"{name} is missing from TOOL_CONTRACTS"
         assert by_name[name].access == access
     assert by_name["lensword.get_companion_session"].input_schema["required"] == ["session_id"]
-    assert by_name["lensword.start_companion_session"].input_schema["required"] == ["connection_id", "client_id"]
+    # "request_id" is appended for every write tool as of issue #196 TODO 4
+    # (mandatory idempotency), on top of the tool's own required fields.
+    assert by_name["lensword.start_companion_session"].input_schema["required"] == ["connection_id", "client_id", "request_id"]
 
 
 def test_dispatcher_only_allows_registered_and_bound_use_case_handlers():
@@ -72,7 +74,10 @@ def test_developer_workflow_tools_are_registered_and_read_mostly():
             # never a free-text field a caller could use to smuggle a
             # mastery mutation through.
             assert contract.access == AccessClass.WRITE
-            assert contract.input_schema["required"] == ["word_id", "context_kind", "outcome", "confirmed"]
+            # "request_id" is appended for every write tool as of issue #196
+            # TODO 4 (mandatory idempotency), on top of the tool's own
+            # required fields.
+            assert contract.input_schema["required"] == ["word_id", "context_kind", "outcome", "confirmed", "request_id"]
             assert "request_id" in contract.input_schema["properties"]
         else:
             assert contract.access == AccessClass.READ

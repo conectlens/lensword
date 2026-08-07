@@ -77,9 +77,20 @@ class BackendError(RuntimeError):
 
 @dataclass(frozen=True)
 class BackendClient:
+    """Talks to LensWord's `/api/v1/mcp/*` boundary over plain HTTPS/HTTP.
+
+    `token` is a bearer credential the backend authenticates: either the
+    caller's normal login JWT (the local/stdio path, unchanged) or, for a
+    remote companion, an OAuth access token issued by the backend's
+    `/api/v1/mcp/oauth/token` endpoint (issue #196) — never both, and never
+    the login JWT for the remote case. Either way, caller identity is
+    derived by the backend from this token; this client has no `requester`
+    field to set because the backend stopped trusting one in the request
+    body (see app/api/mcp_auth.py in the backend for why).
+    """
+
     api_url: str
     token: str
-    requester: str
     workspace: str
     timeout: float = 30.0
 
@@ -118,7 +129,6 @@ class BackendClient:
             "/api/v1/mcp/invoke",
             {
                 "tool": name,
-                "requester": self.requester,
                 "workspace": self.workspace,
                 "payload": payload,
             },
@@ -478,21 +488,62 @@ class StdioMCPServer:
 
 
 def main() -> int:
-    required = {
-        "LENSWORD_API_URL": os.environ.get("LENSWORD_API_URL"),
-        "LENSWORD_TOKEN": os.environ.get("LENSWORD_TOKEN"),
-        "LENSWORD_MCP_REQUESTER": os.environ.get("LENSWORD_MCP_REQUESTER"),
-        "LENSWORD_MCP_WORKSPACE": os.environ.get("LENSWORD_MCP_WORKSPACE"),
-    }
-    missing = [name for name, value in required.items() if not value]
-    if missing:
-        print(f"Missing environment variables: {', '.join(missing)}", file=sys.stderr)
+    # Local stdio is the only transport that runs unless an operator opts
+    # into remote explicitly (issue #196 TODO 0/5) — an existing desktop or
+    # self-hosted install that sets none of the new variables below behaves
+    # exactly as it did before this issue.
+    transport = os.environ.get("LENSWORD_MCP_TRANSPORT", "stdio").strip().lower()
+    if transport not in ("stdio", "http"):
+        print(f"Unsupported LENSWORD_MCP_TRANSPORT: {transport!r} (expected 'stdio' or 'http')", file=sys.stderr)
         return 2
-    backend = BackendClient(
-        required["LENSWORD_API_URL"],
-        required["LENSWORD_TOKEN"],
-        required["LENSWORD_MCP_REQUESTER"],
-        required["LENSWORD_MCP_WORKSPACE"],
+
+    if transport == "stdio":
+        required = {
+            "LENSWORD_API_URL": os.environ.get("LENSWORD_API_URL"),
+            "LENSWORD_TOKEN": os.environ.get("LENSWORD_TOKEN"),
+            "LENSWORD_MCP_WORKSPACE": os.environ.get("LENSWORD_MCP_WORKSPACE"),
+        }
+        missing = [name for name, value in required.items() if not value]
+        if missing:
+            print(f"Missing environment variables: {', '.join(missing)}", file=sys.stderr)
+            return 2
+        backend = BackendClient(required["LENSWORD_API_URL"], required["LENSWORD_TOKEN"], required["LENSWORD_MCP_WORKSPACE"])
+        StdioMCPServer(MCPServer(backend)).run()
+        return 0
+
+    # transport == "http": the remote Streamable HTTP transport
+    # (http_transport.py). Off unless BOTH LENSWORD_MCP_TRANSPORT=http and
+    # this second flag are set — deliberately two separate opt-ins for a
+    # feature that opens a network listener, matching this issue's
+    # "disable remote transport by default" requirement conservatively.
+    if os.environ.get("LENSWORD_MCP_REMOTE_ENABLED", "").strip().lower() not in ("1", "true", "yes"):
+        print(
+            "Remote HTTP transport requires LENSWORD_MCP_REMOTE_ENABLED=1 "
+            "(issue #196: remote transport is disabled by default).",
+            file=sys.stderr,
+        )
+        return 2
+    from .http_transport import StreamableHTTPMCPServer
+
+    api_url = os.environ.get("LENSWORD_API_URL")
+    workspace = os.environ.get("LENSWORD_MCP_WORKSPACE")
+    if not api_url or not workspace:
+        print("Missing environment variables: LENSWORD_API_URL, LENSWORD_MCP_WORKSPACE", file=sys.stderr)
+        return 2
+    host = os.environ.get("LENSWORD_MCP_HTTP_HOST", "127.0.0.1")
+    port = int(os.environ.get("LENSWORD_MCP_HTTP_PORT", "8765"))
+    # Empty by default: with no allowlist configured, every browser-Origin
+    # request is rejected and only non-browser callers (no Origin header at
+    # all) get through. An operator fronting this with real browser-based
+    # MCP hosts must set this explicitly.
+    allowed_origins = frozenset(
+        origin.strip() for origin in os.environ.get("LENSWORD_MCP_ALLOWED_ORIGINS", "").split(",") if origin.strip()
     )
-    StdioMCPServer(MCPServer(backend)).run()
+
+    def backend_factory(token: str) -> BackendClient:
+        return BackendClient(api_url, token, workspace)
+
+    http_server = StreamableHTTPMCPServer(backend_factory, host=host, port=port, allowed_origins=allowed_origins)
+    print(f"lensword-mcp: Streamable HTTP transport listening on http://{host}:{port}{http_server.path}", file=sys.stderr)
+    http_server.serve_forever()
     return 0
