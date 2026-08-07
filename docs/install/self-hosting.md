@@ -277,6 +277,43 @@ nobody has restored is a hypothesis.
 The `lensword_data` volume holds the AI settings override file. It is small and
 regenerable from the admin screen, so the database is the thing that matters.
 
+## Health checks and upgrades
+
+The backend exposes `GET /api/v1/health` — point your load balancer's or
+orchestrator's health check at it rather than a bare TCP check, since a
+process that accepts connections but can't reach Postgres is not actually
+healthy. `docker-compose.yml`'s own `db` service health check is a Postgres
+readiness probe, not an application-level one; replicate the same pattern
+(`pg_isready`-style check gating backend startup) if you're not using
+Compose.
+
+There is no documented zero-downtime upgrade procedure. `alembic upgrade
+head` runs automatically on backend container start
+([Migrations](#migrations)), which means a rolling deploy can briefly run
+old and new backend code against a mid-migration schema if you run more
+than one instance. For anything beyond a single instance, take the
+application offline for the migration step, or verify your specific
+migration is additive/backward-compatible before rolling it out live —
+this has not been tested either way.
+
+## Production-readiness checklist
+
+What LensWord's own code handles, versus what you are responsible for
+providing:
+
+| Responsibility | Provided by LensWord | You provide |
+|---|---|---|
+| TLS termination | No — plain HTTP only | Reverse proxy / load balancer |
+| Database backups | No | Your Postgres provider's automated backups, **tested** by an actual restore |
+| Push/email notification delivery | No — settings save, nothing is sent | A real provider integration (not built) |
+| Horizontal scaling / load balancing | Partial — safe to run >1 instance (see above) | The load balancer itself |
+| Rate limiting | Yes, but per-instance only | A shared limiter (e.g. Redis-backed) if you need a cross-instance ceiling |
+| WAF / DDoS protection | No | Your platform or CDN |
+| Log aggregation / alerting | Logs to stdout only | Collection, retention, alerting |
+| Health checks | Yes — `GET /api/v1/health` | Wiring it into your orchestrator |
+| Secrets management | No — reads from environment variables | A real secrets store, not `.env` in production |
+| Zero-downtime migrations | No — untested under a rolling deploy | Offline migration windows, or your own verification |
+
 ## What this document does not cover
 
 - **Horizontal scaling of the frontend** — it is static files; serve them from

@@ -61,7 +61,7 @@ routes without content changes when #272 lands:
 | `docs/desktop-app.md` | README § Desktop | `/use-cases/desktop` (supersedes the placeholder route in the table above) |
 | `docs/local-ai-ollama.md` | README § Optional: local AI mnemonic suggestions (Ollama) | `/use-cases/ollama-mnemonics` (supersedes the placeholder route above) |
 | `docs/verification.md` | README § Verification actually run, § Known gaps | `/trust/verification` |
-| `docs/media/screenshots/*.webp` | New — captured from a real `docker compose up --build` run for the README demo section | `/get-started` hero media |
+| `docs/media/screenshots/*.webp` | New — captured from real `docker compose up --build` runs (#271, expanded in #273) | Embedded in the root README's demo section and throughout `/install/web-app` |
 
 ## Explicitly not migrated
 
