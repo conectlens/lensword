@@ -19,6 +19,28 @@ The shared backend (`apps/backend`) is not an independently released product —
 
 ## Latest changes, all products
 
+**Backend (API), MCP Server**
+
+<a id="mcp-tool-names-titles-and-annotations"></a>
+
+### Fixed: Every LensWord tool was being rejected by Claude as an "unsupported name" and never loaded at all. Tools now load, carry readable names and real descriptions, and no longer ask for confirmation before read-only actions like searching vocabulary.
+
+*2026-08-08* — verification: automated tests: passed; production observation: observed
+
+**Breaking.** Automatic for existing users: migration 20260808_42_tool_underscores rewrites `mcp_grants.tool` to the new identifiers, preserving exactly the permissions already approved and granting nothing new. Any external caller that hardcoded the old dotted tool names (a script calling /api/v1/mcp/invoke directly) must update them; there is no aliasing of the old names.
+
+LensWord's tools now actually appear and work in Claude instead of being silently dropped, show readable names like "Add Vocabulary Word" instead of "Lensword.add word", and only ask for confirmation before writes that genuinely change something — reading vocabulary or progress no longer interrupts with a prompt.
+
+<details><summary>Technical detail</summary>
+
+Three defects in the same surface, all found against a live connected client rather than by inspection. (1) Tool identifiers were `lensword.add_word` style. MCP's own spec permits dots (it lists `admin.tools.list` as a valid example), but the Anthropic API restricts tool names to `^[a-zA-Z0-9_-]{1,64}$`, so Claude refused to load any of them and reported "26 tools with unsupported names, which have been excluded from this chat" — the connector appeared to connect successfully while exposing nothing. Renamed to `lensword_add_word` throughout (338 references across backend, MCP server, CLI, tests and docs). `mcp_grants.tool` stores these identifiers verbatim and MCPPolicyGate matches them exactly, so migration 20260808_42_tool_underscores rewrites existing grant rows; without it every already-authorized connection would keep rows naming tools that no longer exist and fail `no_grant` on every call until the user re-ran consent. `mcp_audit_events.tool` is deliberately left alone — those rows are hash-chained, so rewriting history would make a tamper-evident log correctly report tampering. (2) Every tool's description was the placeholder `f"LensWord {name}"`, which told a model nothing about what a tool did or when to use it. Added TOOL_DOCS in app/application/mcp/contracts.py: a `name -> (title, description)` block giving each tool a human-readable MCP `Tool.title` and prose describing what it does, when to reach for it, and the constraint callers most often get wrong. (3) No tool sent MCP `Tool.annotations`, and that schema's defaults are deliberately worst-case (`readOnlyHint` false, `destructiveHint` true, `openWorldHint` true), so hosts treated every tool — including pure reads like search_words and get_due_reviews — as a potentially destructive open-world writer and prompted for confirmation before each one. Annotations are now derived from the existing AccessClass: READ tools declare readOnlyHint/closed-world, WRITE tools declare non-destructive, idempotent (honest — every write contract mandates a client-chosen request_id that IdempotencyStore dedupes on) and closed-world, with a deliberately small DESTRUCTIVE_TOOLS set of the two genuinely irreversible calls (cancel_companion_task, finish_companion_session). These are hints only; the real boundary remains MCPPolicyGate's per-tool grants and OAuth scopes, which trust nothing a client sends.
+
+</details>
+
+**Known limitations:**
+- Annotations are advisory. A host is free to ignore readOnlyHint and keep prompting, and the spec explicitly tells clients to distrust annotations from untrusted servers, so this improves the default experience rather than guaranteeing it.
+- The two locally-handled tools (companion_reply, companion_elicit) carry hand-written annotations in apps/mcp rather than deriving them from the backend contract registry, since the backend has no contract for them.
+
 **Backend (API), Web Application**
 
 <a id="mcp-oauth-consent-page-and-remote-workspace"></a>

@@ -44,13 +44,13 @@ class MCPScope(StrEnum):
 # scope this module pretends is wired up.
 SCOPE_TOOLS: dict[MCPScope, tuple[str, ...]] = {
     MCPScope.PROFILE_READ: (),
-    MCPScope.VOCABULARY_READ: ("lensword.search_words",),
-    MCPScope.SESSION_READ: ("lensword.get_due_reviews",),
-    MCPScope.PROGRESS_READ: ("lensword.get_learning_progress",),
+    MCPScope.VOCABULARY_READ: ("lensword_search_words",),
+    MCPScope.SESSION_READ: ("lensword_get_due_reviews",),
+    MCPScope.PROGRESS_READ: ("lensword_get_learning_progress",),
     MCPScope.CONVERSATION_WRITE: (),
-    MCPScope.REVIEW_WRITE: ("lensword.create_study_session", "lensword.record_answer"),
-    MCPScope.CARD_WRITE: ("lensword.add_word", "lensword.generate_exercises"),
-    MCPScope.CONTEXT_IMPORT: ("lensword.extract_vocabulary",),
+    MCPScope.REVIEW_WRITE: ("lensword_create_study_session", "lensword_record_answer"),
+    MCPScope.CARD_WRITE: ("lensword_add_word", "lensword_generate_exercises"),
+    MCPScope.CONTEXT_IMPORT: ("lensword_extract_vocabulary",),
 }
 
 # Which MCP *resources* (server.py's _RESOURCE_DESCRIPTORS) each scope

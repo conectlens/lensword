@@ -94,8 +94,8 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 backend, returned `serverInfo: {"name": "lensword", "version": "0.1.0"}`
 and capabilities for `tools`, `resources` (with `subscribe: true`),
 `prompts`, and `completions`. A follow-up `tools/list` call returned **26
-real tools** (`lensword.add_word`, `lensword.search_words`,
-`lensword.get_due_reviews`, `lensword.create_study_session`, and 22 more —
+real tools** (`lensword_add_word`, `lensword_search_words`,
+`lensword_get_due_reviews`, `lensword_create_study_session`, and 22 more —
 the exact list matches `TOOL_CONTRACTS` in
 `apps/backend/app/application/mcp/contracts.py`, which is the single
 source of truth this server proxies to).
@@ -106,7 +106,7 @@ Before any write-capable workflow, confirm a read-only call reaches the
 policy gate correctly:
 
 ```json
-{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"lensword.search_words","arguments":{"query":"","limit":5}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"lensword_search_words","arguments":{"query":"","limit":5}}}
 ```
 
 **Verified in this pass**, against a token with no grants issued yet, this

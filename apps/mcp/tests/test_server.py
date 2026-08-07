@@ -25,7 +25,7 @@ class FakeBackend:
         return {
             "tools": [
                 {
-                    "name": "lensword.search_words",
+                    "name": "lensword_search_words",
                     "input_schema": {"type": "object", "properties": {}},
                 }
             ]
@@ -53,10 +53,10 @@ def test_lifecycle_and_tool_call_are_mcp_json_rpc_messages():
     assert server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-11-25"}})["result"]["protocolVersion"] == "2025-11-25"
     assert server.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}) is None
     listed = server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
-    assert listed["result"]["tools"][0]["name"] == "lensword.search_words"
-    called = server.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "lensword.search_words", "arguments": {"query": "hola"}}})
+    assert listed["result"]["tools"][0]["name"] == "lensword_search_words"
+    called = server.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "lensword_search_words", "arguments": {"query": "hola"}}})
     assert called["result"]["structuredContent"] == {"words": [{"term": "hola"}]}
-    assert backend.calls[0][0] == "lensword.search_words"
+    assert backend.calls[0][0] == "lensword_search_words"
     assert backend.calls[0][1] == {"query": "hola"}
 
 

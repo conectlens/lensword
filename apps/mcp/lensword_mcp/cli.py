@@ -277,7 +277,7 @@ def _run_add(args: argparse.Namespace, input_stream: TextIO, output_stream: Text
         return EXIT_BACKEND_ERROR
     try:
         result = backend.invoke(
-            "lensword.add_word",
+            "lensword_add_word",
             {
                 "group_id": args.group_id,
                 "term": term,
@@ -301,7 +301,7 @@ def _run_explain(args: argparse.Namespace, output_stream: TextIO, error_stream: 
     if backend is None:
         return EXIT_BACKEND_ERROR
     try:
-        result = backend.invoke("lensword.explain_for_user", {"word_id": args.word_id})
+        result = backend.invoke("lensword_explain_for_user", {"word_id": args.word_id})
     except BackendError as exc:
         error_stream.write(f"lensword: {exc.detail}\n")
         return EXIT_BACKEND_ERROR
@@ -347,7 +347,7 @@ def _run_review(args: argparse.Namespace, input_stream: TextIO, output_stream: T
     if args.group_id is not None:
         payload["group_id"] = args.group_id
     try:
-        result = backend.invoke("lensword.create_study_session", payload)
+        result = backend.invoke("lensword_create_study_session", payload)
     except BackendError as exc:
         error_stream.write(f"lensword: {exc.detail}\n")
         return EXIT_BACKEND_ERROR

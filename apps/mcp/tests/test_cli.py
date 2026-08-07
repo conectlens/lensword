@@ -215,7 +215,7 @@ def test_add_with_yes_flag_skips_the_prompt_and_persists(fake_backend, monkeypat
     assert payload == {"id": 42, "term": "correr"}  # mnemonic redacted
     assert "mnemonic" not in output.getvalue()
     name, sent = FakeBackendClient.instances[0].invoke_calls[0]
-    assert name == "lensword.add_word"
+    assert name == "lensword_add_word"
     assert sent["term"] == "correr" and sent["translations"] == ["to run"]
     assert "request_id" in sent
 
@@ -283,7 +283,7 @@ def test_explain_calls_the_learner_aware_tool_and_prints_the_explanation(fake_ba
     assert code == EXIT_OK
     assert "hogar is currently unstudied." in output.getvalue()
     assert "secret" not in output.getvalue()
-    assert FakeBackendClient.instances[0].invoke_calls[0] == ("lensword.explain_for_user", {"word_id": 7})
+    assert FakeBackendClient.instances[0].invoke_calls[0] == ("lensword_explain_for_user", {"word_id": 7})
 
 
 def test_diagnose_never_calls_a_write_tool_and_shows_no_diagnosis_gracefully(fake_backend, monkeypatch):
@@ -331,7 +331,7 @@ def test_review_requires_confirmation_and_then_starts_a_session(fake_backend, mo
     assert "Session 3" in output.getvalue()
     assert "private" not in output.getvalue()
     name, sent = FakeBackendClient.instances[0].invoke_calls[0]
-    assert name == "lensword.create_study_session" and sent["group_id"] == 1
+    assert name == "lensword_create_study_session" and sent["group_id"] == 1
 
 
 def test_review_declined_never_contacts_the_backend(fake_backend):

@@ -1,8 +1,8 @@
 """Regression test for issue #192's privacy bug.
 
 `lensword://me/active-words` and `lensword://me/due` — the two MCP
-resources the companion reads through `lensword.search_words` and
-`lensword.get_due_reviews` — used to hand back `word_to_response`'s full
+resources the companion reads through `lensword_search_words` and
+`lensword_get_due_reviews` — used to hand back `word_to_response`'s full
 `WordResponse`, mnemonic included. A companion's own words are one thing;
 a learner's private memory aid for a word is exactly what TODO 0 names as
 something to redact by default. This file locks that down at the MCP
@@ -62,9 +62,9 @@ def _word_with_mnemonic(client, headers) -> dict:
 def test_mcp_search_words_never_exposes_a_mnemonic(client, auth_headers, db_session):
     headers = auth_headers()
     _word_with_mnemonic(client, headers)
-    _grant(db_session, tool="lensword.search_words", user_id=_user_id(client, headers))
+    _grant(db_session, tool="lensword_search_words", user_id=_user_id(client, headers))
 
-    response = _invoke(client, headers, tool="lensword.search_words", payload={"query": "gato"})
+    response = _invoke(client, headers, tool="lensword_search_words", payload={"query": "gato"})
 
     assert response.status_code == 200, response.text
     items = response.json()["items"]
@@ -88,9 +88,9 @@ def test_mcp_get_due_reviews_never_exposes_a_mnemonic(client, auth_headers, db_s
     model.due_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db_session.flush()
 
-    _grant(db_session, tool="lensword.get_due_reviews", user_id=_user_id(client, headers))
+    _grant(db_session, tool="lensword_get_due_reviews", user_id=_user_id(client, headers))
 
-    response = _invoke(client, headers, tool="lensword.get_due_reviews", payload={})
+    response = _invoke(client, headers, tool="lensword_get_due_reviews", payload={})
 
     assert response.status_code == 200
     items = response.json()["items"]
@@ -110,9 +110,9 @@ def test_mcp_due_and_active_words_paginate_with_a_real_cursor(client, auth_heade
             json={"term": f"palabra{index}", "target_language": "Spanish", "translations": ["word"]},
             headers=headers,
         )
-    _grant(db_session, tool="lensword.search_words", user_id=_user_id(client, headers))
+    _grant(db_session, tool="lensword_search_words", user_id=_user_id(client, headers))
 
-    first = _invoke(client, headers, tool="lensword.search_words", payload={"query": "palabra", "limit": 2})
+    first = _invoke(client, headers, tool="lensword_search_words", payload={"query": "palabra", "limit": 2})
     assert first.status_code == 200
     first_body = first.json()
     assert len(first_body["items"]) == 2
@@ -121,7 +121,7 @@ def test_mcp_due_and_active_words_paginate_with_a_real_cursor(client, auth_heade
     second = _invoke(
         client,
         headers,
-        tool="lensword.search_words",
+        tool="lensword_search_words",
         payload={"query": "palabra", "limit": 2, "cursor": first_body["next_cursor"]},
     )
     assert second.status_code == 200

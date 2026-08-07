@@ -35,9 +35,9 @@ SUPPORTED_PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18")
 # should not be offered a tool whose whole point is a task it cannot track.
 _TASK_TOOL_NAMES = frozenset(
     {
-        "lensword.start_extraction_task",
-        "lensword.get_companion_task",
-        "lensword.cancel_companion_task",
+        "lensword_start_extraction_task",
+        "lensword_get_companion_task",
+        "lensword_cancel_companion_task",
     }
 )
 
@@ -78,11 +78,14 @@ class MCPTransportError(RuntimeError):
 
 
 _COMPANION_REPLY_TOOL: dict[str, Any] = {
-    "name": "lensword.companion_reply",
+    "name": "lensword_companion_reply",
+    "title": "Compose Companion Reply",
     "description": (
-        "Generate one bounded, evidence-cited companion reply. Prefers client "
-        "sampling when the host advertises it, falls back to a configured "
-        "local AI provider or deterministic content otherwise (#195)."
+        "Compose one coaching reply to the learner that cites only the evidence "
+        "you supply, so it cannot assert progress or mastery the record does not "
+        "support. Use when responding to a learner inside a companion session. "
+        "Set persist only to save the reply as part of the session; persisting "
+        "additionally requires explicit confirmation."
     ),
     "inputSchema": {
         "type": "object",
@@ -111,14 +114,28 @@ _COMPANION_REPLY_TOOL: dict[str, Any] = {
         },
         "required": ["session_id", "task", "intervention_type", "target_language", "evidence"],
     },
+    # Not idempotent: composing a reply is generative, so an identical repeat
+    # call legitimately produces different text. Not destructive — it only
+    # ever appends a turn, and only when `persist` and `confirmed` are both
+    # set. See contracts.py's `annotations` property for why every field is
+    # stated rather than left to the schema defaults.
+    "annotations": {
+        "title": "Compose Companion Reply",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    },
 }
 
 _COMPANION_ELICIT_TOOL: dict[str, Any] = {
-    "name": "lensword.companion_elicit",
+    "name": "lensword_companion_elicit",
+    "title": "Ask Learner for Details",
     "description": (
-        "Ask the learner for bounded structured input (goal, target language, "
-        "session duration, scenario, confidence, correction confirmation) via "
-        "client elicitation when the host advertises it (#195)."
+        "Ask the learner directly for a small set of structured details — their "
+        "goal, target language, session length, scenario, confidence, or "
+        "confirmation of a correction. Use instead of guessing these values or "
+        "asking for them in prose. Requires a host that supports elicitation."
     ),
     "inputSchema": {
         "type": "object",
@@ -128,6 +145,15 @@ _COMPANION_ELICIT_TOOL: dict[str, Any] = {
                 "items": {"type": "string", "enum": list(_ELICITATION_CATALOG)},
             },
         },
+    },
+    # Read-only: this asks the learner a question through the host's own
+    # elicitation UI and returns what they answer. It changes nothing on the
+    # server, and the human is already in the loop by construction — a
+    # confirmation prompt in front of "ask the user something" is pure noise.
+    "annotations": {
+        "title": "Ask Learner for Details",
+        "readOnlyHint": True,
+        "openWorldHint": False,
     },
 }
 
@@ -307,9 +333,9 @@ class BackendClient:
             "lensword://me/interventions": "/api/v1/me/interventions",
         }
         if uri in ("lensword://me/today", "lensword://me/due"):
-            return self.invoke("lensword.get_due_reviews", {"limit": 100})
+            return self.invoke("lensword_get_due_reviews", {"limit": 100})
         if uri == "lensword://me/active-words":
-            return self.invoke("lensword.search_words", {"query": "", "limit": 100})
+            return self.invoke("lensword_search_words", {"query": "", "limit": 100})
         if uri in exact_paths:
             return self._request(exact_paths[uri])
 
@@ -372,6 +398,16 @@ class BackendClient:
         except BackendError:
             return []
         return [scenario["key"] for scenario in scenarios if isinstance(scenario, dict) and "key" in scenario]
+
+
+def _fallback_title(tool_name: str) -> str:
+    """Derive a readable label from a tool's machine name.
+
+    Only reached when the backend predates TOOL_DOCS (this process deploys
+    separately from it), so a version-skewed pair still lists usable tools:
+    `lensword_add_word` -> `Add Word`, never the bare dotted identifier.
+    """
+    return tool_name.split(".", 1)[-1].replace("_", " ").title()
 
 
 class MCPServer:
@@ -521,13 +557,29 @@ class MCPServer:
         for descriptor in capabilities.get("tools", []):
             if descriptor["name"] in _TASK_TOOL_NAMES and not self._client_supports_tasks():
                 continue
-            tools.append(
-                {
-                    "name": descriptor["name"],
-                    "description": f"LensWord {descriptor['name']}",
-                    "inputSchema": descriptor["input_schema"],
-                }
-            )
+            # `title`/`description` come from the backend's own contract
+            # registry (app/application/mcp/contracts.py's TOOL_DOCS), which
+            # is the single source of truth for them. `.get` with a derived
+            # fallback rather than `[...]` because this process is deployed
+            # separately from the backend: a newer MCP server talking to a
+            # backend that predates TOOL_DOCS must still list its tools
+            # rather than KeyError the whole tools/list response.
+            tool: dict[str, Any] = {
+                "name": descriptor["name"],
+                "title": descriptor.get("title") or _fallback_title(descriptor["name"]),
+                "description": descriptor.get("description") or _fallback_title(descriptor["name"]),
+                "inputSchema": descriptor["input_schema"],
+            }
+            # Omitted rather than synthesised when the backend doesn't send
+            # them: the MCP defaults for a missing `annotations` block are
+            # the maximally cautious ones (not read-only, possibly
+            # destructive, open world), so a version-skewed pair degrades to
+            # "confirm everything" instead of this process guessing a
+            # permissive hint the backend never actually asserted.
+            annotations = descriptor.get("annotations")
+            if annotations:
+                tool["annotations"] = annotations
+            tools.append(tool)
         # These two are handled locally rather than by the backend
         # dispatcher (#195): they orchestrate client sampling/elicitation,
         # which only this process can do, before ever touching the backend.
@@ -540,9 +592,9 @@ class MCPServer:
         arguments = params.get("arguments", {})
         if not isinstance(name, str) or not isinstance(arguments, dict):
             return self._error(request_id, -32602, "tools/call requires name and object arguments")
-        if name == "lensword.companion_reply":
+        if name == "lensword_companion_reply":
             return self._companion_reply(request_id, arguments)
-        if name == "lensword.companion_elicit":
+        if name == "lensword_companion_elicit":
             return self._companion_elicit(request_id, arguments)
         if name in _TASK_TOOL_NAMES and not self._client_supports_tasks():
             return {
@@ -596,7 +648,7 @@ class MCPServer:
 
     def _ensure_loop(self, session_id: str) -> None:
         """Best-effort: start a loop budget for the session if none exists
-        yet. A workflow that never calls `lensword.companion_reply` still
+        yet. A workflow that never calls `lensword_companion_reply` still
         gets a durable budget the first time it does, rather than 404ing."""
         try:
             self.backend.get_loop(session_id)
