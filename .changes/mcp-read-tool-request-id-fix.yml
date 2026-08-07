@@ -1,0 +1,55 @@
+id: mcp-read-tool-request-id-fix
+products:
+  - mcp-server
+  - local-cli
+type: fixed
+summary: >-
+  Read-only MCP tool calls (e.g. searching your vocabulary) no longer fail
+  with an "unsupported payload field" error.
+technical_summary: >-
+  apps/mcp's BackendClient.invoke() unconditionally attaches a request_id
+  to every tool call payload, but contracts.py's payload validator only
+  allowed request_id on write-class tool schemas, so every read-class call
+  made through the stdio MCP server was rejected before it could reach the
+  policy gate. Fixed validate_payload() to always allow request_id,
+  matching the /api/v1/mcp/invoke route handler's own read/write-aware
+  handling of it, which already assumed this was safe.
+user_impact: >-
+  Every read-only MCP tool (search_words, get_due_reviews,
+  get_learning_progress, and others) now works when called through a
+  real MCP client or the stdio protocol directly, instead of failing
+  validation before reaching your account's actual permissions.
+release_status: unreleased
+breaking: false
+migration: none
+known_limitations:
+  - No real MCP client (Claude Desktop, Cursor, VS Code) was connected
+    interactively to confirm this from a client's perspective — verified
+    directly against the JSON-RPC protocol instead.
+compatibility:
+  requires:
+    server_api: null
+verification:
+  automated_tests:
+    status: passed
+    commands:
+      - cd apps/backend && pytest -k mcp
+      - cd apps/mcp && pytest
+      - cd apps/backend && pytest
+    workflow_url: null
+  artifact_build:
+    status: not_run
+    artifacts: []
+  manual_platform_checks:
+    macos: not_applicable
+    windows: not_applicable
+    linux: not_applicable
+  production_observation:
+    status: not_observed
+security_impact: none
+documentation_required: true
+date: '2026-08-07'
+references:
+  issues: [276]
+  pull_requests: [300]
+  commits: []

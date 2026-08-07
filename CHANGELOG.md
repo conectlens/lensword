@@ -1,5 +1,16 @@
 # Changelog
 
+> **This file is preserved as a historical record** — everything below
+> predates LensWord's product-aware changelog system (issue #281) and
+> describes the repository as a whole rather than any one specific,
+> versioned product. For current, per-product changelogs with attached
+> verification evidence, see
+> [docs/reference/changelog/](docs/reference/changelog/index.md) (also
+> mirrored in full at
+> [docs/reference/changelog/legacy.md](docs/reference/changelog/legacy.md)
+> for VitePress readers). New entries are added as structured fragments
+> under [`.changes/`](.changes/README.md) going forward, not appended here.
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),

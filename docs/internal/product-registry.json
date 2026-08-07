@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "generated": "2026-08-07",
   "sourceIssue": 269,
-  "description": "Canonical, evidence-based registry of LensWord products and use cases. Generated from a direct repository audit (see repo-audit.md). Consumed by later VitePress navigation generation and the product-aware changelog system (#281/#282). Treat as the single source of truth for product IDs, names, and status — do not redefine products elsewhere.",
+  "description": "Canonical, evidence-based registry of LensWord products and use cases. Generated from a direct repository audit (see repo-audit.md). Consumed by VitePress navigation (SurfaceChooser.vue) and the product-aware changelog/release-transparency system (#281/#282). Treat as the single source of truth for product IDs, names, status, and changelog identity — do not redefine products elsewhere. Adding a product means adding one entry here; scripts/changelog/generate.py, the SurfaceChooser component, and the changelog fragment validator all read from this file rather than hardcoding a product list.",
   "products": [
     {
       "id": "web",
@@ -18,7 +18,11 @@
       "status": "public",
       "ciCoverage": ["lint", "build", "test", "docker-build"],
       "releaseChannel": null,
-      "releaseChannelNote": "Docker image built in CI but never pushed to a registry (push: false)."
+      "releaseChannelNote": "Docker image built in CI but never pushed to a registry (push: false).",
+      "changelogRoute": "/reference/changelog/web",
+      "versionTagPrefix": "web-v",
+      "releaseStatus": "unreleased",
+      "artifactTypes": ["docker-image (unpublished)", "static build (dist/)"]
     },
     {
       "id": "desktop",
@@ -36,7 +40,11 @@
       "ciCoverage": ["fmt", "clippy", "test", "check (ubuntu-latest, macos-latest only — no Windows leg in ci.yml)"],
       "releaseChannel": "GitHub Releases (draft, unsigned by default) via .github/workflows/release.yml on v* tags",
       "relatedAdr": ["docs/adr/0001-use-tauri-for-desktop-shell.md", "docs/adr/0002-desktop-backend-mode.md"],
-      "blockedBy": ["issue #65 (signed desktop build baseline)"]
+      "blockedBy": ["issue #65 (signed desktop build baseline)"],
+      "changelogRoute": "/reference/changelog/desktop",
+      "versionTagPrefix": "desktop-v",
+      "releaseStatus": "unreleased",
+      "artifactTypes": [".dmg (macOS)", ".msi/.exe (Windows)", ".deb/.AppImage (Linux)"]
     },
     {
       "id": "browser-extension",
@@ -52,7 +60,11 @@
       "status": "public-dev-mode-only",
       "statusNote": "Functional but not published to the Chrome Web Store; zero CI coverage. v1 scope hardcoded to Spanish, no translations.",
       "ciCoverage": [],
-      "releaseChannel": null
+      "releaseChannel": null,
+      "changelogRoute": "/reference/changelog/browser-extension",
+      "versionTagPrefix": "browser-v",
+      "releaseStatus": "unreleased",
+      "artifactTypes": ["unpacked source (sideload zip only, no store package built by CI)"]
     },
     {
       "id": "mcp-server",
@@ -69,7 +81,11 @@
       "statusNote": "Not published to PyPI. No CI coverage despite having its own pytest suite. Remote HTTP transport is double-gated off by default (REMOTE_MCP_ENABLED on the backend + LENSWORD_MCP_TRANSPORT/LENSWORD_MCP_REMOTE_ENABLED on the MCP process) and has no live interop test against a real third-party MCP host.",
       "ciCoverage": [],
       "releaseChannel": null,
-      "relatedAdr": ["docs/adr/0008-ai-companion-architecture.md"]
+      "relatedAdr": ["docs/adr/0008-ai-companion-architecture.md"],
+      "changelogRoute": "/reference/changelog/mcp",
+      "versionTagPrefix": "mcp-v",
+      "releaseStatus": "unreleased",
+      "artifactTypes": ["sdist/wheel (built locally only, never published to PyPI)"]
     },
     {
       "id": "local-cli",
@@ -85,7 +101,11 @@
       "status": "public-source-install-only",
       "statusNote": "import-context is read-only/offline by design (never writes, never contacts the backend, redacts secrets, 50,000-char default cap). Other subcommands need the same backend env vars as the MCP server.",
       "ciCoverage": [],
-      "releaseChannel": null
+      "releaseChannel": null,
+      "changelogRoute": "/reference/changelog/mcp",
+      "versionTagPrefix": "mcp-v",
+      "releaseStatus": "unreleased",
+      "artifactTypes": ["sdist/wheel (shares apps/mcp's package with mcp-server — same tag prefix, not versioned separately)"]
     },
     {
       "id": "backend",
@@ -101,7 +121,12 @@
       "status": "internal-shared-dependency",
       "ciCoverage": ["backend (pytest/SQLite)", "backend-postgres (pytest/Postgres + migration validation)", "docker-build"],
       "releaseChannel": null,
-      "releaseChannelNote": "Docker image built in CI but never pushed to a registry (push: false)."
+      "releaseChannelNote": "Docker image built in CI but never pushed to a registry (push: false).",
+      "changelogRoute": "/reference/changelog/server-api",
+      "versionTagPrefix": null,
+      "versionTagPrefixNote": "Not independently versioned or released — see docs/internal/repo-audit.md. Its changelog entries are folded into whichever product(s) the change actually affects (usually all of them, since every public product depends on it), not published under a separate server-api tag until it is confirmed to have its own release lifecycle.",
+      "releaseStatus": "not-independently-released",
+      "artifactTypes": ["docker-image (unpublished)"]
     }
   ],
   "useCases": [

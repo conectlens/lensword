@@ -33,3 +33,24 @@
 - [ ] I've updated relevant documentation (README, docstrings, etc.)
 - [ ] I've added or updated tests covering this change
 - [ ] This change does not introduce new secrets, credentials, or hard-coded environment-specific values
+
+## Changelog fragment
+
+<!--
+Does this change anything a user of a LensWord product would notice —
+new/changed/fixed behavior, a security fix, a deprecation? If so, add a
+fragment under .changes/ (see .changes/README.md) naming the affected
+product(s) and the verification actually performed, and validate it:
+
+    python scripts/changelog/schema.py .changes/your-fragment.yml
+
+CI does not enforce this yet (tracked in #282) — for now this is a
+reviewer checklist item, not an automated gate.
+-->
+
+- [ ] This PR changes user-observable behavior for one or more LensWord products, and I've added a validated fragment under `.changes/`
+- [ ] This PR has no user-observable effect (internal-only change, docs-only, CI-only) — no fragment needed
+- [ ] Affected product(s): <!-- web / desktop / browser-extension / mcp-server / local-cli / none -->
+- [ ] Breaking change: <!-- yes (migration steps included in the fragment) / no -->
+- [ ] Compatibility impact: <!-- e.g. requires a specific server/API version, or none -->
+

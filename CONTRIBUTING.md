@@ -181,10 +181,20 @@ npm test        # vitest run
 
 1. Fork the repository and create a branch from `development`.
 2. Make your change, adding or updating tests and documentation as needed.
-3. Run the checks above.
-4. Open a pull request using the provided template, describing what changed
+3. If your change is observable by a user of a LensWord product (Web,
+   Desktop, Browser Extension, MCP Server, or Local CLI) — a new feature,
+   a fix, a behavior change — add a changelog fragment under `.changes/`
+   naming the affected product(s) and the verification you actually
+   performed, then validate it: `python scripts/changelog/schema.py
+   .changes/your-fragment.yml`. See
+   [`.changes/README.md`](.changes/README.md) for the schema, and
+   [docs/reference/trust/release-process.md](docs/reference/trust/release-process.md)
+   for how it's used downstream. Internal-only changes (refactors, CI
+   fixes) still get a fragment, marked `documentation_required: false`.
+4. Run the checks above.
+5. Open a pull request using the provided template, describing what changed
    and how it was tested.
-5. Be responsive to review feedback — small follow-up commits are fine, no
+6. Be responsive to review feedback — small follow-up commits are fine, no
    need to force-push/rebase unless requested.
 
 ## Code of Conduct

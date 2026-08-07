@@ -15,12 +15,16 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: true,
 
-  // CHANGELOG.md is @include'd verbatim into changelog.md. Its own links use
-  // paths correct for viewing it at the repo root on GitHub (e.g.
-  // `docs/adr/0002-...`), which is deliberately branch-agnostic — rewriting
-  // them to this site's routes would mean two different correct hrefs for
-  // the same source text. Left as dead links here rather than edited.
-  ignoreDeadLinks: [/^\.?\/?docs\/(adr\/|ai-model-verification)/],
+  // CHANGELOG.md is @include'd verbatim into changelog/legacy.md. Its own
+  // links use paths correct for viewing it at the repo root on GitHub (e.g.
+  // `docs/adr/0002-...`, `docs/reference/changelog/index.md`, `.changes/README.md`),
+  // which is deliberately branch-agnostic — rewriting them to this site's
+  // routes would mean two different correct hrefs for the same source text.
+  // Left as dead links here rather than edited.
+  ignoreDeadLinks: [
+    /^\.?\/?docs\/(adr\/|ai-model-verification|reference\/changelog\/)/,
+    /^\.?\/?\.changes\//,
+  ],
   // No leading slash: on Windows, a leading "/" makes this match as an
   // absolute path deep inside the underlying glob library's path-relative
   // math, which corrupts page discovery for the whole site (confirmed by
@@ -92,12 +96,32 @@ export default defineConfig({
         ],
       },
       {
-        text: 'Reference',
+        text: 'Changelog & Releases',
         items: [
+          { text: 'Changelog overview', link: '/reference/changelog/' },
+          { text: 'Web Application', link: '/reference/changelog/web' },
+          { text: 'Desktop Application', link: '/reference/changelog/desktop' },
+          { text: 'Browser Extension', link: '/reference/changelog/browser-extension' },
+          { text: 'MCP Server / Local CLI', link: '/reference/changelog/mcp' },
+          { text: 'Main Branch Activity', link: '/reference/changelog/main-branch-activity' },
+          { text: 'Legacy changelog', link: '/reference/changelog/legacy' },
+          { text: 'Releases', link: '/reference/releases/' },
+          { text: 'Releases & compatibility process', link: '/reference/releasing' },
+        ],
+      },
+      {
+        text: 'Trust',
+        items: [
+          { text: 'Verification levels', link: '/reference/trust/verification-levels' },
+          { text: 'Release process', link: '/reference/trust/release-process' },
+          { text: 'Compatibility matrix', link: '/reference/trust/compatibility' },
           { text: 'Verification & known gaps', link: '/reference/verification' },
           { text: 'AI model verification log', link: '/reference/ai-model-verification' },
-          { text: 'Changelog', link: '/reference/changelog' },
-          { text: 'Releases & compatibility', link: '/reference/releasing' },
+        ],
+      },
+      {
+        text: 'Reference',
+        items: [
           { text: 'MCP remote transport', link: '/reference/mcp-remote-transport' },
           { text: 'AI Companion guide', link: '/reference/mcp-companion-guide' },
           { text: 'Local development', link: '/reference/local-development' },

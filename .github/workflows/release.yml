@@ -11,6 +11,13 @@ name: Release
 on:
   push:
     tags:
+      # Namespaced per #281's versioning decision (see
+      # docs/reference/trust/release-process.md) — a bare `v*` tag doesn't
+      # say which LensWord product it's for, when only desktop installers
+      # are actually produced here. `v*` stays supported as a legacy alias
+      # since it was the only convention documented before this tag was
+      # ever actually pushed (git tag -l is still empty either way).
+      - "desktop-v*"
       - "v*"
   workflow_dispatch: {}
 
@@ -141,6 +148,13 @@ jobs:
           $config | ConvertTo-Json -Depth 20 | Set-Content $configPath
           Write-Host "Windows signing configured."
 
+      - name: Compute display version
+        id: version
+        shell: bash
+        run: |
+          ref="${{ github.ref_name }}"
+          echo "display=${ref#desktop-}" >> "$GITHUB_OUTPUT"
+
       - name: Build and attach installers
         uses: tauri-apps/tauri-action@v0
         env:
@@ -162,7 +176,7 @@ jobs:
         with:
           projectPath: apps/desktop
           tagName: ${{ github.ref_name }}
-          releaseName: "LensWord Desktop ${{ github.ref_name }}"
+          releaseName: "LensWord Desktop ${{ steps.version.outputs.display }}"
           releaseBody: |
             Desktop installers for this tag. See CHANGELOG.md for details.
 
