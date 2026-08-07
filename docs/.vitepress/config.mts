@@ -1,10 +1,10 @@
 import { defineConfig } from 'vitepress'
 
 // DOCS_BASE lets a deploy target override the site root without editing this
-// file — e.g. a GitHub Pages project site (no custom domain) needs
-// `DOCS_BASE=/lensword/` set when building. Defaults to '/' for local
-// preview and for hosts that serve the site from their own root (a custom
-// domain, Netlify, Vercel, etc.).
+// file — e.g. a GitHub Pages project site with no custom domain needs
+// `DOCS_BASE=/<repo-name>/` set when building. Defaults to '/', which is
+// correct for local preview and for docs.lensword.conectlens.com (a custom
+// domain, served from its own root) — the actual production case today.
 const base = process.env.DOCS_BASE || '/'
 
 export default defineConfig({

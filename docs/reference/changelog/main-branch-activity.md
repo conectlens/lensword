@@ -11,6 +11,8 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 
 | Date | Commit | Author | Subject | Changelog fragment |
 |---|---|---|---|---|
+| 2026-08-07 | [a8330ce](https://github.com/conectlens/lensword/commit/a8330ce8d237cc127348da28a3f8ed8b7b974d6e) | Lenser | Fix docs site: custom domain serves at root, not the old /lensword/ project-page path | none (predates this system) |
+| 2026-08-07 | [dbf786d](https://github.com/conectlens/lensword/commit/dbf786da97a5fab831266c4094e3694227e8c3ec) | Lenser | Fix Tauri desktop icons/fonts (CSP-blocked Google Fonts) and an MCP HTTP keep-alive body-drain bug | none (predates this system) |
 | 2026-08-07 | [677b3c2](https://github.com/conectlens/lensword/commit/677b3c2d25aae5d717537768fc59d0205265d90d) | Lenser | Add BRANCH.md: main only changes via a merged PR, never a direct push or cherry-pick | none (predates this system) |
 | 2026-08-07 | [5aad283](https://github.com/conectlens/lensword/commit/5aad283aa25e5cc516c35ac9fa38aeb08726e908) | Lenser | Fix changelog schema violation blocking PR #312 (type: none requires documentation_required: false) | none (predates this system) |
 | 2026-08-07 | [a0c63d6](https://github.com/conectlens/lensword/commit/a0c63d625337883fcbf39a14ea17b4b93b43d0db) | Ömer Faruk Coşkun | Merge branch 'main' into development | none (predates this system) |
@@ -49,7 +51,5 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 | 2026-08-07 | [0905871](https://github.com/conectlens/lensword/commit/0905871fe0d943ec7469fb6a4ebc257a7fb64c57) | Ömer Faruk Coşkun | Skip the Pages deploy job cleanly instead of failing when Pages isn't enabled (#303) | none (predates this system) |
 | 2026-08-07 | [154611e](https://github.com/conectlens/lensword/commit/154611e7dbf0e150bd1a732fb9c4f5a9554a0b6f) | Ömer Faruk Coşkun | Add LensWord sponsorship, contact, partnership, and support surfaces (#280) (#302) | none (predates this system) |
 | 2026-08-07 | [83e96e0](https://github.com/conectlens/lensword/commit/83e96e0449eb4a2951a4ad63442fc738592b3c70) | Ömer Faruk Coşkun | Capture reproducible LensWord screenshots and generate README demo animations (#278) (#301) | none (predates this system) |
-| 2026-08-07 | [4897b47](https://github.com/conectlens/lensword/commit/4897b475c4cc84b237121c8658fab78000857c31) | Ömer Faruk Coşkun | Document and verify LensWord MCP Server and local CLI integrations (#276) (#300) | [mcp-read-tool-request-id-fix](/reference/changelog/#mcp-read-tool-request-id-fix) |
-| 2026-08-07 | [ccaa283](https://github.com/conectlens/lensword/commit/ccaa283a5e0d22180055e24952b333cb88b2b6bc) | Ömer Faruk Coşkun | Document and verify the LensWord Browser Extension workflow (#275) (#299) | [browser-notification-icon-fix](/reference/changelog/#browser-notification-icon-fix) |
 
 Generated from `git log -40 development` — 40 commits shown.
