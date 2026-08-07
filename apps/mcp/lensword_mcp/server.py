@@ -38,7 +38,10 @@ _RESOURCE_TEMPLATES = (
     # #193 TODO 1: a companion session's normalized state (turns, summary,
     # status, revision) is what makes cross-client continuity possible — a
     # second client reading this resource is how it learns where the first
-    # one left off before it calls resume_companion_session.
+    # one left off before it calls resume_companion_session. Session ids
+    # are opaque `uuid4().hex` tokens, not integers like the other
+    # templates, so `BackendClient.resource` validates this one
+    # differently below.
     ("lensword://session/{session_id}", "One learner-owned durable companion session"),
 )
 
@@ -133,16 +136,17 @@ class BackendClient:
             "lensword://me/goals": "/api/v1/learning-paths",
             "lensword://me/weaknesses": "/api/v1/me/weaknesses",
             "lensword://me/progress": "/api/v1/review/weekly-progress",
+            # Account-wide diagnosis/intervention listings, added once the
+            # backend exposed a bounded endpoint for them — previously these
+            # two URIs were a permanent `{"items": [], "available": False}`
+            # stub, since only per-word endpoints existed.
+            "lensword://me/diagnoses": "/api/v1/me/diagnoses",
+            "lensword://me/interventions": "/api/v1/me/interventions",
         }
         if uri in ("lensword://me/today", "lensword://me/due"):
             return self.invoke("lensword.get_due_reviews", {"limit": 100})
         if uri == "lensword://me/active-words":
             return self.invoke("lensword.search_words", {"query": "", "limit": 100})
-        if uri in ("lensword://me/diagnoses", "lensword://me/interventions"):
-            # These collections are intentionally empty until their owning
-            # phase exposes a bounded list endpoint; advertising the URI now
-            # lets clients feature-detect it without leaking unsupported data.
-            return {"items": [], "available": False}
         if uri in exact_paths:
             return self._request(exact_paths[uri])
 
@@ -171,11 +175,40 @@ class BackendClient:
             # someone else's session — which the bearer token alone would
             # otherwise distinguish from "no such session" if this returned
             # anything else) is indistinguishable from "not found" here,
-            # never disclosed as "exists but you can't see it".
+            # never disclosed as "exists but you can't see it". The backend's
+            # own ownership check (404, not 403 — `companion.py`'s `_owned`)
+            # is what actually decides once past this shape check.
             if not _SESSION_ID_RE.fullmatch(session_id):
                 raise BackendError(404, "Resource not found")
             return self._request(f"/api/v1/companion/sessions/{session_id}")
         raise BackendError(404, "Resource not found")
+
+    def groups(self) -> list[str]:
+        """This account's group names, for prompt-argument completion
+        (issue #192 TODO 3's `group` argument). Best-effort: a completion
+        candidate list failing closed to empty is a worse experience than
+        no completion at all, but never worse than the backend itself
+        already fails for every other resource read here.
+        """
+        try:
+            groups = self._request("/api/v1/groups")
+        except BackendError:
+            return []
+        return [group["name"] for group in groups if isinstance(group, dict) and "name" in group]
+
+    def scenarios(self) -> list[str]:
+        """The fixed, unauthenticated scenario catalog's keys, for
+        prompt-argument completion (issue #192 TODO 3's `scenario`
+        argument). Not account-scoped because the catalog itself isn't —
+        every account sees the same product-defined scenarios, the same
+        way `_LANGUAGES`/`_DURATIONS`/`_DIFFICULTIES` are shared constants
+        rather than per-account data.
+        """
+        try:
+            scenarios = self._request("/api/v1/scenarios")
+        except BackendError:
+            return []
+        return [scenario["key"] for scenario in scenarios if isinstance(scenario, dict) and "key" in scenario]
 
 
 class MCPServer:
@@ -236,6 +269,25 @@ class MCPServer:
             "id": request_id,
             "result": {
                 "protocolVersion": requested,
+                # `listChanged` stays honestly False for both catalogs
+                # (issue #192 TODO 4). Two things would both have to be
+                # true before it could be True: a resource/prompt whose
+                # *set* actually varies at runtime (every entry in
+                # `_RESOURCE_DESCRIPTORS`, `_RESOURCE_TEMPLATES` and
+                # `_PROMPTS` is a fixed module-level constant — nothing
+                # here is ever added or removed while a server is running,
+                # so there is no real event to notify about), and a
+                # transport that can send a message the client did not ask
+                # for. `StdioMCPServer.run` is a synchronous
+                # request-then-respond loop (`for line in
+                # self.input_stream: ... write one response`) with no
+                # concurrency primitive to interleave an unsolicited
+                # notification while blocked on the next read — that is
+                # the harder half of this TODO, and advertising `True`
+                # without it would be a capability with nothing behind it.
+                # Deferred until a resource with genuinely dynamic
+                # membership exists to justify building the notification
+                # path for.
                 "capabilities": {"tools": {}, "resources": {"subscribe": False, "listChanged": False}, "prompts": {"listChanged": False}, "completions": {}},
                 "serverInfo": {"name": "lensword", "version": self.server_version},
             },
@@ -368,7 +420,26 @@ class MCPServer:
             candidates = _DURATIONS
         elif name == "difficulty":
             candidates = _DIFFICULTIES
+        elif name == "group":
+            # Account-scoped: this learner's own group names, from the
+            # authenticated `/api/v1/groups` listing — never a shared
+            # constant, since a group name is private data (issue #192
+            # TODO 3: "keep suggestions account-scoped").
+            candidates = tuple(self.backend.groups())
+        elif name == "scenario":
+            # The scenario catalog is a fixed product list (`CATALOG` in
+            # `app/domain/services/scenarios.py`), not account data, so
+            # every account sees the same keys — the same reasoning
+            # `_LANGUAGES`/`_DURATIONS`/`_DIFFICULTIES` already rest on,
+            # just sourced from the backend instead of duplicated here.
+            candidates = tuple(self.backend.scenarios())
         else:
+            # `topic` and `active-learning-path` have no closed,
+            # account-scoped source to complete against yet: topics are
+            # freeform strings a learner types onto a word (no catalog to
+            # suggest from), and learning paths have no "list mine" MCP
+            # resource today. Left unimplemented rather than faked — TODO
+            # 3 only asks for candidates that are real.
             candidates = ()
         values = [candidate for candidate in candidates if candidate.casefold().startswith(value.casefold())][:20]
         return {"jsonrpc": "2.0", "id": request_id, "result": {"completion": {"values": values, "hasMore": False, "total": len(values)}}}

@@ -7,8 +7,18 @@ from pydantic import BaseModel, Field
 from app.application.mcp.contracts import CONTRACT_VERSION, capabilities, validate_payload
 from app.application.mcp.dispatcher import MCPDispatcher, UnboundMCPToolError, UnknownMCPToolError
 from app.application.mcp.idempotency import IdempotencyStore
-from app.application.mcp.bindings import add_word_handler, create_study_session_handler, due_reviews_handler, extract_vocabulary_handler, finish_companion_session_handler, generate_exercises_handler, get_companion_session_handler, learning_progress_handler, pause_companion_session_handler, record_answer_handler, resume_companion_session_handler, search_words_handler, start_companion_session_handler
-from app.api.deps import CompanionSessionRepo, CurrentUser, DbSession, GroupRepo, OptionalAIProvider, PracticeExerciseRepo, RecallSettingsRepo, ReviewSessionRepo, WordRepo
+from app.application.mcp.bindings import (
+    add_word_handler, check_known_term_handler, create_study_session_handler, due_reviews_handler,
+    explain_for_user_handler, extract_vocabulary_handler, finish_companion_session_handler,
+    generate_exercises_handler, get_companion_session_handler, language_profile_handler,
+    learning_progress_handler, pause_companion_session_handler, record_answer_handler,
+    record_context_occurrence_handler, resume_companion_session_handler, search_words_handler,
+    start_companion_session_handler, suggest_stretch_vocabulary_handler,
+)
+from app.api.deps import (
+    CompanionSessionRepo, CurrentUser, DbSession, DiagnosisRepo, GroupRepo, LearningObservationRepo,
+    OptionalAIProvider, PracticeExerciseRepo, RecallSettingsRepo, ReviewSessionRepo, WordRepo,
+)
 from app.domain.services.mcp_policy import AccessClass, GrantMode, MCPGrant, MCPPolicyGate, redact_and_chain
 from app.domain.services.spaced_repetition import SpacedRepetitionScheduler
 from app.domain.value_objects import utcnow
@@ -52,6 +62,7 @@ async def invoke(
     request: InvokeRequest, current_user: CurrentUser, db: DbSession, groups: GroupRepo, words: WordRepo,
     sessions: ReviewSessionRepo, exercises: PracticeExerciseRepo, provider: OptionalAIProvider,
     companion_sessions: CompanionSessionRepo, recall_settings: RecallSettingsRepo,
+    diagnoses: DiagnosisRepo, observations: LearningObservationRepo,
 ) -> dict:
     payload_bytes = len(dumps(request.payload, sort_keys=True, default=str).encode())
     if not _valid_workspace(request.workspace):
@@ -68,6 +79,10 @@ async def invoke(
         "lensword.resume_companion_session": resume_companion_session_handler(companion_sessions, recall_settings),
         "lensword.pause_companion_session": pause_companion_session_handler(companion_sessions, recall_settings),
         "lensword.finish_companion_session": finish_companion_session_handler(companion_sessions, recall_settings, provider),
+        "lensword.get_language_profile": language_profile_handler(groups, words), "lensword.check_known_term": check_known_term_handler(words, groups),
+        "lensword.explain_for_user": explain_for_user_handler(words, groups, diagnoses),
+        "lensword.suggest_stretch_vocabulary": suggest_stretch_vocabulary_handler(words, groups),
+        "lensword.record_context_occurrence": record_context_occurrence_handler(words, groups, observations),
     }
     dispatcher = MCPDispatcher(handlers)
     try: contract = dispatcher.contract_for(request.tool)

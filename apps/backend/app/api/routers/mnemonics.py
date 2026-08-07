@@ -1,10 +1,11 @@
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.deps import CurrentUser, DbSession, GroupRepo, MnemonicRepo, OptionalAIProvider, WordRepo
+from app.api.deps import CurrentUser, DbSession, GroupRepo, LearningObservationRepo, MnemonicRepo, OptionalAIProvider, WordRepo
 from app.api.mappers import mnemonic_to_response
 from app.api.schemas.review import (
     MnemonicCreateRequest,
     MnemonicResponse,
+    MnemonicStrengthResponse,
     MnemonicSuggestionDisabled,
     MnemonicSuggestionOk,
     MnemonicSuggestionResponse,
@@ -13,6 +14,7 @@ from app.api.schemas.review import (
 )
 from app.application.use_cases.review import (
     AddMnemonicUseCase,
+    EvaluateMnemonicStrengthUseCase,
     ListMnemonicsUseCase,
     SuggestMnemonicUseCase,
     VoteMnemonicUseCase,
@@ -109,6 +111,27 @@ async def suggest_mnemonic(
     except AIProviderUnavailableError as exc:
         return MnemonicSuggestionUnavailable(detail=str(exc))
     return MnemonicSuggestionOk(text=text)
+
+
+@router.get("/{mnemonic_id}/strength", response_model=MnemonicStrengthResponse)
+def mnemonic_strength(
+    word_id: int,
+    mnemonic_id: int,
+    current_user: CurrentUser,
+    mnemonic_repo: MnemonicRepo,
+    observation_repo: LearningObservationRepo,
+    word_repo: WordRepo,
+    group_repo: GroupRepo,
+) -> MnemonicStrengthResponse:
+    try:
+        strength = EvaluateMnemonicStrengthUseCase(mnemonic_repo, observation_repo, word_repo, group_repo).execute(
+            current_user.id, word_id, mnemonic_id
+        )
+    except (EntityNotFoundError, PermissionDeniedError) as exc:
+        _handle_common_errors(exc)
+    return MnemonicStrengthResponse(
+        verdict=strength.verdict, delayed_accuracy=strength.delayed_accuracy, sample_size=strength.sample_size
+    )
 
 
 @router.post("/{mnemonic_id}/vote", response_model=MnemonicResponse)

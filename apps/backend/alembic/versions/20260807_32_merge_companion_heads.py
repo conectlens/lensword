@@ -5,7 +5,7 @@ The two features were developed independently and both initially selected a
 databases upgradeable while giving subsequent companion migrations one head.
 """
 
-revision = "20260807_32_merge_comp_heads"
+revision = "20260807_32_merge_heads"
 down_revision = ("20260806_30", "20260806_30_companion")
 branch_labels = None
 depends_on = None

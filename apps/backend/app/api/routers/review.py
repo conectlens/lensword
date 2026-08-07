@@ -26,11 +26,13 @@ from app.api.schemas.review import (
     SubmitAnswerResponse,
     WeeklyProgressResponse,
 )
+from app.application.use_cases.intervention import active_plans
 from app.application.use_cases.knowledge_graph import graph_for_user
 from app.domain.services.contrast_cards import (
     ContrastCard,
     answer_contrast_card,
     build_contrast_cards,
+    pair_decisions_from_plans,
 )
 from app.domain.services.knowledge_graph import Relation
 from app.domain.value_objects import utcnow
@@ -58,6 +60,7 @@ def contrast_cards(
     word_repo: WordRepo,
     settings_repo: RecallSettingsRepo,
     edge_repo: KnowledgeEdgeRepo,
+    intervention_repo: InterventionRepo,
     limit: int = Query(default=20, ge=1, le=20),
 ) -> list[ContrastCardResponse]:
     settings = settings_repo.get_by_user(current_user.id)
@@ -66,11 +69,22 @@ def contrast_cards(
     if not settings or not (settings.semantic_relatedness_enabled and settings.contrast_cards_enabled):
         return []
     words = word_repo.list_all_for_user(current_user.id)
+    # #206 TODO 5: source pairs from #185's real diagnosis-driven plans when
+    # one exists for a pair; the graph fallback inside build_contrast_cards
+    # only fills in pairs no plan has an opinion on. `active_plans` also
+    # carries any `isolate` decision, which always wins over the fallback.
+    decisions = pair_decisions_from_plans(
+        tuple(active_plans(
+            intervention_repo.list_all_for_user(current_user.id),
+            intervention_repo.list_all_outcomes_for_user(current_user.id),
+        ))
+    )
     cards = build_contrast_cards(
         words,
         graph_for_user(words, edge_repo, current_user.id),
         enabled=True,
         minimum_stability=settings.contrast_min_stability,
+        intervention_decisions=decisions,
         limit=limit,
     )
     return [

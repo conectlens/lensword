@@ -92,6 +92,25 @@ def isolate_rate_limits():
     get_rate_limiter().reset()
 
 
+@pytest.fixture(autouse=True)
+def isolate_coach_cache():
+    """Every test starts with an empty companion-coach content cache
+    (#187 TODO 5).
+
+    `app.api.routers.interventions._coach_cache` is a process-wide
+    singleton, the same shape as `_ai_provider`/the rate limiter above. Each
+    test's database is fresh (see `db_session`), so ids restart from 1 every
+    time — without a reset here, two unrelated tests that happen to build
+    the same (user_id=1, plan_id=1, ...) cache key would see each other's
+    cached content instead of exercising their own scenario.
+    """
+    from app.api.routers.interventions import _coach_cache
+
+    _coach_cache.clear()
+    yield
+    _coach_cache.clear()
+
+
 @pytest.fixture(scope="session")
 def _postgres_engine():
     """One engine and one schema build for the whole Postgres run.

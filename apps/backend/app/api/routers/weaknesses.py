@@ -22,6 +22,7 @@ from app.domain.services.weakness import (
     WeaknessProfileService,
     cross_association_report,
 )
+from app.domain.value_objects import utcnow
 
 router = APIRouter(prefix="/api/v1/me", tags=["weaknesses"])
 
@@ -51,6 +52,7 @@ def get_my_weaknesses(
             attempted_answer=row.attempted_answer,
             confused_with_word_id=row.confused_with_word_id,
             occurred_at=row.occurred_at,
+            event_id=row.id,
         )
         for row in rows
     ]
@@ -72,7 +74,10 @@ def get_my_weaknesses(
         total_mistakes=profile.total_mistakes,
         categories=[
             CategoryWeaknessResponse(
-                category=c.category.value, occurrences=c.occurrences, share=round(c.share, 4)
+                category=c.category.value,
+                occurrences=c.occurrences,
+                share=round(c.share, 4),
+                evidence_ids=list(c.evidence_ids),
             )
             for c in profile.categories
         ],
@@ -83,6 +88,7 @@ def get_my_weaknesses(
                 confused_with_word_id=p.confused_with_word_id,
                 confused_with_term=terms.get(p.confused_with_word_id),
                 occurrences=p.occurrences,
+                evidence_ids=list(p.evidence_ids),
             )
             for p in profile.confused_pairs
         ],
@@ -96,6 +102,7 @@ def get_my_weaknesses(
             ],
             insufficient_data=cross_association.insufficient_data,
         ),
+        generated_at=utcnow(),
         insufficient_data=profile.insufficient_data,
     )
 

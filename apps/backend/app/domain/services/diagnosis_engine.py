@@ -90,6 +90,9 @@ class DiagnosisCandidate:
     # "prevent multiple rules from silently claiming the same evidence as
     # independent proof."
     competing_with: tuple[DiagnosisCategory, ...] = ()
+    # The other word of a confusion pair, named only by ExactConfusionRule
+    # (#185 TODO 1).
+    related_word_id: int | None = None
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.confidence <= 1.0:
@@ -274,6 +277,7 @@ class ExactConfusionRule:
                 ),
             ),
             sample_size=strongest.occurrences,
+            related_word_id=other_id,
         )
 
 
@@ -636,4 +640,5 @@ def diagnose(context: DiagnosisContext, rules: Sequence[DiagnosisRule] = ALL_RUL
         diagnosed_at=utcnow(),
         sample_size=winner.sample_size,
         competing_hypotheses=competitors,
+        related_word_id=winner.related_word_id,
     )

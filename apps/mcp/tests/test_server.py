@@ -40,6 +40,12 @@ class FakeBackend:
             raise BackendError(404, "Resource not found")
         return {"uri": uri, "items": [{"term": "hola"}]}
 
+    def groups(self):
+        return ["Spanish Basics", "Spanish Slang", "French"]
+
+    def scenarios(self):
+        return ["job_interview", "airport", "restaurant"]
+
 
 def test_lifecycle_and_tool_call_are_mcp_json_rpc_messages():
     backend = FakeBackend()
@@ -128,6 +134,37 @@ def test_resources_templates_prompts_and_completion_are_exposed_after_initialize
 
     completion = server.handle({"jsonrpc": "2.0", "id": 7, "method": "completion/complete", "params": {"argument": {"name": "target_language", "value": "sp"}}})
     assert completion["result"]["completion"]["values"] == ["Spanish"]
+
+
+def test_session_template_is_advertised_and_reads_through_like_the_others():
+    server = MCPServer(FakeBackend())
+    server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-11-25"}})
+    server.handle({"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+    templates = server.handle({"jsonrpc": "2.0", "id": 2, "method": "resources/templates/list"})
+    assert any(item["uriTemplate"] == "lensword://session/{session_id}" for item in templates["result"]["resourceTemplates"])
+
+    read = server.handle(
+        {"jsonrpc": "2.0", "id": 3, "method": "resources/read", "params": {"uri": "lensword://session/abc123"}}
+    )
+    assert read["result"]["contents"][0]["uri"] == "lensword://session/abc123"
+
+
+def test_group_and_scenario_completion_are_account_scoped_through_the_backend():
+    server = MCPServer(FakeBackend())
+    server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-11-25"}})
+    server.handle({"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+    groups = server.handle({"jsonrpc": "2.0", "id": 2, "method": "completion/complete", "params": {"argument": {"name": "group", "value": "Spanish"}}})
+    assert groups["result"]["completion"]["values"] == ["Spanish Basics", "Spanish Slang"]
+
+    scenarios = server.handle({"jsonrpc": "2.0", "id": 3, "method": "completion/complete", "params": {"argument": {"name": "scenario", "value": "air"}}})
+    assert scenarios["result"]["completion"]["values"] == ["airport"]
+
+    # `topic` and `active-learning-path` are honestly unimplemented rather
+    # than faked — no closed, account-scoped source exists for either yet.
+    topic = server.handle({"jsonrpc": "2.0", "id": 4, "method": "completion/complete", "params": {"argument": {"name": "topic", "value": "a"}}})
+    assert topic["result"]["completion"]["values"] == []
 
 
 def test_resource_read_rejects_unbounded_or_unknown_uris():

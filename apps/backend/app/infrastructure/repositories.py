@@ -48,6 +48,7 @@ from app.domain.services.diagnosis_contracts import (
     InterventionOutcome,
     InterventionPlan,
     LearningObservation,
+    ModalityPreference,
     ObservationCorrection,
     ObservationCorrectionReason,
 )
@@ -91,6 +92,7 @@ from app.infrastructure.models import (
     DiagnosisModel,
     InterventionPlanModel,
     InterventionOutcomeModel,
+    ModalityPreferenceModel,
     AcquisitionEventModel,
     CompanionSessionModel,
     CompanionTurnModel,
@@ -563,6 +565,7 @@ def _delete_user_dependents(db: Session, user_id: int) -> None:
         WeeklyLearningReportModel,
         DesktopNotificationModel,
         SyncOperationModel,
+        ModalityPreferenceModel,
     ):
         for row in db.scalars(select(model).where(model.user_id == user_id)):
             db.delete(row)
@@ -714,7 +717,9 @@ class SqlAlchemyWordRepository:
         )
         return self.db.scalar(stmt)
 
-    def list_due_for_user(self, user_id: int, limit: int, group_id: int | None = None) -> list[Word]:
+    def list_due_for_user(
+        self, user_id: int, limit: int, group_id: int | None = None, offset: int = 0
+    ) -> list[Word]:
         # Ordered strictly by due_at, and deliberately not by issue #204's
         # semantic-diversity policy: that policy only acts at word
         # introduction, where no observed errors exist yet (its own boundary
@@ -728,7 +733,11 @@ class SqlAlchemyWordRepository:
         )
         if group_id is not None:
             stmt = stmt.where(WordModel.group_id == group_id)
-        stmt = stmt.order_by(WordModel.due_at.asc()).limit(limit)
+        # A secondary key breaks ties on due_at deterministically — without
+        # it, two words due at the same instant can swap order between an
+        # offset page and the next, which would silently skip or repeat a
+        # word at the page boundary.
+        stmt = stmt.order_by(WordModel.due_at.asc(), WordModel.id.asc()).offset(offset).limit(limit)
         return [_word_to_domain(m) for m in self.db.scalars(stmt)]
 
     def add(self, word: Word) -> Word:
@@ -2116,6 +2125,7 @@ def _diagnosis_to_domain(m: DiagnosisModel) -> Diagnosis:
         diagnosed_at=m.diagnosed_at,
         sample_size=m.sample_size,
         competing_hypotheses=tuple(m.competing_hypotheses),
+        related_word_id=m.related_word_id,
     )
 
 
@@ -2136,6 +2146,7 @@ class SqlAlchemyDiagnosisRepository:
             diagnosed_at=diagnosis.diagnosed_at,
             sample_size=diagnosis.sample_size,
             competing_hypotheses=list(diagnosis.competing_hypotheses),
+            related_word_id=diagnosis.related_word_id,
         )
         self.db.add(model)
         self.db.flush()
@@ -2160,9 +2171,33 @@ class SqlAlchemyDiagnosisRepository:
         )
         return [_diagnosis_to_domain(m) for m in self.db.scalars(stmt)]
 
+    def list_for_user(self, user_id: int, limit: int = 50, offset: int = 0) -> list[Diagnosis]:
+        # `ix_diagnoses_user_word_diagnosed` still covers this: user_id is
+        # its leading column, so an account-wide query uses the same index
+        # prefix a per-word lookup does.
+        stmt = (
+            select(DiagnosisModel)
+            .where(DiagnosisModel.user_id == user_id)
+            .order_by(DiagnosisModel.diagnosed_at.desc(), DiagnosisModel.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return [_diagnosis_to_domain(m) for m in self.db.scalars(stmt)]
+
+
+def _prerequisite_ids_to_column(ids: tuple[int, ...]) -> str | None:
+    return ",".join(str(i) for i in ids) if ids else None
+
+
+def _prerequisite_ids_from_column(value: str | None) -> tuple[int, ...]:
+    if not value:
+        return ()
+    return tuple(int(part) for part in value.split(","))
+
 
 def _intervention_plan_to_domain(m: InterventionPlanModel) -> InterventionPlan:
     return InterventionPlan(
+        id=m.id,
         word_id=m.word_id,
         user_id=m.user_id,
         diagnosis_outcome=m.diagnosis_outcome,
@@ -2172,6 +2207,8 @@ def _intervention_plan_to_domain(m: InterventionPlanModel) -> InterventionPlan:
         rationale=m.rationale,
         planned_at=m.planned_at,
         scheduled_for=m.scheduled_for,
+        second_word_id=m.second_word_id,
+        prerequisite_ids=_prerequisite_ids_from_column(m.prerequisite_ids),
     )
 
 
@@ -2184,6 +2221,7 @@ def _intervention_outcome_to_domain(m: InterventionOutcomeModel) -> Intervention
         result=m.result,
         recorded_at=m.recorded_at,
         completed_at=m.completed_at,
+        horizon=m.horizon,
     )
 
 
@@ -2205,6 +2243,8 @@ class SqlAlchemyInterventionRepository:
             rationale=plan.rationale,
             planned_at=plan.planned_at,
             scheduled_for=plan.scheduled_for,
+            second_word_id=plan.second_word_id,
+            prerequisite_ids=_prerequisite_ids_to_column(plan.prerequisite_ids),
         )
         self.db.add(model)
         self.db.flush()
@@ -2219,6 +2259,7 @@ class SqlAlchemyInterventionRepository:
             result=outcome.result,
             recorded_at=outcome.recorded_at,
             completed_at=outcome.completed_at,
+            horizon=outcome.horizon,
         )
         self.db.add(model)
         self.db.flush()
@@ -2231,6 +2272,86 @@ class SqlAlchemyInterventionRepository:
             .order_by(InterventionPlanModel.planned_at.desc())
         )
         return [_intervention_plan_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def list_outcomes_for_word(self, user_id: int, word_id: int) -> list[InterventionOutcome]:
+        stmt = (
+            select(InterventionOutcomeModel)
+            .where(InterventionOutcomeModel.user_id == user_id, InterventionOutcomeModel.word_id == word_id)
+            .order_by(InterventionOutcomeModel.recorded_at.desc())
+        )
+        return [_intervention_outcome_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def get_plan(self, user_id: int, plan_id: int) -> InterventionPlan | None:
+        stmt = select(InterventionPlanModel).where(
+            InterventionPlanModel.user_id == user_id, InterventionPlanModel.id == plan_id
+        )
+        model = self.db.scalars(stmt).first()
+        return _intervention_plan_to_domain(model) if model is not None else None
+
+    def list_all_for_user(
+        self, user_id: int, limit: int | None = None, offset: int = 0
+    ) -> list[InterventionPlan]:
+        # `ix_intervention_plans_user_word_planned` leads with user_id, so
+        # an account-wide query still uses that index's prefix. `limit`
+        # stays optional (default: everything) so `review.py`'s existing
+        # unbounded call for contrast-card decisions is unaffected; issue
+        # #192's `/me/interventions` companion resource is the first
+        # caller to bound and paginate it.
+        stmt = (
+            select(InterventionPlanModel)
+            .where(InterventionPlanModel.user_id == user_id)
+            .order_by(InterventionPlanModel.planned_at.desc(), InterventionPlanModel.id.desc())
+            .offset(offset)
+        )
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        return [_intervention_plan_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def list_all_outcomes_for_user(self, user_id: int) -> list[InterventionOutcome]:
+        stmt = (
+            select(InterventionOutcomeModel)
+            .where(InterventionOutcomeModel.user_id == user_id)
+            .order_by(InterventionOutcomeModel.recorded_at.desc())
+        )
+        return [_intervention_outcome_to_domain(m) for m in self.db.scalars(stmt)]
+
+
+def _modality_preference_to_domain(m: ModalityPreferenceModel) -> ModalityPreference:
+    return ModalityPreference(id=m.id, user_id=m.user_id, modality=m.modality, stated_at=m.stated_at)
+
+
+class SqlAlchemyModalityPreferenceRepository:
+    """Append-only store of stated modality preferences (issue #186 TODO 0)
+    — the same shape `SqlAlchemyInterventionRepository` above uses for its
+    own append-only tables."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add(self, preference: ModalityPreference) -> ModalityPreference:
+        model = ModalityPreferenceModel(
+            user_id=preference.user_id, modality=preference.modality, stated_at=preference.stated_at
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _modality_preference_to_domain(model)
+
+    def latest_for_user(self, user_id: int) -> ModalityPreference | None:
+        stmt = (
+            select(ModalityPreferenceModel)
+            .where(ModalityPreferenceModel.user_id == user_id)
+            .order_by(ModalityPreferenceModel.stated_at.desc())
+        )
+        model = self.db.scalars(stmt).first()
+        return _modality_preference_to_domain(model) if model is not None else None
+
+    def list_for_user(self, user_id: int) -> list[ModalityPreference]:
+        stmt = (
+            select(ModalityPreferenceModel)
+            .where(ModalityPreferenceModel.user_id == user_id)
+            .order_by(ModalityPreferenceModel.stated_at.desc())
+        )
+        return [_modality_preference_to_domain(m) for m in self.db.scalars(stmt)]
 
 
 def _companion_session_to_domain(m: CompanionSessionModel) -> CompanionSession:

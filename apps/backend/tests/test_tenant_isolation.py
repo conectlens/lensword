@@ -186,6 +186,21 @@ def owned(client, two_accounts, db_session):
     )
     _db.commit()
 
+    # #185: seeded directly, the same reasoning as scenario_attempt above —
+    # reliably reaching EXACT_CONFUSION through the real endpoint needs a
+    # repeated, specific wrong answer this fixture does not otherwise set up.
+    from app.domain.services.diagnosis_contracts import InterventionPlan
+    from app.domain.value_objects import utcnow
+    from app.infrastructure.repositories import SqlAlchemyInterventionRepository
+
+    plan = SqlAlchemyInterventionRepository(_db).add_plan(
+        InterventionPlan(
+            word_id=word["id"], user_id=owner_id, diagnosis_outcome="exact_confusion",
+            strategy="isolate", policy_version=1, eligible=True, rationale="r", planned_at=utcnow(),
+        )
+    )
+    _db.commit()
+
     # #229: recorded through the real endpoint (learning_diagnosis_enabled
     # was turned on above) rather than seeded, since it needs no AI
     # provider and doing it for real also exercises the write path this
@@ -216,6 +231,7 @@ def owned(client, two_accounts, db_session):
         "companion_session": companion_session["id"],
         "companion_activity": companion_activity["id"],
         "companion_task": companion_task["id"],
+        "plan": plan.id,
     }
 
 
@@ -247,6 +263,17 @@ CROSS_TENANT_CASES = [
     # pattern for someone else's word.
     _case("GET", "/api/v1/words/{word}/diagnosis"),
     _case("GET", "/api/v1/words/{word}/diagnosis/history"),
+    # Intervention plans (#185 TODO 4). Acting on one (reject/postpone/
+    # choose an alternative) is a write against someone else's plan, not
+    # just a read.
+    _case("GET", "/api/v1/words/{word}/interventions"),
+    _case("POST", "/api/v1/words/{word}/interventions/{plan}/reject"),
+    _case("POST", "/api/v1/words/{word}/interventions/{plan}/postpone"),
+    _case("POST", "/api/v1/words/{word}/interventions/{plan}/alternative", {"strategy": "spatial_anchor"}),
+    # AI-generated intervention content (#187 TODO 2). No AI provider is
+    # configured in this audit, so this always answers "disabled" for the
+    # owner — the ownership check must still run and 404 before that.
+    _case("POST", "/api/v1/words/{word}/interventions/{plan}/explain"),
     # Graduated acquisition ladder (#184). Same disclosure concern as
     # diagnosis above, plus a real write surface on /start and /answer.
     _case("GET", "/api/v1/words/{word}/acquisition"),
@@ -286,6 +313,7 @@ CROSS_TENANT_CASES = [
     _case("POST", "/api/v1/words/{word}/mnemonics", {"text": "intruding"}),
     _case("POST", "/api/v1/words/{word}/mnemonics/{mnemonic}/vote", {"upvote": True}),
     _case("POST", "/api/v1/words/{word}/mnemonics/suggest"),
+    _case("GET", "/api/v1/words/{word}/mnemonics/{mnemonic}/strength"),
     # Review. Both bodies must be *valid*: a 422 is rejected by this audit
     # (see DENIED), because a request that fails schema validation never
     # reaches the ownership check and so proves nothing about isolation.

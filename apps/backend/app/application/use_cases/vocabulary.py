@@ -336,11 +336,14 @@ class SearchWordsUseCase:
     def __init__(self, word_repo: WordRepository, group_repo: GroupRepository):
         self.word_repo, self.group_repo = word_repo, group_repo
 
-    def execute(self, owner_id: int, query: str, limit: int) -> list[Word]:
-        needle, matches = query.strip().casefold(), []
+    def execute(self, owner_id: int, query: str, limit: int, offset: int = 0) -> list[Word]:
+        needle, matches, skipped = query.strip().casefold(), [], 0
         for group in self.group_repo.list_by_owner(owner_id):
             for word in self.word_repo.list_by_group(group.id or 0):
                 if not needle or needle in word.term.casefold() or any(needle in value.casefold() for value in word.translations):
+                    if skipped < offset:
+                        skipped += 1
+                        continue
                     matches.append(word)
                     if len(matches) >= limit:
                         return matches

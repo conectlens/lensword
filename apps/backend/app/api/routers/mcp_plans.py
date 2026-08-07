@@ -7,7 +7,10 @@ from time import monotonic
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
-from app.api.deps import CompanionSessionRepo, CurrentUser, DbSession, GroupRepo, OptionalAIProvider, PracticeExerciseRepo, RecallSettingsRepo, ReviewSessionRepo, WordRepo
+from app.api.deps import (
+    CompanionSessionRepo, CurrentUser, DbSession, DiagnosisRepo, GroupRepo, LearningObservationRepo,
+    OptionalAIProvider, PracticeExerciseRepo, RecallSettingsRepo, ReviewSessionRepo, WordRepo,
+)
 from app.api.routers.mcp import InvokeRequest, invoke
 from app.application.mcp.planner import CommandPlanner, LearningPlan
 
@@ -60,6 +63,7 @@ async def execute(
     plan_id: str, payload: PlanExecuteRequest, current_user: CurrentUser, db: DbSession, groups: GroupRepo,
     words: WordRepo, sessions: ReviewSessionRepo, exercises: PracticeExerciseRepo, provider: OptionalAIProvider,
     companion_sessions: CompanionSessionRepo, recall_settings: RecallSettingsRepo,
+    diagnoses: DiagnosisRepo, observations: LearningObservationRepo,
 ) -> dict:
     stored = _get_plan(plan_id, current_user.id or 0)
     if payload.cancelled:
@@ -72,7 +76,7 @@ async def execute(
     results = []
     for step in stored.plan.steps:
         try:
-            result = await invoke(InvokeRequest(tool=step.tool, requester=stored.request.requester, workspace=stored.request.workspace, payload=step.payload), current_user, db, groups, words, sessions, exercises, provider, companion_sessions, recall_settings)
+            result = await invoke(InvokeRequest(tool=step.tool, requester=stored.request.requester, workspace=stored.request.workspace, payload=step.payload), current_user, db, groups, words, sessions, exercises, provider, companion_sessions, recall_settings, diagnoses, observations)
             results.append({"id": step.id, "tool": step.tool, "status": "completed", "result": result})
         except HTTPException as exc:
             results.append({"id": step.id, "tool": step.tool, "status": "failed", "detail": exc.detail})
