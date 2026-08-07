@@ -1,0 +1,77 @@
+id: render-free-deployment-path
+products:
+  - backend
+  - mcp-server
+type: none
+reason: >-
+  Adds a free deployment path (Render.com) for backend/MCP as an
+  alternative to Cloudflare Containers, which requires the Workers Paid
+  plan (confirmed by a real "Unauthorized" failure against a Free-plan
+  account). No application code changed — deploy tooling and docs only.
+  The Cloudflare Containers workflows are disabled from auto-triggering
+  (manual-only now) rather than removed.
+summary: >-
+  No user-observable change — adds render.yaml and docs/internal/render-deployment.md
+  as a free deployment path for backend/MCP, and switches the Cloudflare
+  Containers deploy workflows from automatic to manual-trigger only.
+technical_summary: >-
+  render.yaml (Blueprint spec, confirmed field-by-field against
+  render.com/docs/blueprint-spec but not dry-run validated against a live
+  account — no local Render CLI equivalent to `wrangler deploy --dry-run`
+  was available) defines lensword-backend and lensword-mcp as Docker-based
+  Free-plan web services. docs/internal/render-deployment.md documents the
+  recommended dashboard-based setup path, and flags a real Supabase
+  gotcha: use the direct connection string (port 5432), not the
+  transaction-mode pgbouncer pooler (6543), since this app does its own
+  connection pooling and pgbouncer's transaction mode doesn't support
+  some things SQLAlchemy/Alembic use. Automatic migrations need no new
+  code — apps/backend/Dockerfile's CMD already runs `alembic upgrade
+  head` on every container start, which applies unchanged to any Docker
+  host including Render.
+  .github/workflows/deploy-backend.yml and deploy-mcp.yml dropped their
+  `on: push` trigger (workflow_dispatch only now) so they stop failing
+  noisily on every push to main while Containers isn't usable on the
+  current Cloudflare plan.
+user_impact: >-
+  None — internal/deployment-process change. Once the backend/MCP secrets
+  are configured on Render (see docs/internal/render-deployment.md), pushes
+  to main deploy there automatically via Render's own GitHub integration,
+  no GitHub Actions workflow needed for that.
+release_status: unreleased
+breaking: false
+migration: none
+known_limitations:
+  - render.yaml is not dry-run validated against a live Render account —
+    Render has no local CLI equivalent to `wrangler deploy --dry-run`
+    that was available in this environment to verify config parsing the
+    way the Cloudflare wrangler.toml files were.
+  - The Free Render plan spins a service down after 15 minutes of no
+    traffic; the next request pays a cold start (~30-50s). Documented as
+    a known, accepted trade-off, not something this change works around.
+compatibility:
+  requires:
+    server_api: null
+verification:
+  automated_tests:
+    status: passed
+    commands:
+      - python -c "import yaml; yaml.safe_load(open('render.yaml'))" (valid YAML, 2 services)
+      - cd scripts/docs-qa && python -m pytest -v (unaffected, still passing)
+      - python scripts/docs-qa/check_code_blocks.py (49 files, valid)
+    workflow_url: null
+  artifact_build:
+    status: not_run
+    artifacts: []
+  manual_platform_checks:
+    macos: not_applicable
+    windows: not_applicable
+    linux: not_applicable
+  production_observation:
+    status: not_observed
+security_impact: none
+documentation_required: false
+date: '2026-08-07'
+references:
+  issues: []
+  pull_requests: []
+  commits: []

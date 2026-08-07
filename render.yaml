@@ -1,0 +1,84 @@
+# Render.com Blueprint — a free alternative to Cloudflare Containers, which
+# requires the Workers Paid plan ($5/mo minimum; Containers specifically,
+# not Workers/Pages in general) even before any real usage. Render's Free
+# plan needs no card on file at all.
+#
+# Trade-off, stated plainly: a Free Render web service spins down after 15
+# minutes with no inbound traffic and takes ~30-50s to cold-start the next
+# request. Acceptable for a low-traffic/early-stage deployment; not for a
+# service that needs to answer instantly at all times. Upgrading a single
+# service off the Free plan later removes this without touching anything
+# else here.
+#
+# NEEDS VERIFICATION AGAINST THE LIVE RENDER DASHBOARD before first deploy —
+# schema confirmed field-by-field against developers docs
+# (render.com/docs/blueprint-spec) but not dry-run validated the way the
+# Cloudflare wrangler.toml files were (no local Render CLI to do that
+# with). If a field here is rejected, Render's own Blueprint UI reports
+# exactly which one — fix that field, the rest should be unaffected.
+#
+# Recommended actual path: Render Dashboard -> New -> Web Service -> connect
+# this repo -> Runtime: Docker -> point at the Dockerfile below. That flow
+# is interactive and self-correcting; this file exists for reproducibility
+# once the manual setup is confirmed working, and to review before running
+# `render blueprint launch` if you'd rather start there.
+
+services:
+  - type: web
+    name: lensword-backend
+    runtime: docker
+    dockerfilePath: ./apps/backend/Dockerfile
+    dockerContext: ./apps/backend
+    plan: free
+    branch: main
+    autoDeploy: true
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      # Set once in the Render dashboard when the Blueprint first runs —
+      # use Supabase's DIRECT connection string (port 5432), not the
+      # pgbouncer pooler (6543). This app does its own connection pooling
+      # (DB_POOL_SIZE/DB_MAX_OVERFLOW in apps/backend/.env.example) and
+      # doesn't need Supabase's pooler layer at this scale; pgbouncer's
+      # transaction mode also doesn't support some things SQLAlchemy/Alembic
+      # use (prepared statements, certain DDL) — the direct connection
+      # avoids that class of problem entirely rather than requiring a
+      # pooler-mode-specific workaround.
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "10080"
+      - key: CORS_ORIGINS
+        value: '["https://lensword.conectlens.com","https://lensword-frontend.pages.dev"]'
+      - key: AI_PROVIDER
+        value: none
+      - key: REMOTE_MCP_ENABLED
+        value: "false"
+
+  - type: web
+    name: lensword-mcp
+    runtime: docker
+    dockerfilePath: ./apps/mcp/Dockerfile
+    dockerContext: ./apps/mcp
+    plan: free
+    branch: main
+    autoDeploy: true
+    envVars:
+      - key: LENSWORD_MCP_TRANSPORT
+        value: http
+      - key: LENSWORD_MCP_REMOTE_ENABLED
+        value: "1"
+      # Render's own generated URL for the backend service above — update
+      # this once you know the real one (it follows
+      # https://<service-name>.onrender.com by default, but Render may
+      # suffix it if the name is taken). Not using Render's fromService
+      # cross-reference here since that field's exact property name for
+      # "the public URL" wasn't confirmed against live docs — a plain,
+      # correct value beats an unverified cross-reference.
+      - key: LENSWORD_API_URL
+        value: https://lensword-backend.onrender.com
+      - key: LENSWORD_MCP_WORKSPACE
+        value: production
