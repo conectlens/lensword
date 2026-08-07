@@ -31,7 +31,11 @@ export class BackendContainer extends Container<Env> {
     this.envVars = {
       DATABASE_URL: env.DATABASE_URL,
       SECRET_KEY: env.SECRET_KEY,
-      CORS_ORIGINS: env.CORS_ORIGINS ?? '["https://lensword-frontend.pages.dev"]',
+      // Both the custom domain and the default *.pages.dev URL — the latter
+      // keeps working even before the Pages project's custom domain (a
+      // dashboard-only step, not wrangler-configurable — see
+      // docs/internal/cloudflare-deployment.md) is attached.
+      CORS_ORIGINS: env.CORS_ORIGINS ?? '["https://lensword.conectlens.com","https://lensword-frontend.pages.dev"]',
     };
   }
 }

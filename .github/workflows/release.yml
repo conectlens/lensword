@@ -1,7 +1,9 @@
 name: Release
 
 # Phase 3.3 (#16): produce desktop installers for all three platforms on a
-# tagged release.
+# tagged release. Packaging logic lives in build-desktop-installers.yml
+# (shared with release-continuous.yml's rolling builds) — this file is now
+# just the tag-triggered channel's own trigger + release metadata.
 #
 # This workflow's job is to produce installers at all. It does not satisfy
 # ADR 0001's release gate on its own: that gate requires *signed* builds, and
@@ -21,133 +23,13 @@ on:
       - "v*"
   workflow_dispatch: {}
 
-permissions:
-  contents: write
-
 jobs:
-  release:
-    name: Installer (${{ matrix.platform }})
-    strategy:
-      # Matches ci.yml: one platform failing should still report the other two,
-      # since a packaging break is usually platform-specific.
-      fail-fast: false
-      matrix:
-        platform: [macos-latest, ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.platform }}
-    # Bounded for the same reason as ci.yml's desktop job: a package manager
-    # waiting on a lock should fail rather than hold a runner for six hours.
-    timeout-minutes: 60
+  compute-version:
+    name: Compute display version
+    runs-on: ubuntu-latest
+    outputs:
+      display: ${{ steps.version.outputs.display }}
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: apps/frontend/package-lock.json
-
-      # Rust ships preinstalled on the GitHub-hosted runners, so rustup is used
-      # directly rather than adding a third-party toolchain action — the same
-      # reasoning ci.yml records for its desktop job.
-      - name: Ensure a stable Rust toolchain
-        run: rustup update stable && rustup default stable
-
-      - name: Cache cargo registry and build output
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            apps/desktop/target
-          # A separate key prefix from ci.yml's: that cache holds debug
-          # artifacts from `cargo check`, which a release build cannot reuse.
-          key: cargo-release-${{ runner.os }}-${{ hashFiles('apps/desktop/Cargo.lock') }}
-          restore-keys: cargo-release-${{ runner.os }}-
-
-      # Tauri links against the system webview on Linux. Same packages and same
-      # rationale as ci.yml: `noninteractive` stops a prompting package from
-      # blocking until timeout, and `--no-install-recommends` avoids a large
-      # recommended set that is useless for linking against the headers.
-      - name: Install webview build dependencies
-        if: matrix.platform == 'ubuntu-latest'
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends \
-            libwebkit2gtk-4.1-dev \
-            libjavascriptcoregtk-4.1-dev \
-            libsoup-3.0-dev \
-            libgtk-3-dev \
-            librsvg2-dev \
-            patchelf
-
-      # An explicit step rather than tauri.conf.json's `beforeBuildCommand`.
-      # `tauri::generate_context!` embeds this output, so when it is missing the
-      # failure surfaces as a macro expansion error deep in the Rust build;
-      # failing here instead points at the actual cause. It also keeps the
-      # working directory unambiguous, which a relative `npm --prefix
-      # ../../frontend` inside the Tauri config does not.
-      - name: Build the frontend the shell embeds
-        working-directory: apps/frontend
-        run: |
-          npm ci
-          npm run build
-
-      # Windows code signing. macOS signing is built into tauri-action; this is
-      # not, so the certificate is written to a file and a `signCommand` is
-      # injected into the bundle config.
-      #
-      # Injected here rather than committed, which is the load-bearing part: a
-      # `signCommand` in `tauri.conf.json` runs on *every* Windows build, so a
-      # fork or an unconfigured repository would invoke signtool with an empty
-      # certificate path and fail the release instead of producing an unsigned
-      # installer.
-      #
-      # The "is it configured" test lives inside the script, not in an `if:`.
-      # The `secrets` context is not available to a step-level condition, and
-      # neither is a step's own `env` — so a condition referencing either would
-      # silently evaluate empty and skip signing on a repository that *is*
-      # configured.
-      - name: Sign the Windows build
-        if: matrix.platform == 'windows-latest'
-        env:
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-        shell: pwsh
-        run: |
-          if (-not $env:WINDOWS_CERTIFICATE) {
-            Write-Host "No WINDOWS_CERTIFICATE secret; this build will be unsigned."
-            exit 0
-          }
-
-          $pfx = Join-Path $env:RUNNER_TEMP "windows-signing.pfx"
-          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
-
-          $configPath = "apps/desktop/src-tauri/tauri.conf.json"
-          if (-not (Test-Path $configPath)) {
-            Write-Error "Signing config path not found: $configPath"
-            exit 1
-          }
-          $config = Get-Content $configPath -Raw | ConvertFrom-Json
-          # A timestamp server is not optional: without one the signature stops
-          # validating the day the certificate expires, including on installers
-          # that were downloaded long before.
-          $sign = @{
-            cmd  = "signtool"
-            args = @(
-              "sign", "/fd", "SHA256",
-              "/f", $pfx,
-              "/p", $env:WINDOWS_CERTIFICATE_PASSWORD,
-              "/tr", "http://timestamp.digicert.com", "/td", "SHA256",
-              "%1"
-            )
-          }
-          $config.bundle | Add-Member -Name windows -Value @{ signCommand = $sign } `
-            -MemberType NoteProperty -Force
-          $config | ConvertTo-Json -Depth 20 | Set-Content $configPath
-          Write-Host "Windows signing configured."
-
       - name: Compute display version
         id: version
         shell: bash
@@ -155,37 +37,25 @@ jobs:
           ref="${{ github.ref_name }}"
           echo "display=${ref#desktop-}" >> "$GITHUB_OUTPUT"
 
-      - name: Build and attach installers
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-          # Signing is optional and absent by default. tauri-action skips
-          # signing when these are unset, so a fork or an unconfigured
-          # repository still produces (unsigned) installers rather than failing
-          # the release outright. macOS notarization additionally needs
-          # APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID.
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          projectPath: apps/desktop
-          tagName: ${{ github.ref_name }}
-          releaseName: "LensWord Desktop ${{ steps.version.outputs.display }}"
-          releaseBody: |
-            Desktop installers for this tag. See CHANGELOG.md for details.
+  release:
+    name: Release
+    needs: compute-version
+    uses: ./.github/workflows/build-desktop-installers.yml
+    secrets: inherit
+    with:
+      tag_name: ${{ github.ref_name }}
+      display_version: ${{ needs.compute-version.outputs.display }}
+      release_name: "LensWord Desktop ${{ needs.compute-version.outputs.display }}"
+      release_body: |
+        Desktop installers for this tag. See CHANGELOG.md for details.
 
-            These builds are unsigned unless repository signing secrets were
-            configured for this run. ADR 0001 requires signed — and on macOS,
-            notarized — artifacts before the measured startup/memory baseline
-            (#65) can be taken against them.
-          # A draft, so a tag never publishes installers without someone
-          # looking first. Whether a run was signed is not visible from the
-          # workflow's own green tick.
-          releaseDraft: true
-          prerelease: false
+        These builds are unsigned unless repository signing secrets were
+        configured for this run. ADR 0001 requires signed — and on macOS,
+        notarized — artifacts before the measured startup/memory baseline
+        (#65) can be taken against them.
+      # A draft, so a tag never publishes installers without someone
+      # looking first. Whether a run was signed is not visible from the
+      # workflow's own green tick.
+      release_draft: true
+      prerelease: false
+      api_base_url: "https://lensword-api.conectlens.com"

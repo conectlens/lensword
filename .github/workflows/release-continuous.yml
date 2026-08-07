@@ -1,0 +1,70 @@
+name: Continuous Desktop Build
+
+# Publishes a rolling, always-latest desktop build on every push to main —
+# distinct from release.yml's tag-triggered, versioned/stable channel.
+# Marked prerelease: true so GitHub's own UI distinguishes it from a real
+# release, and the release body says so explicitly. This is the "download
+# what's on main right now" channel; desktop-v* tags remain the "this
+# specific version was deliberately cut" channel — see
+# docs/reference/trust/release-process.md.
+#
+# NOT independently verified end to end (no GitHub release was actually
+# created from this session — no push to main happened here). What IS
+# verified: the reusable workflow it calls (build-desktop-installers.yml)
+# is the same one release.yml uses, unchanged in its packaging/signing
+# logic from the version that already produces real installers there.
+# What's NOT verified: whether tauri-action's release step cleanly
+# replaces assets on an already-existing tag across repeated runs — the
+# explicit delete-and-recreate step below exists specifically to avoid
+# relying on that (untested) behavior, using `gh release delete`, which
+# is a well-established, ordinary CLI operation.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/desktop/**"
+      - "apps/frontend/**"
+      - ".github/workflows/release-continuous.yml"
+      - ".github/workflows/build-desktop-installers.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  reset-rolling-release:
+    name: Reset the rolling release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Delete the previous continuous release and tag, if any
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete desktop-continuous --yes --cleanup-tag || true
+
+  release:
+    name: Build
+    needs: reset-rolling-release
+    uses: ./.github/workflows/build-desktop-installers.yml
+    secrets: inherit
+    with:
+      tag_name: desktop-continuous
+      display_version: "continuous (${{ github.sha }})"
+      release_name: "LensWord Desktop — Continuous Build"
+      release_body: |
+        **Automatic build of the latest `main` branch — not a stable release.**
+        Rebuilt and replaced on every push to `main` that touches the
+        desktop shell or frontend. For a specific, deliberately cut
+        version, see releases tagged `desktop-v*` instead (none exist yet
+        — see the [Releases page](https://github.com/conectlens/lensword/releases)
+        and [release process docs](https://github.com/conectlens/lensword/blob/main/docs/reference/trust/release-process.md)).
+
+        Built from commit ${{ github.sha }}.
+
+        Unsigned unless repository signing secrets are configured for this
+        run — see ADR 0001 and issue #65 for the signed-build baseline
+        this is not a substitute for.
+      release_draft: false
+      prerelease: true
+      api_base_url: "https://lensword-api.conectlens.com"

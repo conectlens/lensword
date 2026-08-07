@@ -15,6 +15,16 @@ main = "cf-worker/index.ts"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 
+# Custom domain — requires conectlens.com to already be an active zone on
+# this same Cloudflare account (Websites -> Add a site). Confirmed syntax:
+# developers.cloudflare.com/workers/configuration/routing/custom-domains/.
+# Remove this block (or point it elsewhere) if lensword-api.conectlens.com
+# isn't ready yet — the Worker still deploys and is reachable at its
+# default *.workers.dev URL either way.
+[[routes]]
+pattern = "lensword-api.conectlens.com"
+custom_domain = true
+
 [[containers]]
 class_name = "BackendContainer"
 image = "./Dockerfile"

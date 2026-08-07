@@ -9,6 +9,11 @@ main = "cf-worker/index.ts"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 
+# Custom domain — same prerequisite/caveat as apps/backend/wrangler.toml.
+[[routes]]
+pattern = "lensword-mcp.conectlens.com"
+custom_domain = true
+
 [[containers]]
 class_name = "MCPContainer"
 image = "./Dockerfile"
@@ -26,6 +31,6 @@ new_sqlite_classes = ["MCPContainer"]
 # credentials. Override per-environment with `wrangler deploy --var` or by
 # editing these directly; see docs/internal/cloudflare-deployment.md.
 [vars]
-LENSWORD_API_URL = "https://lensword-backend.<your-subdomain>.workers.dev"
+LENSWORD_API_URL = "https://lensword-api.conectlens.com"
 LENSWORD_MCP_WORKSPACE = "production"
 LENSWORD_MCP_ALLOWED_ORIGINS = ""
