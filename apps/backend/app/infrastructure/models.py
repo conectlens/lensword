@@ -615,6 +615,37 @@ class ConversationMessageModel(Base):
     session: Mapped[ConversationSessionModel] = relationship(back_populates="messages")
 
 
+class ConversationCorrectionFeedbackModel(Base):
+    """A learner's accept/reject/edit outcome on one correction the tutor
+    offered inside a `ConversationMessageModel.corrections` entry (#194
+    TODO 3).
+
+    A new append-only row per outcome, never an edit to the message or the
+    correction it targets — the same "a correction is a new record, not an
+    edit" posture `ObservationCorrectionModel` already uses for review
+    observations. This is low-trust telemetry about what the learner did
+    with a correction, not a mutation of any mastery-affecting state: it
+    never touches `WordModel`/`ReviewState`.
+    """
+
+    __tablename__ = "conversation_correction_feedback"
+    __table_args__ = (
+        Index("ix_conversation_correction_feedback_message", "message_id", "correction_index"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    message_id: Mapped[int] = mapped_column(ForeignKey("conversation_messages.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    # Position of the correction inside the message's `corrections` list —
+    # corrections are not independently identified rows, so this plus
+    # `message_id` is their only stable address.
+    correction_index: Mapped[int] = mapped_column(Integer)
+    # "accepted", "rejected", or "edited".
+    outcome: Mapped[str] = mapped_column(String(16))
+    edited_text: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+
+
 class ScenarioAttemptModel(Base):
     """One run at a role-play scenario (issue #136).
 
@@ -966,6 +997,9 @@ class CompanionActivityModel(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime)
     updated_at: Mapped[datetime] = mapped_column(DateTime)
     revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    # How many times `request_hint` (#194 TODO 1) has been used on this
+    # activity, bounded by MAX_HINTS_PER_ACTIVITY at the domain layer.
+    hints_used: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default="0")
 
 
 class CompanionTaskModel(Base):

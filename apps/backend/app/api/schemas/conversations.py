@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from app.domain.services.conversation import Difficulty
+from app.domain.services.conversation import CorrectionOutcome, Difficulty, MAX_EDITED_TEXT_CHARS
 
 
 class StartConversationRequest(BaseModel):
@@ -47,6 +47,21 @@ class ConversationResponse(BaseModel):
     created_at: datetime
     ended_at: datetime | None
     messages: list[MessageResponse]
+
+
+class CorrectionFeedbackRequest(BaseModel):
+    """#194 TODO 3: a learner's accept/reject/edit decision on one
+    correction the tutor offered inside a message."""
+
+    outcome: CorrectionOutcome
+    edited_text: str | None = Field(default=None, max_length=MAX_EDITED_TEXT_CHARS)
+
+
+class CorrectionFeedbackResponse(BaseModel):
+    message_id: int
+    correction_index: int
+    outcome: CorrectionOutcome
+    edited_text: str | None
 
 
 class SendMessageResponse(BaseModel):

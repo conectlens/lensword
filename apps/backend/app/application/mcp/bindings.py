@@ -10,6 +10,7 @@ a parallel branch. The five issue #188 tools added below
 call `word_to_response` and never include `mnemonic` or any other private
 field in their own response dicts, so they do not share that leak.
 """
+import uuid
 from typing import Any
 
 from app.api.mappers import word_to_companion_view, word_to_response
@@ -26,14 +27,21 @@ from app.application.use_cases.review import GetWeeklyProgressUseCase, StartRevi
 from app.application.use_cases.practice import GenerateExerciseUseCase
 from app.application.use_cases.extract import ExtractVocabularyUseCase
 from app.application.use_cases.vocabulary import _require_word_owner
+from app.application.use_cases.companion_activities import (
+    BeginLearningActivityUseCase,
+    ExplainActivityEvidenceUseCase,
+    RequestActivityHintUseCase,
+    SubmitActivityResponseUseCase,
+)
 from app.application.use_cases.companion_sessions import (
     FinishCompanionSessionUseCase,
     GetCompanionSessionUseCase,
     StartCompanionSessionUseCase,
     TransitionCompanionSessionUseCase,
 )
-from app.domain.exceptions import PermissionDeniedError, ValidationError
+from app.domain.exceptions import EntityNotFoundError, PermissionDeniedError, ValidationError
 from app.domain.repositories import (
+    CompanionActivityRepository,
     CompanionSessionRepository,
     DiagnosisRepository,
     GroupRepository,
@@ -43,9 +51,15 @@ from app.domain.repositories import (
     WordRepository,
 )
 from app.domain.repositories import ReviewSessionRepository
-from app.domain.services.companion_sessions import CompanionSession
+from app.domain.services.companion_activities import (
+    MAX_HINTS_PER_ACTIVITY,
+    ActivityStatus,
+    ActivityType,
+    LearningActivity,
+)
+from app.domain.services.companion_sessions import CompanionSession, CompanionSessionStatus
 from app.domain.value_objects import SupportedLanguage
-from app.domain.value_objects import ReviewOutcome, SessionMode
+from app.domain.value_objects import ReviewOutcome, SessionMode, utcnow
 from app.domain.services.spaced_repetition import Scheduler
 from app.domain.services.ai_provider import AIProvider
 
@@ -331,4 +345,187 @@ def record_context_occurrence_handler(
             "context_source": result.context_source, "outcome": result.outcome,
             "recorded_at": result.recorded_at.isoformat(),
         }
+    return handle
+
+
+# --- Measurable companion activities (#194 TODO 1) --------------------------
+#
+# Follows #193's own five session tools above exactly: each handler resolves
+# the owning session first (a 404-shaped EntityNotFoundError, never a bare
+# KeyError), gates on `ai_companion_enabled` the same way, and delegates the
+# actual work to the same application use cases the REST router
+# (app.api.routers.companion_activities) calls — so an activity begun over
+# MCP and one begun over REST behave identically, the same cross-client
+# guarantee #193's docstring calls out for companion sessions.
+
+
+def _companion_activity_to_dict(activity: LearningActivity) -> dict[str, Any]:
+    return {
+        "id": activity.id,
+        "session_id": activity.session_id,
+        "activity_type": activity.activity_type.value,
+        "prompt": activity.prompt,
+        "expected_evaluation": activity.expected_evaluation,
+        "status": activity.status.value,
+        "response": activity.response,
+        "result": activity.result,
+        "operation_id": activity.operation_id,
+        "started_at": activity.started_at.isoformat(),
+        "updated_at": activity.updated_at.isoformat(),
+        "revision": activity.revision,
+        "hints_used": activity.hints_used,
+    }
+
+
+def _require_companion_session(sessions: CompanionSessionRepository, user_id: int, session_id: str) -> CompanionSession:
+    session = sessions.get(user_id, session_id)
+    if session is None:
+        raise EntityNotFoundError("Companion session", session_id)
+    return session
+
+
+def _require_companion_activity(
+    activities: CompanionActivityRepository, user_id: int, session_id: str, activity_id: str
+) -> LearningActivity:
+    activity = activities.get(user_id, session_id, activity_id)
+    if activity is None:
+        raise EntityNotFoundError("Companion activity", activity_id)
+    return activity
+
+
+def begin_learning_activity_handler(
+    activities: CompanionActivityRepository,
+    sessions: CompanionSessionRepository,
+    settings: RecallSettingsRepository,
+    words: WordRepository,
+    groups: GroupRepository,
+):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        _require_companion_enabled(settings, user_id)
+        session_id = str(payload["session_id"])
+        session = _require_companion_session(sessions, user_id, session_id)
+        if session.status is not CompanionSessionStatus.ACTIVE:
+            raise ValidationError("Session is not active")
+        try:
+            activity_type = ActivityType(str(payload["activity_type"]))
+        except ValueError as exc:
+            raise ValidationError("Unsupported activity type") from exc
+        expected_evaluation = payload.get("expected_evaluation") or {}
+        if not isinstance(expected_evaluation, dict):
+            raise ValidationError("expected_evaluation must be an object")
+        # The evaluation rule is validated and fixed here, once (#194 TODO
+        # 5) — nothing downstream, including `submit_activity_response`
+        # below, can change it afterward.
+        BeginLearningActivityUseCase(words, groups).validate(user_id, activity_type, expected_evaluation)
+        request_id = payload.get("request_id")
+        now = utcnow()
+        activity = activities.add(
+            LearningActivity(
+                id=uuid.uuid4().hex,
+                session_id=session_id,
+                user_id=user_id,
+                activity_type=activity_type,
+                prompt=str(payload["prompt"]),
+                expected_evaluation=expected_evaluation,
+                status=ActivityStatus.ACTIVE,
+                response=None,
+                result=None,
+                operation_id=str(request_id) if request_id else None,
+                started_at=now,
+                updated_at=now,
+            )
+        )
+        return _companion_activity_to_dict(activity)
+    return handle
+
+
+def submit_activity_response_handler(
+    activities: CompanionActivityRepository,
+    sessions: CompanionSessionRepository,
+    settings: RecallSettingsRepository,
+    observations: LearningObservationRepository,
+):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        _require_companion_enabled(settings, user_id)
+        session_id = str(payload["session_id"])
+        _require_companion_session(sessions, user_id, session_id)
+        activity = _require_companion_activity(activities, user_id, session_id, str(payload["activity_id"]))
+        try:
+            result = SubmitActivityResponseUseCase(activities, observations).execute(
+                user_id, activity, str(payload["response"])
+            )
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+        return _companion_activity_to_dict(result.activity)
+    return handle
+
+
+def get_activity_result_handler(
+    activities: CompanionActivityRepository, sessions: CompanionSessionRepository, settings: RecallSettingsRepository
+):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        _require_companion_enabled(settings, user_id)
+        session_id = str(payload["session_id"])
+        _require_companion_session(sessions, user_id, session_id)
+        activity = _require_companion_activity(activities, user_id, session_id, str(payload["activity_id"]))
+        return _companion_activity_to_dict(activity)
+    return handle
+
+
+def finish_learning_activity_handler(
+    activities: CompanionActivityRepository, sessions: CompanionSessionRepository, settings: RecallSettingsRepository
+):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        _require_companion_enabled(settings, user_id)
+        session_id = str(payload["session_id"])
+        _require_companion_session(sessions, user_id, session_id)
+        activity = _require_companion_activity(activities, user_id, session_id, str(payload["activity_id"]))
+        try:
+            activity.finish()
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+        activity.updated_at = utcnow()
+        return _companion_activity_to_dict(activities.update(activity))
+    return handle
+
+
+def request_hint_handler(
+    activities: CompanionActivityRepository,
+    sessions: CompanionSessionRepository,
+    settings: RecallSettingsRepository,
+    words: WordRepository,
+    groups: GroupRepository,
+):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        _require_companion_enabled(settings, user_id)
+        session_id = str(payload["session_id"])
+        _require_companion_session(sessions, user_id, session_id)
+        activity = _require_companion_activity(activities, user_id, session_id, str(payload["activity_id"]))
+        try:
+            updated, hint = RequestActivityHintUseCase(activities, words, groups).execute(user_id, activity)
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+        return {
+            "activity": _companion_activity_to_dict(updated),
+            "hint": hint,
+            "hints_used": updated.hints_used,
+            "hints_remaining": max(0, MAX_HINTS_PER_ACTIVITY - updated.hints_used),
+        }
+    return handle
+
+
+def explain_evidence_handler(
+    activities: CompanionActivityRepository,
+    sessions: CompanionSessionRepository,
+    settings: RecallSettingsRepository,
+    words: WordRepository,
+    groups: GroupRepository,
+    diagnoses: DiagnosisRepository,
+):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        _require_companion_enabled(settings, user_id)
+        session_id = str(payload["session_id"])
+        _require_companion_session(sessions, user_id, session_id)
+        activity = _require_companion_activity(activities, user_id, session_id, str(payload["activity_id"]))
+        return ExplainActivityEvidenceUseCase(words, groups, diagnoses).execute(user_id, activity)
     return handle

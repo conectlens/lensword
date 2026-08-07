@@ -41,6 +41,7 @@ from app.domain.services.companion_sessions import (
 )
 from app.domain.services.companion_activities import ActivityStatus, ActivityType, LearningActivity
 from app.domain.services.companion_tasks import CompanionTask, CompanionTaskStatus, CompanionTaskType
+from app.domain.services.conversation import CorrectionFeedback, CorrectionOutcome
 from app.domain.services.diagnosis_contracts import (
     AcquisitionState,
     Diagnosis,
@@ -68,6 +69,7 @@ from app.infrastructure.models import (
     SyncOperationModel,
     GroupModel,
     ConversationMessageModel,
+    ConversationCorrectionFeedbackModel,
     ScenarioAttemptModel,
     ConversationSessionModel,
     LearningPathModel,
@@ -1741,6 +1743,49 @@ class SqlAlchemyConversationRepository:
         return [term for term in self.db.scalars(stmt) if term]
 
 
+def _correction_feedback_to_domain(m: ConversationCorrectionFeedbackModel) -> CorrectionFeedback:
+    return CorrectionFeedback(
+        message_id=m.message_id,
+        user_id=m.user_id,
+        correction_index=m.correction_index,
+        outcome=CorrectionOutcome(m.outcome),
+        edited_text=m.edited_text,
+    )
+
+
+class SqlAlchemyConversationCorrectionFeedbackRepository:
+    """Append-only accept/reject/edit outcomes on tutor corrections (#194
+    TODO 3) — see `ConversationCorrectionFeedbackModel` for why this is a
+    new row per outcome rather than a mutation of the message."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add(self, feedback: CorrectionFeedback) -> CorrectionFeedback:
+        model = ConversationCorrectionFeedbackModel(
+            message_id=feedback.message_id,
+            user_id=feedback.user_id,
+            correction_index=feedback.correction_index,
+            outcome=feedback.outcome.value,
+            edited_text=feedback.edited_text,
+            created_at=utcnow(),
+        )
+        self.db.add(model)
+        self.db.flush()
+        return _correction_feedback_to_domain(model)
+
+    def list_for_message(self, user_id: int, message_id: int) -> list[CorrectionFeedback]:
+        stmt = (
+            select(ConversationCorrectionFeedbackModel)
+            .where(
+                ConversationCorrectionFeedbackModel.user_id == user_id,
+                ConversationCorrectionFeedbackModel.message_id == message_id,
+            )
+            .order_by(ConversationCorrectionFeedbackModel.created_at.asc())
+        )
+        return [_correction_feedback_to_domain(m) for m in self.db.scalars(stmt)]
+
+
 class SqlAlchemyScenarioAttemptRepository:
     """Role-play attempts (issue #136).
 
@@ -2547,6 +2592,7 @@ def _companion_activity_to_domain(m: CompanionActivityModel) -> LearningActivity
         started_at=m.started_at,
         updated_at=m.updated_at,
         revision=m.revision,
+        hints_used=m.hints_used,
     )
 
 
@@ -2569,6 +2615,7 @@ class SqlAlchemyCompanionActivityRepository:
             started_at=activity.started_at,
             updated_at=activity.updated_at,
             revision=activity.revision,
+            hints_used=activity.hints_used,
         )
         self.db.add(model)
         self.db.flush()
@@ -2593,6 +2640,7 @@ class SqlAlchemyCompanionActivityRepository:
         model.result = activity.result
         model.updated_at = activity.updated_at
         model.revision = activity.revision
+        model.hints_used = activity.hints_used
         self.db.flush()
         return _companion_activity_to_domain(model)
 

@@ -4,10 +4,13 @@ from app.application.mcp.dispatcher import MCPDispatcher, UnboundMCPToolError, U
 import pytest
 
 def test_contracts_are_versioned_bounded_and_classified():
-    # 8 original tools, 5 learner-aware dev-workflow tools (#188 TODO 3), and
-    # 5 durable-companion-session tools (#193 TODO 1): start/get/resume/
-    # pause/finish_companion_session.
-    assert CONTRACT_VERSION == "1.0.0" and len(TOOL_CONTRACTS) == 18
+    # 8 original tools, 5 learner-aware dev-workflow tools (#188 TODO 3), 5
+    # durable-companion-session tools (#193 TODO 1): start/get/resume/
+    # pause/finish_companion_session, and 6 measurable-activity/companion-
+    # action tools (#194 TODO 1): begin_learning_activity/
+    # submit_activity_response/get_activity_result/finish_learning_activity/
+    # request_hint/explain_evidence.
+    assert CONTRACT_VERSION == "1.0.0" and len(TOOL_CONTRACTS) == 24
     for tool in TOOL_CONTRACTS:
         assert tool.schema_id.endswith(".schema.json")
         assert tool.input_schema["additionalProperties"] is False
