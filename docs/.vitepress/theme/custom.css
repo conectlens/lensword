@@ -11,6 +11,19 @@
  */
 
 :root {
+  /* VitePress's default --vp-code-lang-color (the small language label on a
+     fenced code block, e.g. "bash") measured 2.87:1 on the code-block
+     background in light mode and 3.36:1 in dark — both below WCAG AA's
+     4.5:1 for normal text. Found by scripts/docs-qa/check_accessibility.mjs
+     (#283), verified against the same tool after this change. */
+  --vp-code-lang-color: #595a5c;
+}
+
+.dark {
+  --vp-code-lang-color: #a3a3a8;
+}
+
+:root {
   --vp-c-brand-1: #7a5f00;
   --vp-c-brand-2: #6b5400;
   --vp-c-brand-3: #5c4700;
