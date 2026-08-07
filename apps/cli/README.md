@@ -47,9 +47,15 @@ line).
 
 `add`, `explain`, `diagnose`, and `review` do contact the backend (they read
 or write your real account), through the same policy-gated
-`/api/v1/mcp/invoke` boundary the MCP server uses. Set the same four
-`LENSWORD_*` environment variables first (`LENSWORD_API_URL`,
-`LENSWORD_TOKEN`, `LENSWORD_MCP_REQUESTER`, `LENSWORD_MCP_WORKSPACE`).
+`/api/v1/mcp/invoke` boundary the MCP server uses. Set three `LENSWORD_*`
+environment variables first: `LENSWORD_API_URL`, `LENSWORD_TOKEN`,
+`LENSWORD_MCP_WORKSPACE`.
+
+Caller identity is derived by the backend from `LENSWORD_TOKEN` itself
+(`app/api/mcp_auth.py`, issue #196) — there is no `LENSWORD_MCP_REQUESTER`
+variable to set, matching `apps/mcp`'s own server-side note on the same fact.
+If a runbook or client config you're following still sets that variable, it
+is harmless (nothing reads it) but does nothing.
 
 ```bash
 # Preview, then confirm interactively (or pass --yes to skip the prompt).

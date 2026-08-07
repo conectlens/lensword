@@ -58,7 +58,7 @@ MAX_TRANSLATION_LENGTH = 255
 # without hunting through every print site.
 _PRIVATE_RESPONSE_FIELDS = frozenset({"mnemonic"})
 
-_ENV_VARS = ("LENSWORD_API_URL", "LENSWORD_TOKEN", "LENSWORD_MCP_REQUESTER", "LENSWORD_MCP_WORKSPACE")
+_ENV_VARS = ("LENSWORD_API_URL", "LENSWORD_TOKEN", "LENSWORD_MCP_WORKSPACE")
 
 
 def _redact(value: Any) -> Any:
@@ -222,7 +222,7 @@ def _backend_from_env(error_stream: TextIO) -> BackendClient | None:
             "(see apps/cli/README.md)\n"
         )
         return None
-    return BackendClient(values["LENSWORD_API_URL"], values["LENSWORD_TOKEN"], values["LENSWORD_MCP_REQUESTER"], values["LENSWORD_MCP_WORKSPACE"])
+    return BackendClient(values["LENSWORD_API_URL"], values["LENSWORD_TOKEN"], values["LENSWORD_MCP_WORKSPACE"])
 
 
 def _confirm(prompt: str, *, assume_yes: bool, input_stream: TextIO, prompt_stream: TextIO) -> bool:

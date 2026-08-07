@@ -179,7 +179,7 @@
       "label": "Connect Claude, Codex, Cursor, or another MCP client",
       "ownerProduct": "mcp-server",
       "status": "supported-local-remote-opt-in",
-      "prerequisites": ["LENSWORD_API_URL, LENSWORD_TOKEN, LENSWORD_MCP_REQUESTER, LENSWORD_MCP_WORKSPACE env vars"],
+      "prerequisites": ["LENSWORD_API_URL, LENSWORD_TOKEN, LENSWORD_MCP_WORKSPACE env vars"],
       "limitations": ["not on PyPI", "no CI coverage", "remote transport untested against a real third-party MCP host"]
     },
     {

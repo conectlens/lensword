@@ -68,19 +68,41 @@ technical_summary: >-
   is unchanged; that's a product/security decision for the repo owner, not
   made silently here. npm distribution (TODO 2) is also out of scope for
   this change.
+  Also fixed, found while moving this code: apps/cli/lensword_cli/cli.py's
+  _backend_from_env constructed BackendClient with 4 positional arguments
+  (api_url, token, requester, workspace) against a constructor that only
+  accepts 3 (api_url, token, workspace) plus timeout — LENSWORD_MCP_REQUESTER's
+  value silently landed in the workspace field and the real workspace value
+  landed in timeout. This predates the split (same bug existed in
+  apps/mcp/lensword_mcp/cli.py before the move) and was never caught because
+  the test suite's FakeBackendClient accepted the extra positional argument
+  without complaint. LENSWORD_MCP_REQUESTER was already meaningless server-side
+  (apps/mcp/README.md already documented that identity comes from
+  LENSWORD_TOKEN alone, issue #196) — removed it from the CLI's required env
+  vars entirely, fixed the constructor call to the real 3-argument shape,
+  corrected FakeBackendClient's signature to match BackendClient's real one,
+  and added a regression test asserting each env var lands in its correct
+  field. docs/internal/product-registry.json's connect-mcp-client
+  prerequisites list had the same stale LENSWORD_MCP_REQUESTER entry,
+  corrected alongside it.
 user_impact: >-
-  No behavior change for anyone using the MCP server or Local CLI today —
-  both still install and run exactly as before (pip install -e apps/cli -e
-  apps/mcp instead of pip install -e apps/mcp alone). The Local CLI is now
-  on its own release cycle (cli-v* tags, its own changelog page) separate
-  from the MCP server's (mcp-v* tags). Nothing is installable from PyPI yet
-  for either product.
+  The MCP server is unaffected — installs and runs exactly as before
+  (pip install -e apps/cli -e apps/mcp instead of pip install -e apps/mcp
+  alone). The Local CLI's add/explain/diagnose/review subcommands now
+  actually work against a live backend: they previously sent the wrong
+  workspace value on every call and would error on the malformed timeout
+  argument (see the bug fix above) — import-context, which never contacted
+  the backend, was unaffected either way. Setup now needs three
+  LENSWORD_* environment variables instead of four (LENSWORD_MCP_REQUESTER
+  is gone; it never did anything). The Local CLI is now on its own release
+  cycle (cli-v* tags, its own changelog page) separate from the MCP
+  server's (mcp-v* tags). Nothing is installable from PyPI yet for either
+  product.
 release_status: unreleased
 breaking: false
 migration: none
 known_limitations:
   - "publish-cli.yml has not been run in GitHub Actions and no PyPI trusted publisher has been configured — pip install lensword-cli / pipx install lensword-cli do not work against the real index yet."
-  - "A pre-existing inconsistency in apps/cli/lensword_cli/cli.py's _backend_from_env (present before this split, unchanged by the move): it constructs BackendClient with 4 positional arguments (api_url, token, requester, workspace) but BackendClient's real constructor only accepts 3 (api_url, token, workspace) plus a timeout — the LENSWORD_MCP_REQUESTER value silently lands in the workspace field and the real workspace value lands in the timeout field. Existing tests never catch this because they monkeypatch BackendClient with a fake that accepts a requester parameter. Left untouched — reproducing an existing bug faithfully during a pure move, not introducing a new one, and fixing it was out of scope for this change."
 compatibility:
   requires:
     server_api: null
@@ -88,7 +110,7 @@ verification:
   automated_tests:
     status: passed
     commands:
-      - cd apps/cli && python -m pytest -v (43/43 passing — all moved/split tests)
+      - cd apps/cli && python -m pytest -v (44/44 passing — all moved/split tests plus one new regression test for the BackendClient argument-order fix)
       - cd apps/mcp && python -m pytest -v (85/86 passing — the one failure, test_oversized_request_body_is_rejected, is the same pre-existing environment-specific broken-pipe/connection-reset failure present on this branch before the split; also documented as a known flaky failure in an earlier fragment, mcp-oauth-discovery.yml)
       - python scripts/changelog/validate_registry.py (valid)
       - "fresh venv: python3.12 -m venv /tmp/cli-check && pip install -e apps/cli && lensword --help (exit 0)"
