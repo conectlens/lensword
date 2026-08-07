@@ -100,11 +100,15 @@ def check_secrets_and_paths(media_dir: pathlib.Path) -> list[str]:
         for label, pattern in SECRET_PATTERNS:
             if pattern.search(text):
                 errors.append(f"{rel}: looks like it contains a {label} — verify and remove before committing")
-        for email in EMAIL_RE.findall(text):
-            if not FIXTURE_EMAIL_ALLOWLIST.search(email):
-                errors.append(
-                    f"{rel}: contains an email address not on an allowlisted fixture domain — confirm this isn't a real address"
-                )
+        # any(...) over a generator, not a bound list/loop variable: the
+        # matched email substring is never held anywhere past the immediate
+        # boolean check it's used for, and never reaches errors/print — not
+        # just "the message doesn't interpolate it" (CodeQL's clear-text
+        # logging query still flagged that shape, since it tracks the
+        # collection as tainted once any sensitive-derived value is
+        # appended to it, regardless of which specific message contains it).
+        if any(not FIXTURE_EMAIL_ALLOWLIST.search(m) for m in EMAIL_RE.findall(text)):
+            errors.append(f"{rel}: contains an email address not on an allowlisted fixture domain — confirm this isn't a real address")
     return errors
 
 
