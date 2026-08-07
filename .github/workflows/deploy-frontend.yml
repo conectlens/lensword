@@ -23,6 +23,9 @@ jobs:
   deploy:
     name: Deploy to Cloudflare Pages
     runs-on: ubuntu-latest
+    # See deploy-backend.yml's identical comment — secrets/vars set on the
+    # "production" GitHub Environment need this to be visible to the job.
+    environment: production
     steps:
       - uses: actions/checkout@v7
 

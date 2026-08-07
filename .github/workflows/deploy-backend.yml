@@ -17,11 +17,18 @@ on:
 
 permissions:
   contents: read
+  deployments: write
 
 jobs:
   deploy:
     name: Deploy backend Container
     runs-on: ubuntu-latest
+    # Secrets set on the "production" GitHub Environment (Settings ->
+    # Environments) are only visible to a job that declares it here — a job
+    # with no `environment:` only sees repository/organization secrets.
+    # Also gets you the environment's protection rules (required reviewers,
+    # wait timer, branch restrictions) for free if configured.
+    environment: production
     steps:
       - uses: actions/checkout@v7
 
