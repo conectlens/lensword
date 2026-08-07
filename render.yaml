@@ -27,6 +27,7 @@ services:
   - type: web
     name: lensword-backend
     runtime: docker
+    repo: https://github.com/conectlens/lensword
     dockerfilePath: ./apps/backend/Dockerfile
     dockerContext: ./apps/backend
     plan: free
@@ -61,6 +62,7 @@ services:
   - type: web
     name: lensword-mcp
     runtime: docker
+    repo: https://github.com/conectlens/lensword
     dockerfilePath: ./apps/mcp/Dockerfile
     dockerContext: ./apps/mcp
     plan: free

@@ -12,6 +12,28 @@
 
 const BROWSER_FALLBACK: string = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 
+// A build with VITE_API_URL set to a bare host (no scheme — e.g.
+// "lensword-api.conectlens.com" instead of "https://lensword-api.conectlens.com")
+// doesn't fail to build or throw here at load time; every request silently
+// becomes `fetch("lensword-api.conectlens.com/api/v1/...")`, which the
+// browser resolves as a *relative* URL against the current page's own
+// origin — every request goes to this site itself, at a path that looks
+// like a domain name, and fails with a confusing method-not-allowed or
+// 404 that gives no hint the API URL was ever wrong. Caught in production
+// exactly this way: real requests going to
+// `https://lensword.conectlens.com/lensword-api.conectlens.com/api/v1/...`
+// This check turns that into an immediate, actionable error instead.
+function assertAbsoluteHttpUrl(candidate: string, sourceLabel: string): string {
+  if (!/^https?:\/\//i.test(candidate)) {
+    throw new Error(
+      `${sourceLabel} must be an absolute URL starting with http:// or https:// ` +
+        `(got ${JSON.stringify(candidate)}) — a bare hostname is silently treated ` +
+        'as a relative path by fetch(), not an API origin.',
+    )
+  }
+  return candidate
+}
+
 /** Shape returned by the shell's `get_api_config` command. */
 interface ApiConfig {
   base_url: string
@@ -31,7 +53,7 @@ function isDesktopShell(): boolean {
 let pending: Promise<string> | null = null
 
 async function load(): Promise<string> {
-  if (!isDesktopShell()) return BROWSER_FALLBACK
+  if (!isDesktopShell()) return assertAbsoluteHttpUrl(BROWSER_FALLBACK, 'VITE_API_URL')
 
   // Imported dynamically so the browser build never pulls the Tauri client into
   // its main chunk.
