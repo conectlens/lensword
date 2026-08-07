@@ -38,14 +38,15 @@ services:
       - key: ENVIRONMENT
         value: production
       # Set once in the Render dashboard when the Blueprint first runs —
-      # use Supabase's DIRECT connection string (port 5432), not the
-      # pgbouncer pooler (6543). This app does its own connection pooling
-      # (DB_POOL_SIZE/DB_MAX_OVERFLOW in apps/backend/.env.example) and
-      # doesn't need Supabase's pooler layer at this scale; pgbouncer's
-      # transaction mode also doesn't support some things SQLAlchemy/Alembic
-      # use (prepared statements, certain DDL) — the direct connection
-      # avoids that class of problem entirely rather than requiring a
-      # pooler-mode-specific workaround.
+      # use Supabase's SESSION POOLER connection string (still port 5432,
+      # host like aws-0-<region>.pooler.supabase.com), NOT the direct
+      # connection. Supabase's direct connection is IPv6-only unless you
+      # pay for their IPv4 add-on, and Render's free-tier instances have
+      # no IPv6 egress — direct connections fail every deploy with
+      # "Network is unreachable". The session pooler is IPv4-compatible
+      # and, unlike the transaction pooler (port 6543), still runs in
+      # session mode so it supports prepared statements/DDL the same as a
+      # direct connection — no pooler-mode-specific workaround needed.
       - key: DATABASE_URL
         sync: false
       - key: SECRET_KEY
@@ -56,8 +57,17 @@ services:
         value: '["https://lensword.conectlens.com","https://lensword-frontend.pages.dev"]'
       - key: AI_PROVIDER
         value: none
+      # Enables the OAuth surface (RFC 7591 dynamic client registration,
+      # authorize/token/revoke, and the .well-known metadata documents) that
+      # remote MCP connectors (e.g. lensword-mcp below, or claude.ai) rely
+      # on to register and authenticate. MCP_ISSUER_URL below must also be
+      # this service's real public URL — Settings.mcp_issuer_url defaults
+      # to http://localhost:8000, which makes every metadata document
+      # advertise unreachable endpoints even with this flag on.
       - key: REMOTE_MCP_ENABLED
-        value: "false"
+        value: "true"
+      - key: MCP_ISSUER_URL
+        value: https://lensword-api.conectlens.com
 
   - type: web
     name: lensword-mcp
@@ -73,14 +83,15 @@ services:
         value: http
       - key: LENSWORD_MCP_REMOTE_ENABLED
         value: "1"
-      # Render's own generated URL for the backend service above — update
-      # this once you know the real one (it follows
-      # https://<service-name>.onrender.com by default, but Render may
-      # suffix it if the name is taken). Not using Render's fromService
+      # The backend's real public URL — must be byte-for-byte identical to
+      # MCP_ISSUER_URL on lensword-backend above. This becomes the OAuth
+      # `oauth_issuer` a connector is pointed at (http_transport.py); if it
+      # doesn't match what lensword-backend advertises as its own `issuer`,
+      # OAuth discovery breaks. Not using Render's fromService
       # cross-reference here since that field's exact property name for
       # "the public URL" wasn't confirmed against live docs — a plain,
       # correct value beats an unverified cross-reference.
       - key: LENSWORD_API_URL
-        value: https://lensword-backend.onrender.com
+        value: https://lensword-api.conectlens.com
       - key: LENSWORD_MCP_WORKSPACE
         value: production
