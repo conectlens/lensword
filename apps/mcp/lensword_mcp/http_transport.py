@@ -261,6 +261,40 @@ class _MCPHTTPRequestHandler(BaseHTTPRequestHandler):
     # -- HTTP methods ----------------------------------------------------
 
     def do_POST(self) -> None:  # noqa: N802 - stdlib naming
+        # Content-Length — and, when it's usable, the body itself — must be
+        # resolved before any early-return check below (wrong path, origin,
+        # auth). A GitHub-reported production incident: a client POSTing
+        # OAuth dynamic-client-registration to this server's root path (not
+        # `/mcp`) hit the old `_wrong_path()` early return, which answered
+        # 404 without ever reading the body off the socket. On this
+        # HTTP/1.1 keep-alive connection, those unread bytes sat in the
+        # socket buffer and got read as part of the *next* request line,
+        # producing a corrupted method string (the leftover JSON body glued
+        # to the following request's "GET") and a bizarre stdlib 501. Every
+        # path below either fully drains the body first or closes the
+        # connection outright — never both "don't read it" and "keep it
+        # alive" at once.
+        length_header = self.headers.get("Content-Length")
+        try:
+            length = int(length_header) if length_header is not None else -1
+        except ValueError:
+            length = -1
+        if length <= 0:
+            # No reliable length to drain by. Keeping the connection alive
+            # here would risk the same desync this fix exists to prevent.
+            self.close_connection = True
+            self._send_json(400, {"error": "content_length_required"})
+            return
+        if length > MAX_HTTP_BODY_BYTES:
+            # Deliberately not read: draining an attacker-controlled
+            # oversized body defeats the point of this limit. Closing the
+            # connection (rather than trying to keep it alive unread) is
+            # what actually avoids the desync in this case.
+            self.close_connection = True
+            self._send_json(413, {"error": "request_body_too_large"})
+            return
+        raw = self.rfile.read(length)
+
         if self._wrong_path():
             self._send_json(404, {"error": "not_found"})
             return
@@ -271,19 +305,6 @@ class _MCPHTTPRequestHandler(BaseHTTPRequestHandler):
         if token is None:
             self._send_unauthorized()
             return
-
-        length_header = self.headers.get("Content-Length")
-        try:
-            length = int(length_header) if length_header is not None else -1
-        except ValueError:
-            length = -1
-        if length <= 0:
-            self._send_json(400, {"error": "content_length_required"})
-            return
-        if length > MAX_HTTP_BODY_BYTES:
-            self._send_json(413, {"error": "request_body_too_large"})
-            return
-        raw = self.rfile.read(length)
 
         try:
             message = json.loads(raw)

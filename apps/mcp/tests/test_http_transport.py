@@ -1,3 +1,4 @@
+import http.client
 import json
 import threading
 import time
@@ -143,6 +144,32 @@ def test_oversized_request_body_is_rejected(running_server):
     oversized = b"{" + b'"padding": "' + b"x" * (MAX_HTTP_BODY_BYTES + 1) + b'"}'
     status, _, _ = _post(url, None, headers={"Authorization": "Bearer t", "Content-Type": "application/json"}, raw_body=oversized)
     assert status == 413
+
+
+def test_a_post_to_the_wrong_path_does_not_corrupt_the_next_request_on_the_same_connection(running_server):
+    """Real production incident: a client POSTing OAuth dynamic-client-
+    registration to this server's root path (not /mcp) got a 404, but the
+    request body was never drained off the socket before answering. On the
+    HTTP/1.1 keep-alive connection, those unread bytes corrupted the next
+    request's own request line, producing a garbled method string and a
+    bizarre stdlib 501 instead of a clean response to either request."""
+    transport, url = running_server
+    body = json.dumps({"redirect_uris": ["https://example.com/callback"], "client_name": "Example"}).encode()
+    conn = http.client.HTTPConnection("127.0.0.1", transport.port, timeout=5)
+    try:
+        conn.request("POST", "/", body=body, headers={"Content-Type": "application/json"})
+        first = conn.getresponse()
+        assert first.status == 404
+        first.read()
+
+        # The same connection, reused: if the first request's body wasn't
+        # fully drained, this request line arrives corrupted.
+        conn.request("GET", "/.well-known/oauth-protected-resource")
+        second = conn.getresponse()
+        assert second.status in (404, 200)  # never a stdlib 501/400 from a garbled request line
+        second.read()
+    finally:
+        conn.close()
 
 
 def test_get_returns_405_since_sse_streaming_is_not_implemented(running_server):
