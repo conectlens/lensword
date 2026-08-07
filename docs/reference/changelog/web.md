@@ -9,6 +9,23 @@ Status — Web Application: **unreleased**.
 
 Every entry states exactly what was verified — a passing automated test does not imply a platform was manually checked, and a manual check on one OS does not imply another. See [Verification levels](/reference/trust/verification-levels) for what each status means.
 
+<a id="mcp-oauth-consent-page-and-remote-workspace"></a>
+
+### Fixed: Connecting a remote MCP client (like Claude.ai) to a LensWord account now actually works end to end — it previously failed on every attempt with "Could not validate credentials."
+
+*2026-08-08* — verification: automated tests: passed; production observation: observed
+
+Connecting Claude.ai (or any other OAuth-based MCP client) to a LensWord account now completes successfully — login, consent, and the handoff back to the connector all work, instead of failing at the first step with no actionable error.
+
+<details><summary>Technical detail</summary>
+
+Two compounding bugs, both found by tracing a real Claude.ai connection attempt through to a live backend rather than by inspection. (1) The authorization-server metadata's `authorization_endpoint` advertised this backend's own GET/POST /api/v1/mcp/oauth/authorize — a Bearer-token JSON API — as the URL a connector should open in the user's browser. A browser navigation never attaches a custom Authorization header, so `current_user` could never resolve and every real attempt failed with "Could not validate credentials"; no frontend page existed anywhere to intercept that URL, log the user in, and call the API with their stored token on their behalf (the backend router's own docstring described that page's existence without it ever having been built). Fixed on both ends: apps/frontend/src/features/mcp/ OAuthAuthorizePage.tsx is that missing page (new route /oauth/authorize in App.tsx, not wrapped in ProtectedRoute since it must not carry the app's nav shell) — it redirects to /login with the current URL preserved as its next= param when logged out (LoginPage.tsx now honors `next`, validated against open-redirect via a same-origin-relative-path check), otherwise fetches the consent preview, renders the requesting client's name and scopes, and on approve/deny POSTs the decision and does a hard `window.location.href` navigation to the returned redirect_uri (an external callback URL, not a route this app owns). Settings.mcp_consent_url (app/config.py) is the new authorization_endpoint value; must be set to this deployment's real frontend origin + /oauth/authorize (render.yaml: MCP_CONSENT_URL). (2) Even reaching that endpoint, the request still failed: GET/POST /authorize required a `workspace` parameter that no external OAuth client sends (Claude.ai's redirect carries RFC 8707's `resource` instead, which this app never read), and workspace was validated by is_valid_workspace as an absolute POSIX filesystem path — a concept built for the desktop companion's local-directory sandboxing, meaningless for a remote, browser-only connector with no filesystem access. workspace is now optional on both endpoints, defaulting server-side to the new Settings.mcp_remote_workspace, and is_valid_workspace accepts that one configured value as a deliberate special case alongside its existing absolute-path rule (app/api/routers/ mcp.py). This value must equal the deployed remote MCP resource server's own LENSWORD_MCP_WORKSPACE exactly, the same way mcp_issuer_url must match that service's LENSWORD_API_URL — the resource server presents this string on every tool-invocation request, and a grant recorded under a different value would never match it (render.yaml: MCP_REMOTE_WORKSPACE, kept identical to lensword-mcp's existing LENSWORD_MCP_WORKSPACE).
+
+</details>
+
+**Known limitations:**
+- The `resource` parameter Claude.ai's redirect includes (RFC 8707) is still not read or validated against — this fix addresses the concrete failure that blocked every connection attempt, not full RFC 8707 resource-indicator enforcement.
+
 <a id="remove-cloudflare-backend-mcp-fix-psycopg"></a>
 
 ### Fixed: Removed the Cloudflare Containers deploy config for backend/MCP (Render is the actual deployment path now) and fixed a real bug where a standard postgresql:// connection string (what Supabase/Neon/Railway hand you by default) crashed the app on startup instead of connecting.

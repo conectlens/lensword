@@ -25,6 +25,7 @@ import { ExtractPage } from './features/extract/ExtractPage'
 import { ImportPage } from './features/import/ImportPage'
 import { PracticePage } from './features/practice/PracticePage'
 import { WeeklyReportPage } from './features/reports/WeeklyReportPage'
+import { OAuthAuthorizePage } from './features/mcp/OAuthAuthorizePage'
 import { useAuth } from './context/AuthContext'
 import { useDesktopNotifications } from './lib/useDesktopNotifications'
 import { useOfflineSync } from './lib/useOfflineSync'
@@ -46,6 +47,13 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/onboarding" element={<OnboardingPage />} />
+      {/* Not wrapped in ProtectedRoute: an external OAuth client (Claude.ai)
+          opens this URL directly, and ProtectedRoute always wraps its
+          children in AppShell's full nav chrome, which a one-off consent
+          screen shouldn't have. OAuthAuthorizePage does its own
+          user/loading check and its own redirect-to-login (preserving this
+          URL via ?next=) instead. */}
+      <Route path="/oauth/authorize" element={<OAuthAuthorizePage />} />
 
       <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
       <Route path="/reports/weekly" element={<ProtectedRoute><WeeklyReportPage /></ProtectedRoute>} />

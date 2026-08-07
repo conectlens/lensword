@@ -105,6 +105,100 @@ def test_metadata_documents_advertise_pkce_and_the_real_scope_vocabulary(client,
     assert resource_metadata["authorization_servers"] == [resource_metadata["resource"]]
 
 
+def test_authorization_endpoint_points_at_the_frontend_not_this_api(client, remote_mcp_enabled):
+    """A connector's browser redirect must land somewhere that can actually
+    render a login/consent screen — this API's own /authorize is a
+    Bearer-token JSON endpoint no browser navigation can call. Reproduces
+    the "Could not validate credentials" failure a real Claude.ai connection
+    hit in production: the metadata used to advertise this API's own URL."""
+    as_metadata = client.get("/.well-known/oauth-authorization-server").json()
+    assert as_metadata["authorization_endpoint"] == get_settings().mcp_consent_url
+    assert "/api/v1/mcp/oauth/authorize" not in as_metadata["authorization_endpoint"]
+
+
+# --------------------------------------------------------------------------
+# Remote grants with no `workspace` (no external OAuth client sends one —
+# it names this app's local-filesystem sandboxing concept, not anything an
+# RFC 8707 `resource` parameter maps to; see mcp_remote_workspace's
+# docstring in app/config.py)
+# --------------------------------------------------------------------------
+
+
+def test_is_valid_workspace_accepts_the_configured_remote_value(monkeypatch):
+    from app.api.routers.mcp import is_valid_workspace
+
+    monkeypatch.setenv("MCP_REMOTE_WORKSPACE", "a-custom-remote-tag")
+    get_settings.cache_clear()
+    try:
+        assert is_valid_workspace("a-custom-remote-tag") is True
+        # Still rejects an arbitrary non-path string that merely isn't the
+        # configured value — this isn't "any string is now fine".
+        assert is_valid_workspace("some-other-tag") is False
+        # The local-workspace rule (absolute POSIX path, no "..") is
+        # untouched by this special case.
+        assert is_valid_workspace("/approved") is True
+        assert is_valid_workspace("relative/path") is False
+    finally:
+        monkeypatch.delenv("MCP_REMOTE_WORKSPACE", raising=False)
+        get_settings.cache_clear()
+
+
+def test_preview_authorization_defaults_workspace_when_the_client_omits_it(client, auth_headers, remote_mcp_enabled):
+    headers = auth_headers()
+    registration = _register_client(client)
+    client_id, redirect_uri = registration["client_id"], registration["redirect_uris"][0]
+
+    preview = client.get(
+        "/api/v1/mcp/oauth/authorize",
+        headers=headers,
+        params={"client_id": client_id, "redirect_uri": redirect_uri, "scope": "vocabulary-read"},
+    )
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["workspace"] == get_settings().mcp_remote_workspace
+
+
+def test_full_remote_flow_with_no_workspace_anywhere_in_the_request(client, auth_headers, remote_mcp_enabled):
+    """The exact shape of a real Claude.ai connection: registration, then
+    authorize/token/invoke with `workspace` never once supplied — reproduces
+    the request that originally failed against this endpoint in production."""
+    headers = auth_headers()
+    registration = _register_client(client)
+    client_id, redirect_uri = registration["client_id"], registration["redirect_uris"][0]
+    verifier, challenge = _pkce_pair()
+
+    decision = client.post(
+        "/api/v1/mcp/oauth/authorize",
+        headers=headers,
+        json={
+            "response_type": "code", "client_id": client_id, "redirect_uri": redirect_uri,
+            "code_challenge": challenge, "code_challenge_method": "S256", "scope": "vocabulary-read",
+            "state": "xyz", "approve": True,
+            # workspace deliberately omitted
+        },
+    )
+    assert decision.status_code == 200, decision.text
+    code = parse_qs(urlparse(decision.json()["redirect_uri"]).query)["code"][0]
+
+    token_response = _exchange_code(client, client_id=client_id, redirect_uri=redirect_uri, code=code, verifier=verifier)
+    assert token_response.status_code == 200, token_response.text
+    access_headers = {"Authorization": f"Bearer {token_response.json()['access_token']}"}
+
+    invoked = client.post(
+        "/api/v1/mcp/invoke", headers=access_headers,
+        json={"tool": "lensword.search_words", "workspace": get_settings().mcp_remote_workspace, "payload": {"query": "hola"}},
+    )
+    assert invoked.status_code == 200, invoked.text
+
+    # The grant is genuinely scoped to the resolved workspace, not
+    # unconditionally accepted regardless of it — a tool call claiming a
+    # different workspace must still be denied.
+    wrong_workspace = client.post(
+        "/api/v1/mcp/invoke", headers=access_headers,
+        json={"tool": "lensword.search_words", "workspace": "/approved", "payload": {"query": "hola"}},
+    )
+    assert wrong_workspace.status_code == 403
+
+
 # --------------------------------------------------------------------------
 # Client registration
 # --------------------------------------------------------------------------

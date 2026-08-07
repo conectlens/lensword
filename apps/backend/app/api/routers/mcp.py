@@ -31,6 +31,7 @@ from app.api.deps import (
     WordRepo,
 )
 from app.api.mcp_auth import CurrentMCPActor, MCPActor
+from app.config import get_settings
 from app.domain.services.mcp_policy import AccessClass, GrantMode, MCPGrant, MCPPolicyGate, redact_and_chain
 from app.domain.services.mcp_scopes import SCOPE_RESOURCES
 from app.domain.services.spaced_repetition import SpacedRepetitionScheduler
@@ -60,6 +61,13 @@ def is_valid_workspace(workspace: str) -> bool:
     # security boundary check, since every workspace string in this
     # codebase is written POSIX-style ("/approved", never "C:\approved").
     # This must decide identically on every host the backend runs on.
+    #
+    # The one exception: settings.mcp_remote_workspace, the sentinel a
+    # remote OAuth grant (Claude.ai, no local filesystem) is recorded under
+    # instead of a real path — see that setting's docstring for why a path
+    # doesn't apply there at all.
+    if workspace == get_settings().mcp_remote_workspace:
+        return True
     return PurePosixPath(workspace).is_absolute() and ".." not in PurePosixPath(workspace).parts
 
 
