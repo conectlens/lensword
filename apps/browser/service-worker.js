@@ -15,7 +15,7 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
   if (!settings.token || !settings.groupId) {
     await chrome.notifications.create('lensword-settings-required', {
       type: 'basic',
-      iconUrl: 'icon.svg',
+      iconUrl: 'icons/icon48.png',
       title: 'LensWord needs setup',
       message: 'Open the extension popup to set an API token and group.',
     })
@@ -25,14 +25,14 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
     await saveWord(settings, info.selectionText.trim())
     await chrome.notifications.create(`lensword-saved-${Date.now()}`, {
       type: 'basic',
-      iconUrl: 'icon.svg',
+      iconUrl: 'icons/icon48.png',
       title: 'Saved to LensWord',
       message: info.selectionText.trim().slice(0, 80),
     })
   } catch (error) {
     await chrome.notifications.create(`lensword-error-${Date.now()}`, {
       type: 'basic',
-      iconUrl: 'icon.svg',
+      iconUrl: 'icons/icon48.png',
       title: 'LensWord capture failed',
       message: error instanceof Error ? error.message : 'Could not save selection.',
     })
