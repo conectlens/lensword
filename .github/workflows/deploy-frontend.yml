@@ -52,4 +52,8 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: apps/frontend
+          # Pinned to the version this project's config was actually
+          # verified against (see deploy-backend.yml) — the action's own
+          # default (observed: 4.86.0) is untested here.
+          wranglerVersion: "4.120.0"
           command: pages deploy dist --project-name=lensword-frontend --branch=main

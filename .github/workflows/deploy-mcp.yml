@@ -40,6 +40,9 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: apps/mcp
+          # See deploy-backend.yml's identical comment — same real
+          # wrangler/@cloudflare/workers-types version conflict applies here.
+          wranglerVersion: "4.120.0"
           # LENSWORD_TOKEN is only needed if this deployment's backend
           # requires bearer auth for the workspace the MCP server acts as —
           # omit this secret (and the `secrets:`/`env:` lines) entirely if

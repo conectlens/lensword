@@ -41,6 +41,12 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: apps/backend
+          # Pinned to match package.json's wrangler/@cloudflare/workers-types
+          # versions — the action installs its own wrangler by default
+          # (observed: 4.86.0), which conflicts with the newer
+          # @cloudflare/workers-types this project already has installed
+          # (real failure, caught by an actual CI run, not assumed).
+          wranglerVersion: "4.120.0"
           secrets: |
             DATABASE_URL
             SECRET_KEY
