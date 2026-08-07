@@ -19,16 +19,24 @@ const word = vi.mocked(acquisitionApi.word)
 const answer = vi.mocked(acquisitionApi.answer)
 
 function makeState(overrides: Partial<AcquisitionState> = {}): AcquisitionState {
+  const now = Date.now()
   return {
     word_id: 1,
     rung: 0,
     ladder_version: 1,
-    started_at: '2026-08-06T09:00:00Z',
-    updated_at: '2026-08-06T09:00:00Z',
-    due_at: '2026-08-06T09:00:30Z',
+    started_at: new Date(now - 24 * 60 * 60 * 1000).toISOString(),
+    updated_at: new Date(now - 24 * 60 * 60 * 1000).toISOString(),
+    due_at: new Date(now - 24 * 60 * 60 * 1000 + 30 * 1000).toISOString(),
     graduated: false,
     entry_reason: 'weak_acquisition_diagnosis',
-    estimated_graduation_at: '2026-08-07T09:00:00Z',
+    // Must stay in the future relative to whenever the test actually runs —
+    // 'shows why the word entered the loop and roughly when it hands back
+    // to FSRS' asserts the "hands back to spaced repetition in ~Xh" branch
+    // of describeHandoff(), which requires estimated_graduation_at > now.
+    // A hardcoded absolute timestamp passed while this suite sat unrun and
+    // broke every run afterward — this is why it stayed a bare `Date.now()`
+    // call rather than a fixed-clock/fake-timers setup other suites use.
+    estimated_graduation_at: new Date(now + 24 * 60 * 60 * 1000).toISOString(),
     ...overrides,
   }
 }
