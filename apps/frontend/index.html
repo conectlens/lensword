@@ -14,9 +14,14 @@
     <meta property="og:image" content="/og-image.png" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=Poppins:wght@300;400;500;600&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet" />
+    <!-- Fonts are self-hosted under /public/fonts (see src/index.css) rather
+         than loaded from fonts.googleapis.com/fonts.gstatic.com. The Tauri
+         desktop shell's CSP (style-src/font-src 'self') blocks those origins
+         outright, which silently broke every heading/body font and the
+         Material Symbols icon ligatures (the icon name text rendered
+         literally instead of the glyph) in the desktop build only — the web
+         build has no such CSP and never showed it. Self-hosting fixes both
+         targets from one source instead of special-casing desktop. -->
   </head>
   <body class="bg-canvas-dark text-white font-body antialiased">
     <div id="root"></div>

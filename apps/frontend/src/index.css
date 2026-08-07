@@ -2,6 +2,60 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Self-hosted (see index.html for why: Tauri's CSP blocks Google Fonts,
+   which silently broke these — including the Material Symbols icon
+   ligatures rendering as literal text — in the desktop build only).
+   Montserrat/Poppins are the Latin-only static instances Google itself
+   serves for these weights; non-Latin scripts fall back to the `sans-serif`
+   stack below rather than blocking on a much larger set of subset files.
+   The icon font is glyph-subsetted to exactly the icon names src/ actually
+   uses (see components/ui/Icon.tsx callers) — regenerate it the same way
+   (fonts.googleapis.com/css2?family=Material+Symbols+Outlined&text=...) if
+   a new icon name is ever added and it fails to render. */
+@font-face {
+  font-family: 'Montserrat';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('/fonts/montserrat-variable.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url('/fonts/poppins-300.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/poppins-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/poppins-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/poppins-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Material Symbols Outlined';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('/fonts/material-symbols-outlined.woff2') format('woff2');
+}
+
 @layer base {
   html {
     color-scheme: dark;
