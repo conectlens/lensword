@@ -158,6 +158,20 @@ export interface MnemonicNote {
   created_at: string
 }
 
+/** A remote MCP companion this account has completed OAuth with (issue
+ *  #196) — distinct from the local stdio `McpServer` type above, which the
+ *  desktop shell manages entirely on-device and never goes through
+ *  `/api/v1/mcp/oauth`. */
+export interface McpConnection {
+  client_id: string
+  client_name: string
+  scope: string
+  workspace: string
+  created_at: string
+  last_used_at: string | null
+  active_token_count: number
+}
+
 export interface RecallSettings {
   scheduler: 'sm2' | 'fsrs'
   enabled: boolean

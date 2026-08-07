@@ -8,12 +8,20 @@ test_mcp_companion_sessions.py does for #193's five session tools, and
 checks that an activity begun over MCP is the same durable row the REST API
 sees.
 """
+import uuid
+
 from app.infrastructure.models import MCPGrantModel
 
+# Caller identity is derived server-side from the authenticated bearer token
+# (issue #196 TODO 2) — a grant must be bound to the real "user:{id}"
+# requester string, not an arbitrary caller-chosen label.
+def _user_id(client, headers) -> int:
+    return client.get("/api/v1/auth/me", headers=headers).json()["id"]
 
-def _grant(db_session, tool, *, access="write", workspace="//approved/root"):
+
+def _grant(db_session, tool, *, user_id, access="write", workspace="//approved/root"):
     item = MCPGrantModel(
-        requester="fixture-client", server="lensword", tool=tool, access=access, workspace=workspace, mode="always"
+        requester=f"user:{user_id}", server="lensword", tool=tool, access=access, workspace=workspace, mode="always"
     )
     db_session.add(item)
     db_session.flush()
@@ -21,10 +29,17 @@ def _grant(db_session, tool, *, access="write", workspace="//approved/root"):
 
 
 def _invoke(client, headers, tool, payload, *, workspace="//approved/root"):
+    # Mandatory idempotency for writes (issue #196 TODO 4): every write tool
+    # contract now requires request_id. Reads have no such field, so it is
+    # only injected for tools whose payload doesn't already define one and
+    # whose name isn't one of the read-only activity tools.
+    payload = dict(payload)
+    if tool not in ("lensword.get_activity_result", "lensword.explain_evidence") and "request_id" not in payload:
+        payload["request_id"] = str(uuid.uuid4())
     return client.post(
         "/api/v1/mcp/invoke",
         headers=headers,
-        json={"requester": "fixture-client", "workspace": workspace, "tool": tool, "payload": payload},
+        json={"workspace": workspace, "tool": tool, "payload": payload},
     )
 
 
@@ -43,9 +58,9 @@ _ACTIVITY_TOOLS = (
 )
 
 
-def _grant_all(db_session):
+def _grant_all(db_session, *, user_id):
     for tool, access in _ACTIVITY_TOOLS:
-        _grant(db_session, tool, access=access)
+        _grant(db_session, tool, access=access, user_id=user_id)
 
 
 def _setup_word(client, headers):
@@ -61,7 +76,7 @@ def _setup_word(client, headers):
 def test_full_activity_lifecycle_is_reachable_over_mcp(client, auth_headers, db_session):
     headers = auth_headers()
     _enable_companion(client, headers)
-    _grant_all(db_session)
+    _grant_all(db_session, user_id=_user_id(client, headers))
     word_id = _setup_word(client, headers)
 
     session = client.post(
@@ -118,7 +133,7 @@ def test_full_activity_lifecycle_is_reachable_over_mcp(client, auth_headers, db_
 def test_an_activity_begun_over_mcp_is_the_same_durable_row_rest_sees(client, auth_headers, db_session):
     headers = auth_headers()
     _enable_companion(client, headers)
-    _grant(db_session, "lensword.begin_learning_activity")
+    _grant(db_session, "lensword.begin_learning_activity", user_id=_user_id(client, headers))
     word_id = _setup_word(client, headers)
 
     session = client.post(
@@ -148,7 +163,7 @@ def test_an_activity_begun_over_mcp_is_the_same_durable_row_rest_sees(client, au
 def test_free_chat_begun_over_mcp_creates_no_observation_on_submit(client, auth_headers, db_session):
     headers = auth_headers()
     _enable_companion(client, headers)
-    _grant_all(db_session)
+    _grant_all(db_session, user_id=_user_id(client, headers))
 
     session = client.post(
         "/api/v1/companion/sessions",
@@ -175,7 +190,7 @@ def test_free_chat_begun_over_mcp_creates_no_observation_on_submit(client, auth_
 
 def test_companion_activity_tools_are_gated_by_ai_companion_enabled(client, auth_headers, db_session):
     headers = auth_headers()
-    _grant_all(db_session)  # deliberately not enabling ai_companion_enabled
+    _grant_all(db_session, user_id=_user_id(client, headers))  # deliberately not enabling ai_companion_enabled
 
     response = _invoke(
         client, headers, "lensword.begin_learning_activity",

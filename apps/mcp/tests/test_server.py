@@ -201,7 +201,7 @@ class _RecordingBackendClient(BackendClient):
 
 
 def _client():
-    backend = _RecordingBackendClient(api_url="http://backend", token="t", requester="r", workspace="/w")
+    backend = _RecordingBackendClient(api_url="http://backend", token="t", workspace="/w")
     object.__setattr__(backend, "calls", [])
     return backend
 

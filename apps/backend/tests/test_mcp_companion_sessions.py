@@ -8,12 +8,20 @@ same way test_mcp_security.py does for the original tool set, and also check
 that a session started over MCP is the same durable row the REST API sees
 (and vice versa) — the whole point of "cross-client continuity".
 """
+import uuid
+
 from app.infrastructure.models import MCPGrantModel
 
+# Caller identity is derived server-side from the authenticated bearer token
+# (issue #196 TODO 2) — a grant must be bound to the real "user:{id}"
+# requester string, not an arbitrary caller-chosen label.
+def _user_id(client, headers) -> int:
+    return client.get("/api/v1/auth/me", headers=headers).json()["id"]
 
-def _grant(db_session, tool, *, access="write", workspace="//approved/root"):
+
+def _grant(db_session, tool, *, user_id, access="write", workspace="//approved/root"):
     item = MCPGrantModel(
-        requester="fixture-client", server="lensword", tool=tool, access=access, workspace=workspace, mode="always"
+        requester=f"user:{user_id}", server="lensword", tool=tool, access=access, workspace=workspace, mode="always"
     )
     db_session.add(item)
     db_session.flush()
@@ -21,10 +29,15 @@ def _grant(db_session, tool, *, access="write", workspace="//approved/root"):
 
 
 def _invoke(client, headers, tool, payload, *, workspace="//approved/root"):
+    # Mandatory idempotency for writes (issue #196 TODO 4): every write tool
+    # contract now requires request_id; the one read tool here does not.
+    payload = dict(payload)
+    if tool != "lensword.get_companion_session" and "request_id" not in payload:
+        payload["request_id"] = str(uuid.uuid4())
     return client.post(
         "/api/v1/mcp/invoke",
         headers=headers,
-        json={"requester": "fixture-client", "workspace": workspace, "tool": tool, "payload": payload},
+        json={"workspace": workspace, "tool": tool, "payload": payload},
     )
 
 
@@ -36,6 +49,7 @@ def _enable_companion(client, headers):
 def test_full_session_lifecycle_is_reachable_over_mcp(client, auth_headers, db_session):
     headers = auth_headers()
     _enable_companion(client, headers)
+    user_id = _user_id(client, headers)
     for tool, access in (
         ("lensword.start_companion_session", "write"),
         ("lensword.get_companion_session", "read"),
@@ -43,7 +57,7 @@ def test_full_session_lifecycle_is_reachable_over_mcp(client, auth_headers, db_s
         ("lensword.pause_companion_session", "write"),
         ("lensword.finish_companion_session", "write"),
     ):
-        _grant(db_session, tool, access=access)
+        _grant(db_session, tool, access=access, user_id=user_id)
 
     started = _invoke(
         client, headers, "lensword.start_companion_session",
@@ -86,7 +100,8 @@ def test_a_session_started_over_mcp_is_the_same_durable_row_rest_sees(client, au
     separate stores."""
     headers = auth_headers()
     _enable_companion(client, headers)
-    _grant(db_session, "lensword.start_companion_session")
+    user_id = _user_id(client, headers)
+    _grant(db_session, "lensword.start_companion_session", user_id=user_id)
 
     started = _invoke(
         client, headers, "lensword.start_companion_session",
@@ -107,7 +122,7 @@ def test_a_session_started_over_mcp_is_the_same_durable_row_rest_sees(client, au
     )
 
     # ...and read it back through MCP: the turn is visible to both surfaces.
-    _grant(db_session, "lensword.get_companion_session", access="read")
+    _grant(db_session, "lensword.get_companion_session", access="read", user_id=user_id)
     via_mcp = _invoke(client, headers, "lensword.get_companion_session", {"session_id": session_id})
     assert via_mcp.status_code == 200
     assert via_mcp.json()["revision"] == 1  # adding a turn does not bump session.revision
@@ -119,7 +134,7 @@ def test_companion_tools_are_gated_by_the_same_feature_flag_as_rest(client, auth
     ._require_enabled)."""
     headers = auth_headers()
     # Deliberately not calling _enable_companion: the flag defaults off.
-    _grant(db_session, "lensword.start_companion_session")
+    _grant(db_session, "lensword.start_companion_session", user_id=_user_id(client, headers))
 
     denied = _invoke(
         client, headers, "lensword.start_companion_session",
@@ -131,7 +146,7 @@ def test_companion_tools_are_gated_by_the_same_feature_flag_as_rest(client, auth
 def test_getting_an_unknown_session_over_mcp_fails_cleanly(client, auth_headers, db_session):
     headers = auth_headers()
     _enable_companion(client, headers)
-    _grant(db_session, "lensword.get_companion_session", access="read")
+    _grant(db_session, "lensword.get_companion_session", access="read", user_id=_user_id(client, headers))
 
     missing = _invoke(client, headers, "lensword.get_companion_session", {"session_id": "no-such-session"})
     assert missing.status_code == 400
