@@ -3,3 +3,6 @@ contact_links:
   - name: Security vulnerability
     url: https://github.com/conectlens/lensword/security/advisories/new
     about: Please report security vulnerabilities privately rather than as a public issue. See SECURITY.md.
+  - name: Sponsorship, partnerships, or other business contact
+    url: mailto:lensword@conectlens.com
+    about: Not a bug or feature request? Sponsorship and partnership questions go to lensword@conectlens.com, not a GitHub issue.

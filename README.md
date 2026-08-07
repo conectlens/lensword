@@ -159,11 +159,24 @@ readable straight from GitHub.
 ## Sponsorship & support
 
 LensWord is built and maintained in the open. If it's useful to you or your
-team, sponsoring keeps development moving:
+team, sponsoring keeps development moving — maintenance, the documentation
+work in this repository, cross-platform desktop verification (real
+hardware and CI time for macOS/Windows/Linux), eventual release
+signing/notarization, hosting, and accessibility work all cost real time
+and, for some of them, real money. Sponsoring doesn't buy roadmap
+priority, security guarantees, or private access — there's no such policy
+today, and this won't imply one that doesn't exist.
 
-- [GitHub Sponsors](https://github.com/sponsors/conectlens)
-- [Patreon](https://patreon.com/ofcskn)
-- Sponsorship, partnerships, contact, or support questions: **[lensword@conectlens.com](mailto:lensword@conectlens.com)**
+- [GitHub Sponsors](https://github.com/sponsors/conectlens) — individual or organizational
+- [Patreon](https://patreon.com/ofcskn) — individual
+- Sponsorship, partnerships, product questions, or other business contact: **[lensword@conectlens.com](mailto:lensword@conectlens.com)**
+
+Use [GitHub Issues](https://github.com/conectlens/lensword/issues) for bugs
+and feature requests — that's where the project actually tracks work. Use
+email for anything that shouldn't be public (sponsorship terms,
+partnership discussions) or that isn't a code issue. Security
+vulnerabilities go through [SECURITY.md](SECURITY.md), not a public issue
+or this email address. No response-time guarantee exists for any channel.
 
 ## Contributing
 
