@@ -3,7 +3,12 @@
 Issue #196. Read this before pointing any MCP host that is not the local
 stdio companion at a LensWord backend. It complements
 [hosted-deployment.md](hosted-deployment.md) rather than repeating it — read
-that one too if you are hosting for other people.
+that one too if you are hosting for other people. For local stdio setup,
+permissions/scopes, privacy/export/deletion/audit behavior, the verified-
+fact-vs-AI-generated-advice distinction, and an honest compatibility matrix
+across MCP hosts, see [mcp-companion-guide.md](mcp-companion-guide.md)
+(issue #199) instead — this document stays scoped to the remote/OAuth
+surface specifically.
 
 ## Read this first
 
@@ -98,6 +103,13 @@ than saying so plainly.
   in `apps/backend/tests/test_mcp_security.py` and
   `apps/backend/tests/test_mcp_oauth.py` covering cross-user grant reuse,
   token substitution, and requester-identity spoofing attempts.
+- (Issue #199) Cross-user resource enumeration specifically over the MCP
+  tool surface (a real grant plus another account's real session/task id) —
+  `apps/backend/tests/test_mcp_cross_user_enumeration.py` — and audit-chain
+  tamper detection is now independently verifiable, not just tamper-shaped:
+  `app.domain.services.mcp_policy.verify_chain` recomputes the hash chain
+  and `apps/backend/tests/test_mcp_audit_chain_tamper.py` proves a directly
+  mutated audit row is caught and localized.
 
 **Explicitly not implemented — documented gaps, not silent ones:**
 
