@@ -75,14 +75,30 @@ deployment for other people](docs/install/self-hosting.md), [desktop builds](doc
 
 ## See it in action
 
-Real screenshots from a `docker compose up --build` run, not mockups.
+Real captures from each surface — a `docker compose up --build` run for
+Web, a local build for Desktop, the popup UI for the extension, and a real
+terminal session for the CLI. Nothing here is a mockup; regenerate all of
+it yourself with `node scripts/capture-demo-media.mjs && python
+scripts/assemble-demo-animation.py` (Web) — see each surface's guide,
+linked below, for how its own screenshots were produced.
+
+**Web** — forced-recall review session, animated from 4 real frames (question → typed answer → "Correct!" → next word):
+
+![Animated demo of a LensWord review session: a question appears, the answer is typed, "Correct!" is shown, then the next word appears](docs/media/screenshots/web-review-session-demo.webp)
 
 | | |
 |---|---|
 | ![LensWord landing page](docs/media/screenshots/web-landing.webp) | ![Vocabulary group with three Spanish words, translations, and mnemonics](docs/media/screenshots/web-group-vocabulary.webp) |
 | Landing page | A group with real words, translations, and mnemonics |
-| ![Forced-recall review session prompting for the translation of "hablar"](docs/media/screenshots/web-review-session.webp) | ![Mind Palace room canvas with a word placed as a spatial anchor](docs/media/screenshots/web-mind-palace.webp) |
-| Forced-recall review session | Mind Palace: words placed as spatial anchors |
+| ![Mind Palace room canvas with a word placed as a spatial anchor](docs/media/screenshots/web-mind-palace.webp) | ![Settings page: daily practice session, Forced Recall Engine intensity, and review scheduler](docs/media/screenshots/web-settings.webp) |
+| Mind Palace: words placed as spatial anchors | Review scheduler and Forced Recall settings |
+
+**Desktop, Browser Extension, and MCP/CLI:**
+
+| | | |
+|---|---|---|
+| ![LensWord desktop shell running on Windows, showing the landing page in a native window](docs/media/screenshots/desktop-windows-launch.webp) | ![Browser extension popup with API URL, access token, and group ID fields](docs/media/screenshots/browser-popup.webp) | ![Terminal showing lensword --help output listing the import-context, add, explain, diagnose, and review subcommands](docs/media/screenshots/mcp-cli-terminal.webp) |
+| Desktop shell, launched from a local Windows build ([verified how](docs/install/desktop-app.md)) | Browser extension popup UI (shown standalone — `chrome://` pages can't be captured by this repo's automation) | Local CLI, `lensword --help`, real terminal output |
 
 ## Current status and known limitations
 

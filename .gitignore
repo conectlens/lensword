@@ -34,6 +34,10 @@ docs/node_modules/
 docs/.vitepress/cache/
 docs/.vitepress/dist/
 
+# Demo-media generation scripts
+scripts/node_modules
+scripts/node_modules/
+
 # Deployment
 # Compose reads a root .env automatically, and it holds the database password
 # and the token-signing secret. The example beside it is the tracked one.

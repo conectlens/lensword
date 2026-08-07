@@ -146,6 +146,11 @@ daemon this environment doesn't have running — unrelated to this change).
 Five subcommands, confirmed via `lensword --help` against the installed
 package: `import-context`, `add`, `explain`, `diagnose`, `review`.
 
+![Terminal showing lensword --help output listing the import-context, add, explain, diagnose, and review subcommands](../media/screenshots/mcp-cli-terminal.webp)
+
+Real terminal output from the installed package, not a transcript typed by
+hand.
+
 ### `import-context` — offline, never contacts the backend
 
 ```bash

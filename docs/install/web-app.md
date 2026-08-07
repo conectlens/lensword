@@ -112,6 +112,15 @@ page, begins a forced-recall session: LensWord shows the word and you type
 the translation, rather than picking from options — the whole point of
 *forced* recall over passive recognition.
 
+![Animated demo of a LensWord review session: a question appears, the answer is typed, "Correct!" is shown, then the next word appears](../media/screenshots/web-review-session-demo.webp)
+
+Generated from 4 real, automated frames (question → typed answer →
+"Correct!" → next word) — see
+[scripts/capture-demo-media.mjs](https://github.com/conectlens/lensword/blob/development/scripts/capture-demo-media.mjs)
+and
+[scripts/assemble-demo-animation.py](https://github.com/conectlens/lensword/blob/development/scripts/assemble-demo-animation.py)
+to regenerate it yourself; both scripts are documented inline. Static
+fallback:
 ![Forced-recall review session prompting for the translation of "hablar"](../media/screenshots/web-review-session.webp)
 
 Five presentation modes share this same session mechanic (`mode` query
