@@ -9,6 +9,8 @@ Status — MCP Server: **unreleased**, Local CLI: **unreleased**.
 
 Every entry states exactly what was verified — a passing automated test does not imply a platform was manually checked, and a manual check on one OS does not imply another. See [Verification levels](/reference/trust/verification-levels) for what each status means.
 
+<a id="mcp-read-tool-request-id-fix"></a>
+
 ### Fixed: Read-only MCP tool calls (e.g. searching your vocabulary) no longer fail with an "unsupported payload field" error.
 
 *2026-08-07* — verification: automated tests: passed
@@ -25,6 +27,8 @@ apps/mcp's BackendClient.invoke() unconditionally attaches a request_id to every
 - No real MCP client (Claude Desktop, Cursor, VS Code) was connected interactively to confirm this from a client's perspective — verified directly against the JSON-RPC protocol instead.
 
 References: [#276](https://github.com/conectlens/lensword/issues/276), [PR #300](https://github.com/conectlens/lensword/pull/300)
+
+<a id="lensword-documentation-site"></a>
 
 ### Documentation: LensWord has a real documentation site (docs/, built with VitePress), organized around Diátaxis (Setup tutorial, Install how-to guides, Learn explanation, Reference material) — replacing a flat, uncurated docs/ folder.
 

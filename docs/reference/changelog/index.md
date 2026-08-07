@@ -21,6 +21,8 @@ The shared backend (`apps/backend`) is not an independently released product —
 
 **MCP Server, Local CLI**
 
+<a id="mcp-read-tool-request-id-fix"></a>
+
 ### Fixed: Read-only MCP tool calls (e.g. searching your vocabulary) no longer fail with an "unsupported payload field" error.
 
 *2026-08-07* — verification: automated tests: passed
@@ -39,6 +41,8 @@ apps/mcp's BackendClient.invoke() unconditionally attaches a request_id to every
 References: [#276](https://github.com/conectlens/lensword/issues/276), [PR #300](https://github.com/conectlens/lensword/pull/300)
 
 **Web Application, Desktop Application, Browser Extension, MCP Server, Local CLI**
+
+<a id="lensword-documentation-site"></a>
 
 ### Documentation: LensWord has a real documentation site (docs/, built with VitePress), organized around Diátaxis (Setup tutorial, Install how-to guides, Learn explanation, Reference material) — replacing a flat, uncurated docs/ folder.
 
@@ -59,6 +63,8 @@ References: [#272](https://github.com/conectlens/lensword/issues/272), [PR #295]
 
 **Web Application, Desktop Application, Browser Extension**
 
+<a id="lensword-brand-identity"></a>
+
 ### Added: LensWord has a canonical logo and icon set for the first time — a favicon in the web app, real desktop app icons, and a real browser extension icon, replacing generic/unbranded placeholders.
 
 *2026-08-07* — verification: automated tests: passed; artifact build: passed
@@ -77,6 +83,8 @@ Original SVG mark (lens + word-line) in brand/logo/svg/, with a reproducible gen
 References: [#270](https://github.com/conectlens/lensword/issues/270), [PR #291](https://github.com/conectlens/lensword/pull/291)
 
 **Browser Extension**
+
+<a id="browser-notification-icon-fix"></a>
 
 ### Fixed: Capture notifications ("Saved to LensWord", error notifications) now show the LensWord icon instead of a broken image.
 

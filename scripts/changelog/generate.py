@@ -69,7 +69,10 @@ def verification_summary(f: dict) -> str:
 
 def render_entry(f: dict) -> str:
     label = TYPE_LABELS[f["type"]]
-    lines = [f"### {label}: {f['summary']}"]
+    # An explicit anchor, not a reliance on VitePress's auto-slugified heading
+    # id — the heading text is the summary, which can change; the fragment id
+    # is stable and is exactly what render_main_branch_activity links to.
+    lines = [f'<a id="{f["id"]}"></a>', "", f"### {label}: {f['summary']}"]
     lines.append("")
     lines.append(f"*{f['date']}* — verification: {verification_summary(f)}")
     if f["breaking"]:
@@ -269,7 +272,14 @@ def render_main_branch_activity(fragments: list[dict]) -> str:
         m = pr_re.search(e["subject"])
         pr_num = int(m.group(1)) if m else None
         fragment = pr_to_fragment.get(pr_num) if pr_num else None
-        frag_cell = f"[{fragment['id']}](#{fragment['id']})" if fragment else "none (predates this system)"
+        if fragment is None:
+            frag_cell = "none (predates this system)"
+        elif fragment["type"] == "none":
+            # type: none fragments render only in the overview's appendix
+            # table, which has no per-row anchor — link to the section instead.
+            frag_cell = f"[{fragment['id']}](/reference/changelog/#no-changelog-entry)"
+        else:
+            frag_cell = f"[{fragment['id']}](/reference/changelog/#{fragment['id']})"
         subject_escaped = e["subject"].replace("|", "\\|")
         commit_link = f"[{e['short_sha']}](https://github.com/conectlens/lensword/commit/{e['sha']})"
         lines.append(f"| {e['date']} | {commit_link} | {e['author']} | {subject_escaped} | {frag_cell} |")
