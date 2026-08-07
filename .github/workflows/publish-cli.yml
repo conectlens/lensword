@@ -1,0 +1,80 @@
+name: Publish Local CLI (PyPI)
+
+# Publishes apps/cli (the `lensword-cli` package, `lensword` entry point —
+# issue #311's split from apps/mcp) to PyPI using Trusted Publishing (OIDC),
+# not a long-lived PYPI_API_TOKEN secret. This workflow exists and is
+# correct, but is unverified end to end until both of these have happened:
+#
+#   1. the repo owner adds a *pending* trusted publisher on PyPI for a
+#      not-yet-existing `lensword-cli` project, naming this exact workflow
+#      file and the `pypi` environment below (see
+#      docs/internal/pypi-publishing.md for the copy-pasteable steps), and
+#   2. a `cli-v*` tag is actually pushed.
+#
+# Until then, `workflow_dispatch` runs exercise every step up through the
+# build/check, and will fail at the publish step with a PyPI authentication
+# error — that failure is expected and informative (it proves the workflow
+# reaches PyPI and is rejected only because no trusted publisher exists
+# yet), not a sign the workflow itself is broken.
+on:
+  push:
+    tags:
+      - "cli-v*"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Build, check, and publish to PyPI
+    runs-on: ubuntu-latest
+    # A GitHub Environment, not just a job name — lets the repo owner attach
+    # required-reviewer protection to `pypi` later (Settings -> Environments)
+    # so a tag push pauses for approval before anything reaches PyPI. No
+    # environment secrets are needed for the publish step itself; trusted
+    # publishing authenticates via the OIDC token below instead.
+    environment: pypi
+    permissions:
+      # Required by pypa/gh-action-pypi-publish's OIDC exchange with PyPI —
+      # without this the action has no token to trade for a short-lived
+      # PyPI credential, and trusted publishing cannot work at all.
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # Cheap guard against publishing a mismatched build: the pushed tag
+      # names the version that should be released, and it must agree with
+      # what apps/cli/pyproject.toml actually declares. Only meaningful for
+      # a real tag push — a workflow_dispatch run (used to test this
+      # workflow before the first cli-v* tag exists) has no tag to compare
+      # against.
+      - name: Verify tag matches apps/cli/pyproject.toml's version
+        if: github.event_name == 'push'
+        run: |
+          tag_version="${GITHUB_REF_NAME#cli-v}"
+          pkg_version=$(python -c "import tomllib; print(tomllib.load(open('apps/cli/pyproject.toml', 'rb'))['project']['version'])")
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME (version $tag_version) does not match apps/cli/pyproject.toml's version ($pkg_version)."
+            exit 1
+          fi
+          echo "Tag version $tag_version matches apps/cli/pyproject.toml."
+
+      - name: Install build tooling
+        run: python -m pip install --upgrade pip build twine
+
+      - name: Build sdist and wheel
+        run: python -m build --outdir dist apps/cli
+
+      - name: Check the built artifacts
+        run: python -m twine check dist/*
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/

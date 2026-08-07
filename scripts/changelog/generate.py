@@ -103,9 +103,11 @@ def render_entry(f: dict) -> str:
 
 def render_product_page(products_at_route: list[dict], fragments: list[dict]) -> str:
     # A route can serve more than one registry product (mcp-server and
-    # local-cli both live in apps/mcp and share /reference/changelog/mcp) —
-    # render the union of their fragments rather than letting the second
-    # product silently overwrite the first's page. type: none fragments are
+    # local-cli shared /reference/changelog/mcp before issue #311 split them
+    # into independently-versioned packages with their own routes; a future
+    # product could still choose to share a route the same way) — render
+    # the union of their fragments rather than letting the second product
+    # silently overwrite the first's page. type: none fragments are
     # a reviewed "no changelog entry" record (see .changes/README.md), not a
     # user-facing change, so they're excluded here and surfaced instead in
     # the overview's "No changelog entry" appendix.

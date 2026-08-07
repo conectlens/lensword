@@ -34,7 +34,7 @@ def _invoke(client, headers, tool, payload, *, workspace="//approved/root"):
     # only injected for tools whose payload doesn't already define one and
     # whose name isn't one of the read-only activity tools.
     payload = dict(payload)
-    if tool not in ("lensword.get_activity_result", "lensword.explain_evidence") and "request_id" not in payload:
+    if tool not in ("lensword_get_activity_result", "lensword_explain_evidence") and "request_id" not in payload:
         payload["request_id"] = str(uuid.uuid4())
     return client.post(
         "/api/v1/mcp/invoke",
@@ -49,12 +49,12 @@ def _enable_companion(client, headers):
 
 
 _ACTIVITY_TOOLS = (
-    ("lensword.begin_learning_activity", "write"),
-    ("lensword.submit_activity_response", "write"),
-    ("lensword.get_activity_result", "read"),
-    ("lensword.finish_learning_activity", "write"),
-    ("lensword.request_hint", "write"),
-    ("lensword.explain_evidence", "read"),
+    ("lensword_begin_learning_activity", "write"),
+    ("lensword_submit_activity_response", "write"),
+    ("lensword_get_activity_result", "read"),
+    ("lensword_finish_learning_activity", "write"),
+    ("lensword_request_hint", "write"),
+    ("lensword_explain_evidence", "read"),
 )
 
 
@@ -86,7 +86,7 @@ def test_full_activity_lifecycle_is_reachable_over_mcp(client, auth_headers, db_
     ).json()
 
     begun = _invoke(
-        client, headers, "lensword.begin_learning_activity",
+        client, headers, "lensword_begin_learning_activity",
         {
             "session_id": session["id"], "activity_type": "recall", "prompt": "Recall correr.",
             "expected_evaluation": {"word_id": word_id, "expected_answer": "to run"},
@@ -97,28 +97,28 @@ def test_full_activity_lifecycle_is_reachable_over_mcp(client, auth_headers, db_
     assert begun.json()["status"] == "active"
     assert begun.json()["hints_used"] == 0
 
-    hinted = _invoke(client, headers, "lensword.request_hint", {"session_id": session["id"], "activity_id": activity_id})
+    hinted = _invoke(client, headers, "lensword_request_hint", {"session_id": session["id"], "activity_id": activity_id})
     assert hinted.status_code == 200, hinted.text
     assert hinted.json()["hints_used"] == 1
     assert hinted.json()["hints_remaining"] == 2
 
     submitted = _invoke(
-        client, headers, "lensword.submit_activity_response",
+        client, headers, "lensword_submit_activity_response",
         {"session_id": session["id"], "activity_id": activity_id, "response": "to run"},
     )
     assert submitted.status_code == 200, submitted.text
     assert submitted.json()["status"] == "submitted"
     assert submitted.json()["result"]["correct"] is True
 
-    fetched = _invoke(client, headers, "lensword.get_activity_result", {"session_id": session["id"], "activity_id": activity_id})
+    fetched = _invoke(client, headers, "lensword_get_activity_result", {"session_id": session["id"], "activity_id": activity_id})
     assert fetched.status_code == 200
     assert fetched.json()["response"] == "to run"
 
-    evidence = _invoke(client, headers, "lensword.explain_evidence", {"session_id": session["id"], "activity_id": activity_id})
+    evidence = _invoke(client, headers, "lensword_explain_evidence", {"session_id": session["id"], "activity_id": activity_id})
     assert evidence.status_code == 200, evidence.text
     assert evidence.json()["activity_type"] == "recall"
 
-    finished = _invoke(client, headers, "lensword.finish_learning_activity", {"session_id": session["id"], "activity_id": activity_id})
+    finished = _invoke(client, headers, "lensword_finish_learning_activity", {"session_id": session["id"], "activity_id": activity_id})
     assert finished.status_code == 200
     assert finished.json()["status"] == "finished"
 
@@ -133,7 +133,7 @@ def test_full_activity_lifecycle_is_reachable_over_mcp(client, auth_headers, db_
 def test_an_activity_begun_over_mcp_is_the_same_durable_row_rest_sees(client, auth_headers, db_session):
     headers = auth_headers()
     _enable_companion(client, headers)
-    _grant(db_session, "lensword.begin_learning_activity", user_id=_user_id(client, headers))
+    _grant(db_session, "lensword_begin_learning_activity", user_id=_user_id(client, headers))
     word_id = _setup_word(client, headers)
 
     session = client.post(
@@ -143,7 +143,7 @@ def test_an_activity_begun_over_mcp_is_the_same_durable_row_rest_sees(client, au
     ).json()
 
     begun = _invoke(
-        client, headers, "lensword.begin_learning_activity",
+        client, headers, "lensword_begin_learning_activity",
         {
             "session_id": session["id"], "activity_type": "cloze", "prompt": "Fill the blank.",
             "expected_evaluation": {"word_id": word_id},
@@ -172,14 +172,14 @@ def test_free_chat_begun_over_mcp_creates_no_observation_on_submit(client, auth_
     ).json()
 
     begun = _invoke(
-        client, headers, "lensword.begin_learning_activity",
+        client, headers, "lensword_begin_learning_activity",
         {"session_id": session["id"], "activity_type": "free_chat", "prompt": "Let's chat."},
     )
     assert begun.status_code == 200, begun.text
     activity_id = begun.json()["id"]
 
     submitted = _invoke(
-        client, headers, "lensword.submit_activity_response",
+        client, headers, "lensword_submit_activity_response",
         {"session_id": session["id"], "activity_id": activity_id, "response": "hello there"},
     )
     assert submitted.status_code == 200, submitted.text
@@ -193,7 +193,7 @@ def test_companion_activity_tools_are_gated_by_ai_companion_enabled(client, auth
     _grant_all(db_session, user_id=_user_id(client, headers))  # deliberately not enabling ai_companion_enabled
 
     response = _invoke(
-        client, headers, "lensword.begin_learning_activity",
+        client, headers, "lensword_begin_learning_activity",
         {"session_id": "does-not-matter", "activity_type": "free_chat", "prompt": "hi"},
     )
     assert response.status_code == 400, response.text

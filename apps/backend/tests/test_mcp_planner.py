@@ -11,13 +11,13 @@ def group(id=7, name="Spanish"):
 def test_session_command_emits_a_confirmable_typed_preview():
     plan = CommandPlanner().plan("prepare a 15-minute session in Spanish", [group()])
     assert plan.executable and plan.requires_confirmation
-    assert plan.steps[0].tool == "lensword.create_study_session"
+    assert plan.steps[0].tool == "lensword_create_study_session"
     assert plan.steps[0].payload == {"limit": 30, "group_id": 7, "request_id": plan.steps[0].payload["request_id"]}
 
 
 def test_extraction_resolves_group_source_and_cefr_without_unregistered_tools():
     plan = CommandPlanner().plan("extract unfamiliar B2+ words from this PDF in Spanish", [group()], source_text="hola mundo")
-    assert plan.executable and plan.steps[0].tool == "lensword.extract_vocabulary"
+    assert plan.executable and plan.steps[0].tool == "lensword_extract_vocabulary"
     assert plan.steps[0].payload["target_language"] == "Spanish"
     assert any("CEFR threshold B2" in assumption for assumption in plan.assumptions)
 
@@ -52,6 +52,6 @@ def test_execution_returns_per_step_denial_without_rolling_back_preview(client, 
     # Identity is now derived server-side from the authenticated user
     # (issue #196 TODO 2), so the grant must be bound to that user's real
     # requester string ("user:{id}"), not an arbitrary caller-chosen label.
-    db_session.add(MCPGrantModel(requester=f"user:{user_id}", server="lensword", tool="lensword.create_study_session", access="write", workspace="/approved", mode="always")); db_session.flush()
+    db_session.add(MCPGrantModel(requester=f"user:{user_id}", server="lensword", tool="lensword_create_study_session", access="write", workspace="/approved", mode="always")); db_session.flush()
     retry = client.post("/api/v1/mcp/plans/preview", headers=headers, json={"command": "prepare a 15-minute session in Spanish", "workspace": "/approved"}).json()
     assert client.post(f"/api/v1/mcp/plans/{retry['id']}/execute", headers=headers, json={"confirmed": True}).json()["status"] == "completed"

@@ -117,21 +117,21 @@ two resources; no grant beyond `read`-class tools is needed):
 
 **A measurable structured activity** (a real write, creates evidence):
 
-1. `lensword.begin_learning_activity` — fixes a prompt and its evaluation
+1. `lensword_begin_learning_activity` — fixes a prompt and its evaluation
    rule (e.g. "translate 'prestar'", `expected_evaluation: {"word_id": 42}`)
    once, before the learner answers. Nothing downstream can change that
    rule after seeing the response (`LearningActivity` has no setter for it
    — issue #194 TODO 5).
-2. `lensword.submit_activity_response` — the learner's answer is evaluated
+2. `lensword_submit_activity_response` — the learner's answer is evaluated
    against the fixed rule. If the activity type is anything other than
    `free_chat` and its rule names a `word_id`, this produces exactly one
    `LearningObservation` — real evidence a diagnosis/scheduling pass can
    later consult.
-3. `lensword.get_activity_result` / `lensword.explain_evidence` — read back
+3. `lensword_get_activity_result` / `lensword_explain_evidence` — read back
    what was recorded, with citations.
 
 **Free conversation** (never evidence): any turn added through
-`lensword.companion_reply`/session turns without going through
+`lensword_companion_reply`/session turns without going through
 `begin_learning_activity`/`submit_activity_response` is free chat. It is
 never scored, never produces a `LearningObservation`, and never feeds a
 diagnosis — confirmed by
@@ -184,7 +184,7 @@ it:
 |---|---|---|
 | **Source** | LensWord's own deterministic domain services (diagnosis engine, spaced-repetition scheduler, observation history) | A model — client-sampled, a configured local provider, or a deterministic template |
 | **Examples** | "This word is due for review", "you answered incorrectly 3 of the last 5 times", "this diagnosis fired because of a demonstrated lapse after prior recall" | "Try recalling it in a sentence", a phrased explanation of *why* a diagnosis fired, an example sentence |
-| **Where it comes from in this doc's terms** | Resources (`lensword://me/*`), `get_activity_result`, `explain_evidence` | `lensword.companion_reply`'s generated `text` field |
+| **Where it comes from in this doc's terms** | Resources (`lensword://me/*`), `get_activity_result`, `explain_evidence` | `lensword_companion_reply`'s generated `text` field |
 | **Can a companion session invent one?** | No — never. There is no MCP tool or code path that lets a companion write a mastery/diagnosis/retention value directly (see the release-gate ADR below). | Yes, by design — that is what generation is for. It is validated (`validate_sample` rejects any reply containing `mastery:`/`retention:`/`diagnosis:`-shaped claims or `<tool_call>`/`<secret>` control sequences) but never treated as evidence of anything. |
 
 If a companion reply ever reads as a fact about your learning ("you have
@@ -255,8 +255,8 @@ runs, minus the network and minus a production database:
 
 | Call | n | min | p50 | p95 | max |
 |---|---|---|---|---|---|
-| `tools/invoke lensword.search_words` (read) | 20 | 5.91ms | 6.31ms | 6.79ms | 6.79ms |
-| `tools/invoke lensword.get_learning_progress` (read) | 20 | 5.99ms | 6.48ms | 10.61ms | 10.61ms |
+| `tools/invoke lensword_search_words` (read) | 20 | 5.91ms | 6.31ms | 6.79ms | 6.79ms |
+| `tools/invoke lensword_get_learning_progress` (read) | 20 | 5.99ms | 6.48ms | 10.61ms | 10.61ms |
 | `resources/resource lensword://me/due` | 20 | 5.50ms | 6.00ms | 7.88ms | 7.88ms |
 | `capabilities` (unauthenticated, no DB read) | 20 | 2.03ms | 2.09ms | 2.31ms | 2.31ms |
 
@@ -267,7 +267,7 @@ handshake, no real network round trip, no Postgres (SQLite in-memory is
 faster for small tables than a real deployment's Postgres would be under
 load), and no concurrent traffic. It says "this server's own logic is fast
 relative to itself," not "a real deployment will respond this quickly."
-Sampling/fallback latency (the model-call half of `lensword.companion_reply`)
+Sampling/fallback latency (the model-call half of `lensword_companion_reply`)
 was not measured here at all — it depends entirely on which model a
 connected host samples against, which is exactly the kind of claim this
 document's "Rule zero" refuses to guess at.

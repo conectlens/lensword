@@ -11,6 +11,17 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 
 | Date | Commit | Author | Subject | Changelog fragment |
 |---|---|---|---|---|
+| 2026-08-08 | [2bb1e58](https://github.com/conectlens/lensword/commit/2bb1e58085d4bbdf8ecb84849de5417cbef65f5e) | Ömer Faruk Coşkun | Merge pull request #322 from conectlens/feat/split-local-cli-package | none (predates this system) |
+| 2026-08-08 | [8ee5484](https://github.com/conectlens/lensword/commit/8ee5484f44df65a544ba3db3641019940cdb5e30) | Ömer Faruk Coşkun | Merge branch 'development' into feat/split-local-cli-package | none (predates this system) |
+| 2026-08-08 | [dd53c5e](https://github.com/conectlens/lensword/commit/dd53c5eb258ac7ac56ee297b6c74dd2d83ecff4e) | ÖMER FARUK COŞKUN | Fix Local CLI's BackendClient call passing the wrong argument to workspace/timeout | none (predates this system) |
+| 2026-08-08 | [d55748f](https://github.com/conectlens/lensword/commit/d55748f485d6271c0dc523ec9aaa057a739b74d0) | ÖMER FARUK COŞKUN | Remove apps/mcp/.dockerignore, now dead since the build context moved | none (predates this system) |
+| 2026-08-08 | [63feb5e](https://github.com/conectlens/lensword/commit/63feb5eabc06fa3a1a68c75188def1898a4dc3bd) | ÖMER FARUK COŞKUN | Ignore apps/cli build artifacts, matching apps/mcp's existing entries | none (predates this system) |
+| 2026-08-08 | [4fcf14b](https://github.com/conectlens/lensword/commit/4fcf14b3389cf0f945d699e1883e9e9b59935043) | ÖMER FARUK COŞKUN | Add changelog fragment for the Local CLI package split | none (predates this system) |
+| 2026-08-08 | [fb37af7](https://github.com/conectlens/lensword/commit/fb37af7b4e4c47e805abaede06743dd301d9e0b9) | ÖMER FARUK COŞKUN | Add a PyPI publish workflow for the Local CLI | none (predates this system) |
+| 2026-08-08 | [7b64720](https://github.com/conectlens/lensword/commit/7b647201304010780d50faeb5783d805799e4e9b) | ÖMER FARUK COŞKUN | Update product registry and docs for the Local CLI's new package identity | none (predates this system) |
+| 2026-08-08 | [a0a81b7](https://github.com/conectlens/lensword/commit/a0a81b7d0425267a3d6e7750f8f6090ed5d3efee) | ÖMER FARUK COŞKUN | Fix apps/mcp's production Docker build for its new apps/cli dependency | none (predates this system) |
+| 2026-08-08 | [24aa42e](https://github.com/conectlens/lensword/commit/24aa42e805b926cc6bea5edd947f56e3251ddf94) | ÖMER FARUK COŞKUN | Split the Local CLI into its own apps/cli package, separate from apps/mcp | none (predates this system) |
+| 2026-08-08 | [38a91b6](https://github.com/conectlens/lensword/commit/38a91b6a2342de1233a6876ff80669ce1acdadf3) | ÖMER FARUK COŞKUN | Add diagnostic logging to MCP OAuth token exchange | none (predates this system) |
 | 2026-08-08 | [d784d97](https://github.com/conectlens/lensword/commit/d784d978bce629161afac9ec4e3bac1489c81069) | ÖMER FARUK COŞKUN | Fix intermittent desktop installer upload failures on the continuous release | none (predates this system) |
 | 2026-08-08 | [882d767](https://github.com/conectlens/lensword/commit/882d7677e4dc6971be0dcd6d60e4ceddeb21322f) | ÖMER FARUK COŞKUN | Fix VitePress build break from a stray angle-bracket placeholder in the OAuth changelog fragment | none (predates this system) |
 | 2026-08-08 | [871419b](https://github.com/conectlens/lensword/commit/871419b643168bf149a43050a18ee63673edb881) | ÖMER FARUK COŞKUN | Fix remote MCP OAuth connection failing on every attempt | none (predates this system) |
@@ -40,16 +51,5 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 | 2026-08-07 | [8f7e92b](https://github.com/conectlens/lensword/commit/8f7e92bd07e892a7a89773e104c1db19482fe403) | Lenser | Add Render.com as a free deployment path for backend/MCP | none (predates this system) |
 | 2026-08-07 | [a400b2d](https://github.com/conectlens/lensword/commit/a400b2d0574733141d4b82aea378459b05bab352) | Lenser | Add Render.com as a free deployment path for backend/MCP | none (predates this system) |
 | 2026-08-07 | [9e86d26](https://github.com/conectlens/lensword/commit/9e86d26c5df641199ac0374fc0943dcdf018f24c) | Lenser | Auto-create the Cloudflare Pages project before deploying to it | none (predates this system) |
-| 2026-08-07 | [57f2d45](https://github.com/conectlens/lensword/commit/57f2d45dc57364a887429ba6b9c53d1b895161e7) | Lenser | Auto-create the Cloudflare Pages project before deploying to it | none (predates this system) |
-| 2026-08-07 | [46fed0a](https://github.com/conectlens/lensword/commit/46fed0a09cc13674c6d4fdc477ccecaa9398b1ea) | Lenser | Bump deploy workflows to Node 22 - wrangler@4.120.0 requires it | none (predates this system) |
-| 2026-08-07 | [660933c](https://github.com/conectlens/lensword/commit/660933cac7ae276656028b647eef55cf955803db) | Lenser | Bump deploy workflows to Node 22 - wrangler@4.120.0 requires it | none (predates this system) |
-| 2026-08-07 | [2604500](https://github.com/conectlens/lensword/commit/2604500b7d555473d917d394780aa3bb58931097) | Lenser | Scope deploy workflows to the production GitHub Environment | none (predates this system) |
-| 2026-08-07 | [8467fc8](https://github.com/conectlens/lensword/commit/8467fc8dbea6743af8a572caa488ae07818fd231) | Lenser | Scope deploy workflows to the production GitHub Environment | none (predates this system) |
-| 2026-08-07 | [bc1f8fe](https://github.com/conectlens/lensword/commit/bc1f8fe258a53c87e3d051b6360259a110ed326b) | Lenser | Fix real CI failures from the first-ever run on main: desktop build path bug, wrangler version conflict, docker-compose env gaps | none (predates this system) |
-| 2026-08-07 | [802d1d7](https://github.com/conectlens/lensword/commit/802d1d73846b12e8a082109a2774a9f14036b025) | Lenser | Fix real CI failures from the first-ever run on main: desktop build path bug, wrangler version conflict, docker-compose env gaps | none (predates this system) |
-| 2026-08-07 | [55f31e7](https://github.com/conectlens/lensword/commit/55f31e7f2b51fc2997ba1bbaeb35736c78d52abf) | Ömer Faruk Coşkun | Merge development into main (#307) | none (predates this system) |
-| 2026-08-07 | [47927b7](https://github.com/conectlens/lensword/commit/47927b7fd247d50c5b9912f009f256d6b5bb39ae) | Ömer Faruk Coşkun | Add Cloudflare deployment infrastructure (backend/MCP Containers, frontend Pages) (#310) | none (predates this system) |
-| 2026-08-07 | [9d52f69](https://github.com/conectlens/lensword/commit/9d52f69f4378a8a34f5eae475ba089717e949cc2) | Lenser | Regenerate changelog ledger against current development | none (predates this system) |
-| 2026-08-07 | [e58dd7d](https://github.com/conectlens/lensword/commit/e58dd7d5e6817010649f8d8c8e83dacc068d9fd7) | Lenser | Regenerate changelog ledger against current development | none (predates this system) |
 
 Generated from `git log -40 development` — 40 commits shown.
