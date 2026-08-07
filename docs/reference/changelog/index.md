@@ -194,6 +194,25 @@ apps/desktop/api-config/src/lib.rs's DEFAULT_API_BASE is now resolved via option
 - Not verified end to end against a real deploy — the production API (lensword-api.conectlens.com) this defaults to did not exist as a live service when this was written (see the Cloudflare deployment PR); a downloaded installer using the new default won't actually reach a server until that's deployed.
 - release-continuous.yml itself has not run for real (no push to main happened from this session) — the reusable workflow it calls is verified only by inspection and by the fact that release.yml's unchanged packaging/signing steps already work; the new delete-then-recreate rolling-release step is untested against a live GitHub Releases API.
 
+**Desktop Application**
+
+<a id="desktop-linux-appindicator-build-dep"></a>
+
+### Fixed: The Linux desktop installer (AppImage/.deb/.rpm) build no longer fails — it was missing a required system tray dependency.
+
+*2026-08-07* — verification: production observation: observed
+
+Linux users get an actual AppImage/.deb/.rpm from the release/continuous build pipeline again, instead of the build job failing after a full ~5-minute compile with no artifacts produced.
+
+<details><summary>Technical detail</summary>
+
+A real run of the desktop-installer build workflow (build-desktop-installers.yml, ubuntu-latest) panicked during bundling: `Can't detect any appindicator library`. The Rust build itself succeeded (this app uses a system tray — see apps/frontend/src/lib/tray.ts/useTraySync); the panic is inside tauri-cli's bundler, which does its own pkg-config-based lookup for a tray/appindicator library at bundle time, separate from plain compilation — which is why ci.yml's "Desktop shell (Rust, ubuntu-latest)" job (cargo check/test/clippy only, no `tauri build` bundle step) never hit this. Added libayatana-appindicator3-dev to this workflow's apt-get install list, matching Tauri's own documented Linux prerequisites for tray-icon support.
+
+</details>
+
+**Known limitations:**
+- Not verified against a real completed CI run of this workflow yet (the fix is a one-line apt-get addition matching Tauri's documented Linux dependency list, not something reproducible in this sandbox, which has no Tauri/GTK toolchain) — verify on the next release-continuous run.
+
 **Web Application, Desktop Application**
 
 <a id="desktop-fonts-blocked-by-csp"></a>

@@ -1,0 +1,55 @@
+id: desktop-linux-appindicator-build-dep
+products:
+  - desktop
+type: fixed
+summary: >-
+  The Linux desktop installer (AppImage/.deb/.rpm) build no longer fails —
+  it was missing a required system tray dependency.
+technical_summary: >-
+  A real run of the desktop-installer build workflow (build-desktop-installers.yml,
+  ubuntu-latest) panicked during bundling: `Can't detect any appindicator
+  library`. The Rust build itself succeeded (this app uses a system tray —
+  see apps/frontend/src/lib/tray.ts/useTraySync); the panic is inside
+  tauri-cli's bundler, which does its own pkg-config-based lookup for a
+  tray/appindicator library at bundle time, separate from plain
+  compilation — which is why ci.yml's "Desktop shell (Rust, ubuntu-latest)"
+  job (cargo check/test/clippy only, no `tauri build` bundle step) never
+  hit this. Added libayatana-appindicator3-dev to this workflow's apt-get
+  install list, matching Tauri's own documented Linux prerequisites for
+  tray-icon support.
+user_impact: >-
+  Linux users get an actual AppImage/.deb/.rpm from the release/continuous
+  build pipeline again, instead of the build job failing after a full
+  ~5-minute compile with no artifacts produced.
+release_status: unreleased
+breaking: false
+migration: none
+known_limitations:
+  - Not verified against a real completed CI run of this workflow yet
+    (the fix is a one-line apt-get addition matching Tauri's documented
+    Linux dependency list, not something reproducible in this sandbox,
+    which has no Tauri/GTK toolchain) — verify on the next release-continuous
+    run.
+compatibility:
+  requires:
+    server_api: null
+verification:
+  automated_tests:
+    status: not_run
+    commands: []
+  artifact_build:
+    status: not_run
+    artifacts: []
+  manual_platform_checks:
+    macos: not_applicable
+    windows: not_applicable
+    linux: not_run
+  production_observation:
+    status: observed
+security_impact: none
+documentation_required: false
+date: '2026-08-07'
+references:
+  issues: []
+  pull_requests: []
+  commits: []
