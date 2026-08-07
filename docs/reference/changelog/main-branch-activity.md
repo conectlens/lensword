@@ -11,6 +11,8 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 
 | Date | Commit | Author | Subject | Changelog fragment |
 |---|---|---|---|---|
+| 2026-08-07 | [b7ae946](https://github.com/conectlens/lensword/commit/b7ae946645139dc470841335f2c7c39dbb09e91a) | Ömer Faruk Coşkun | Potential fix for pull request finding 'CodeQL / HTTP Response Splitting' | none (predates this system) |
+| 2026-08-07 | [a2b0023](https://github.com/conectlens/lensword/commit/a2b0023943e5f4beee00eedb630b4eb140dc33be) | Ömer Faruk Coşkun | Add documentation QA gates: route/link, code-block, media, accessibility (#283) (#306) | none (predates this system) |
 | 2026-08-07 | [410846b](https://github.com/conectlens/lensword/commit/410846b31cd343d898f34a08ea5ac113d02f7094) | Ömer Faruk Coşkun | Enforce changelog fragments, product-impact, and registry validity in CI (#282) (#305) | none (predates this system) |
 | 2026-08-07 | [983c0cb](https://github.com/conectlens/lensword/commit/983c0cbfe2b7595fe2e388fc4c3a4192b501b3a7) | Ömer Faruk Coşkun | Implement the product-aware changelog, release-transparency, and trust system (#281) (#304) | none (predates this system) |
 | 2026-08-07 | [0905871](https://github.com/conectlens/lensword/commit/0905871fe0d943ec7469fb6a4ebc257a7fb64c57) | Ömer Faruk Coşkun | Skip the Pages deploy job cleanly instead of failing when Pages isn't enabled (#303) | none (predates this system) |
@@ -49,7 +51,5 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 | 2026-08-07 | [4a7078c](https://github.com/conectlens/lensword/commit/4a7078c44e33f85a4dcb215c3cf9372f7700c4fb) | ÖMER FARUK COŞKUN | Merge companion migration heads | none (predates this system) |
 | 2026-08-07 | [658417e](https://github.com/conectlens/lensword/commit/658417e3cc4274dab4fa89fa7a0da77b3ca27cbf) | Ömer Faruk Coşkun | Add evidence-grounded companion coach contracts (#259) | none (predates this system) |
 | 2026-08-07 | [a27e855](https://github.com/conectlens/lensword/commit/a27e8555a27da97d5b1c14ea4748345ae1ff5453) | Ömer Faruk Coşkun | Add conservative intervention efficacy estimates (#258) | none (predates this system) |
-| 2026-08-07 | [a4f88d0](https://github.com/conectlens/lensword/commit/a4f88d08b6064dcff452687bb2dc94a6a6b416c6) | Ömer Faruk Coşkun | Add durable companion sessions with normalized turns (#255) | none (predates this system) |
-| 2026-08-07 | [8698962](https://github.com/conectlens/lensword/commit/8698962ed02dabe7cca7d0b8d6ecd4b3c0a95c6a) | Ömer Faruk Coşkun | Add stability-gated contrast cards for issue #206 (#253) | none (predates this system) |
 
 Generated from `git log -40 development` — 40 commits shown.
