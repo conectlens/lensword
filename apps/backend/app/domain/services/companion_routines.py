@@ -137,8 +137,9 @@ def build_micro_session_plan(due_word_ids: list[int], minutes_available: int) ->
 
     One word per minute is a deliberately conservative, easy-to-explain
     estimate — this is a bound, not a claim about how long any given word
-    will take; `companion_task_execution.plan_micro_session_units` is what
-    actually turns a selection like this into real activities.
+    will take. Turning a selection like this into real activities is
+    `app.application.use_cases.companion_planning`'s job (#194 TODO 4),
+    which already exists and is not duplicated here.
     """
     if minutes_available < 1:
         raise ValueError("minutes_available must be positive")

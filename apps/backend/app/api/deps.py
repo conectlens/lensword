@@ -17,6 +17,7 @@ from app.infrastructure.repositories import (
     SqlAlchemyDesktopNotificationRepository,
     SqlAlchemyGroupRepository,
     SqlAlchemyConversationRepository,
+    SqlAlchemyConversationCorrectionFeedbackRepository,
     SqlAlchemyScenarioAttemptRepository,
     SqlAlchemyLearningPathRepository,
     SqlAlchemyMistakeEventRepository,
@@ -25,9 +26,12 @@ from app.infrastructure.repositories import (
     SqlAlchemyKnowledgeEdgeRepository,
     SqlAlchemyDiagnosisRepository,
     SqlAlchemyInterventionRepository,
+    SqlAlchemyModalityPreferenceRepository,
     SqlAlchemyCompanionSessionRepository,
     SqlAlchemyCompanionActivityRepository,
     SqlAlchemyCompanionTaskRepository,
+    SqlAlchemyCompanionLoopStateRepository,
+    SqlAlchemyCompanionSamplingEventRepository,
     SqlAlchemyAcquisitionStateRepository,
     SqlAlchemyMnemonicRepository,
     SqlAlchemyRecallSettingsRepository,
@@ -124,6 +128,10 @@ def get_intervention_repository(db: DbSession) -> SqlAlchemyInterventionReposito
     return SqlAlchemyInterventionRepository(db)
 
 
+def get_modality_preference_repository(db: DbSession) -> SqlAlchemyModalityPreferenceRepository:
+    return SqlAlchemyModalityPreferenceRepository(db)
+
+
 def get_companion_session_repository(db: DbSession) -> SqlAlchemyCompanionSessionRepository:
     return SqlAlchemyCompanionSessionRepository(db)
 
@@ -134,6 +142,14 @@ def get_companion_activity_repository(db: DbSession) -> SqlAlchemyCompanionActiv
 
 def get_companion_task_repository(db: DbSession) -> SqlAlchemyCompanionTaskRepository:
     return SqlAlchemyCompanionTaskRepository(db)
+
+
+def get_companion_loop_state_repository(db: DbSession) -> SqlAlchemyCompanionLoopStateRepository:
+    return SqlAlchemyCompanionLoopStateRepository(db)
+
+
+def get_companion_sampling_event_repository(db: DbSession) -> SqlAlchemyCompanionSamplingEventRepository:
+    return SqlAlchemyCompanionSamplingEventRepository(db)
 
 
 def get_acquisition_state_repository(db: DbSession) -> SqlAlchemyAcquisitionStateRepository:
@@ -150,6 +166,12 @@ def get_conversation_repository(db: DbSession) -> SqlAlchemyConversationReposito
 
 def get_scenario_attempt_repository(db: DbSession) -> SqlAlchemyScenarioAttemptRepository:
     return SqlAlchemyScenarioAttemptRepository(db)
+
+
+def get_conversation_correction_feedback_repository(
+    db: DbSession,
+) -> SqlAlchemyConversationCorrectionFeedbackRepository:
+    return SqlAlchemyConversationCorrectionFeedbackRepository(db)
 
 
 @lru_cache
@@ -200,6 +222,29 @@ def rate_limit_login(request: Request, limiter: RateLimiter) -> None:
     _enforce_rate_limit(limiter, "auth_login", f"ip:{_client_host(request)}", rule)
 
 
+def rate_limit_mcp_oauth(request: Request, limiter: RateLimiter) -> None:
+    """Independent budget for the remote MCP OAuth endpoints (issue #196
+    TODO 4: registration, the authorization-code/refresh token exchange,
+    and revocation). Keyed by IP like rate_limit_login, for the same
+    reason: a code/refresh-token exchange attempt has no account bound to
+    it until it either succeeds or is rejected.
+
+    This is a single-process limiter — see rate_limiter.py's module
+    docstring for the documented "more than one instance" gap that applies
+    identically here. TODO 4 asks for shared rate limiting across
+    instances; this repo has no distributed limiter infrastructure (no
+    Redis or equivalent) to build that on, so this scopes down to the same
+    honest single-instance posture the rest of the app already has rather
+    than fabricating a fake distributed one.
+    """
+    settings_ = get_settings()
+    rule = RateLimitRule(
+        limit=settings_.rate_limit_mcp_oauth_attempts,
+        window=timedelta(seconds=settings_.rate_limit_mcp_oauth_window_seconds),
+    )
+    _enforce_rate_limit(limiter, "mcp_oauth", f"ip:{_client_host(request)}", rule)
+
+
 UserRepo = Annotated[SqlAlchemyUserRepository, Depends(get_user_repository)]
 GroupRepo = Annotated[SqlAlchemyGroupRepository, Depends(get_group_repository)]
 WordRepo = Annotated[SqlAlchemyWordRepository, Depends(get_word_repository)]
@@ -221,6 +266,9 @@ LearningObservationRepo = Annotated[
 KnowledgeEdgeRepo = Annotated[SqlAlchemyKnowledgeEdgeRepository, Depends(get_knowledge_edge_repository)]
 DiagnosisRepo = Annotated[SqlAlchemyDiagnosisRepository, Depends(get_diagnosis_repository)]
 InterventionRepo = Annotated[SqlAlchemyInterventionRepository, Depends(get_intervention_repository)]
+ModalityPreferenceRepo = Annotated[
+    SqlAlchemyModalityPreferenceRepository, Depends(get_modality_preference_repository)
+]
 CompanionSessionRepo = Annotated[
     SqlAlchemyCompanionSessionRepository, Depends(get_companion_session_repository)
 ]
@@ -230,12 +278,21 @@ CompanionActivityRepo = Annotated[
 CompanionTaskRepo = Annotated[
     SqlAlchemyCompanionTaskRepository, Depends(get_companion_task_repository)
 ]
+CompanionLoopStateRepo = Annotated[
+    SqlAlchemyCompanionLoopStateRepository, Depends(get_companion_loop_state_repository)
+]
+CompanionSamplingEventRepo = Annotated[
+    SqlAlchemyCompanionSamplingEventRepository, Depends(get_companion_sampling_event_repository)
+]
 AcquisitionStateRepo = Annotated[
     SqlAlchemyAcquisitionStateRepository, Depends(get_acquisition_state_repository)
 ]
 LearningPathRepo = Annotated[SqlAlchemyLearningPathRepository, Depends(get_learning_path_repository)]
 ConversationRepo = Annotated[SqlAlchemyConversationRepository, Depends(get_conversation_repository)]
 ScenarioAttemptRepo = Annotated[SqlAlchemyScenarioAttemptRepository, Depends(get_scenario_attempt_repository)]
+ConversationCorrectionFeedbackRepo = Annotated[
+    SqlAlchemyConversationCorrectionFeedbackRepository, Depends(get_conversation_correction_feedback_repository)
+]
 OptionalAIProvider = Annotated[AIProvider | None, Depends(get_ai_provider)]
 
 

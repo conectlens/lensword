@@ -14,6 +14,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.deps import (
+    ConversationCorrectionFeedbackRepo,
     ConversationRepo,
     CurrentUser,
     MistakeEventRepo,
@@ -22,6 +23,8 @@ from app.api.deps import (
 )
 from app.api.schemas.conversations import (
     ConversationResponse,
+    CorrectionFeedbackRequest,
+    CorrectionFeedbackResponse,
     CorrectionResponse,
     MessageResponse,
     SendMessageRequest,
@@ -30,6 +33,7 @@ from app.api.schemas.conversations import (
 )
 from app.domain.exceptions import AIProviderUnavailableError
 from app.domain.services.conversation import (
+    CorrectionFeedback,
     Difficulty,
     Speaker,
     Turn,
@@ -134,6 +138,51 @@ async def send_message(
         status="ok",
         learner_message=_message(learner_message),
         tutor_message=_message(tutor_message),
+    )
+
+
+@router.post(
+    "/{session_id}/messages/{message_id}/corrections/{correction_index}/feedback",
+    response_model=CorrectionFeedbackResponse,
+)
+def submit_correction_feedback(
+    session_id: int,
+    message_id: int,
+    correction_index: int,
+    payload: CorrectionFeedbackRequest,
+    current_user: CurrentUser,
+    repo: ConversationRepo,
+    feedback_repo: ConversationCorrectionFeedbackRepo,
+) -> CorrectionFeedbackResponse:
+    """A learner's accept/reject/edit decision on one correction the tutor
+    offered (#194 TODO 3). Recorded as a new, append-only telemetry fact —
+    never a mutation of the message or of any mastery-affecting state — the
+    same low-trust-fact posture #188's `record_context_occurrence` already
+    uses for its own write.
+    """
+    session = _owned(repo, session_id, current_user.id)
+    message = next((candidate for candidate in session.messages if candidate.id == message_id), None)
+    if message is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
+    corrections = message.corrections or []
+    if not 0 <= correction_index < len(corrections):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Correction not found")
+    try:
+        feedback = CorrectionFeedback(
+            message_id=message_id,
+            user_id=current_user.id,
+            correction_index=correction_index,
+            outcome=payload.outcome,
+            edited_text=payload.edited_text,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    saved = feedback_repo.add(feedback)
+    return CorrectionFeedbackResponse(
+        message_id=saved.message_id,
+        correction_index=saved.correction_index,
+        outcome=saved.outcome,
+        edited_text=saved.edited_text,
     )
 
 

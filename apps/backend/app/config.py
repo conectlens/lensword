@@ -96,6 +96,34 @@ class Settings(BaseSettings):
     rate_limit_upload_requests: int = 20
     rate_limit_upload_window_seconds: int = 60
 
+    # Remote MCP over Streamable HTTP + OAuth (issue #196). Off by default —
+    # every existing deployment (local stdio companion, desktop app,
+    # self-hosted single-user install) keeps working with zero remote
+    # surface at all until an operator opts in explicitly. Flipping this on
+    # exposes the OAuth authorization/token endpoints and the
+    # protected-resource/authorization-server metadata documents; it does
+    # not by itself start a network listener (see apps/mcp's
+    # `--transport=http`, which has its own, separate opt-in flag).
+    remote_mcp_enabled: bool = False
+    # Short-lived by design: a leaked access token is a bounded-time problem.
+    mcp_access_token_ttl_minutes: int = 15
+    # Rotated on every refresh (see MCPOAuthTokenModel.rotated_from_id); this
+    # is only the outer bound after which a companion must re-run consent.
+    mcp_refresh_token_ttl_days: int = 30
+    # An authorization code is exchanged within one redirect round-trip in
+    # every real client; two minutes is generous slack, not a target.
+    mcp_authorization_code_ttl_seconds: int = 120
+    # Used as the `issuer` in the authorization-server metadata document and
+    # as the `resource` in the protected-resource one. Must match the origin
+    # a remote client actually reaches this API on; the insecure default is
+    # fine for local development only.
+    mcp_issuer_url: str = "http://localhost:8000"
+    # Independent budget for the OAuth token endpoint (issue #196 TODO 4),
+    # keyed by IP the same way rate_limit_login is — there is no account
+    # bound to a code/refresh-token exchange attempt until it succeeds.
+    rate_limit_mcp_oauth_attempts: int = 20
+    rate_limit_mcp_oauth_window_seconds: int = 60
+
     @field_validator(
         "rate_limit_auth_attempts",
         "rate_limit_auth_window_seconds",
@@ -105,6 +133,11 @@ class Settings(BaseSettings):
         "rate_limit_fetch_window_seconds",
         "rate_limit_upload_requests",
         "rate_limit_upload_window_seconds",
+        "rate_limit_mcp_oauth_attempts",
+        "rate_limit_mcp_oauth_window_seconds",
+        "mcp_access_token_ttl_minutes",
+        "mcp_refresh_token_ttl_days",
+        "mcp_authorization_code_ttl_seconds",
     )
     @classmethod
     def _positive_rate_limit(cls, value: int) -> int:

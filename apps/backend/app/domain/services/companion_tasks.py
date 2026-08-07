@@ -150,6 +150,26 @@ class CompanionTask:
         self.result = dict(result or {})
         self._touch(now)
 
+    def record_plan_confirmation(self, result: dict[str, Any], now: datetime) -> None:
+        """Store the outcome of confirming (and, on confirmation, executing)
+        a `plan_generation` task's plan (#194 TODO 4).
+
+        Only ever called after `complete` has already stored the generated,
+        unconfirmed plan (`status is COMPLETED`) — confirming a plan does
+        not reopen the task, it records one more fact about what happened
+        to the plan the task already produced. Raises if this task is not a
+        `plan_generation` task, has no plan yet, or was already confirmed —
+        a plan can be executed at most once.
+        """
+        if self.task_type is not CompanionTaskType.PLAN_GENERATION:
+            raise ValueError("Only a plan_generation task can record a plan confirmation")
+        if self.status is not CompanionTaskStatus.COMPLETED:
+            raise ValueError("A plan must be generated before it can be confirmed")
+        if isinstance(self.result, dict) and self.result.get("confirmed"):
+            raise ValueError("This plan has already been confirmed")
+        self.result = dict(result)
+        self._touch(now)
+
     def fail(self, error: str, now: datetime) -> None:
         if self.is_terminal:
             raise ValueError("terminal companion tasks cannot fail")

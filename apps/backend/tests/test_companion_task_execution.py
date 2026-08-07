@@ -3,11 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.domain.services.companion_task_execution import (
-    DueWordRef,
-    extract_candidate_terms,
-    plan_micro_session_units,
-)
+from app.domain.services.companion_task_execution import extract_candidate_terms
 from app.domain.services.companion_tasks import CompanionTask, CompanionTaskStatus, CompanionTaskType
 
 NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -22,19 +18,6 @@ def test_extract_candidate_terms_is_deterministic_bounded_and_deduplicated():
 def test_extract_candidate_terms_rejects_non_positive_bound():
     with pytest.raises(ValueError, match="positive"):
         extract_candidate_terms("hola", 0)
-
-
-def test_plan_micro_session_units_bounds_and_preserves_order():
-    words = [DueWordRef(1, "uno"), DueWordRef(2, "dos"), DueWordRef(3, "tres")]
-    assert plan_micro_session_units(words, 2) == words[:2]
-    assert plan_micro_session_units(words, 10) == words
-
-
-def test_due_word_ref_rejects_invalid_fields():
-    with pytest.raises(ValueError):
-        DueWordRef(0, "uno")
-    with pytest.raises(ValueError):
-        DueWordRef(1, "  ")
 
 
 def _task(**overrides):

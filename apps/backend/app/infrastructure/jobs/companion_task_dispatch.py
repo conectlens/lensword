@@ -12,10 +12,25 @@ the live scheduler instance, and would leave nothing to re-register a task's
 job after a restart short of re-implementing `restore_reminder_jobs` for
 tasks too — this is a single recurring *poll* job, registered once at
 startup exactly like the others. Every tick it asks
-`CompanionTaskRepository.list_runnable` for outstanding EXTRACTION/
-PLAN_GENERATION tasks and runs each one to completion (or until it is
-cancelled/expires/hits this tick's unit budget) in a synchronous loop that
-persists progress after *every single unit*.
+`CompanionTaskRepository.list_runnable` for outstanding EXTRACTION tasks and
+runs each one to completion (or until it is cancelled/expires/hits this
+tick's unit budget) in a synchronous loop that persists progress after
+*every single unit*.
+
+Only EXTRACTION runs here — not PLAN_GENERATION, even though
+`CompanionTaskType` has that member too. Discovered while rebasing this
+change onto `development`: #194 TODO 4 already gave `plan_generation` tasks
+a real, synchronous lifecycle of its own
+(`app/api/routers/companion_tasks.py`'s `generate-plan`/`confirm-plan`
+endpoints, backed by `companion_planning.py`'s context-aware planner) —
+`generate-plan` calls `task.complete(...)` directly inside the request that
+creates the task, so a `plan_generation` task is essentially never left
+sitting in PENDING/RUNNING waiting for a poller. Having this executor also
+pick up that task type would race that existing flow (this executor would
+`start()` a task the very next `generate-plan` call expects to still be
+PENDING, then fail it for missing the `input` shape that flow never sets) —
+exactly the "reuse, don't reinvent" a second competing implementation would
+violate. `list_runnable` is scoped to EXTRACTION only for this reason.
 
 That last property is what makes restart-survival, cancellation, and partial
 results all fall out of the same mechanism instead of needing three:
@@ -55,16 +70,14 @@ AI provider into this loop is future work, not silently claimed here.
 from __future__ import annotations
 
 import logging
-import uuid
 from typing import Callable
 
 from sqlalchemy.orm import Session
 
-from app.domain.services.companion_activities import ActivityStatus, ActivityType, LearningActivity
 from app.domain.services.companion_tasks import CompanionTask, CompanionTaskStatus, CompanionTaskType
 from app.domain.value_objects import utcnow
 from app.infrastructure.job_claims import claim
-from app.infrastructure.repositories import SqlAlchemyCompanionActivityRepository, SqlAlchemyCompanionTaskRepository
+from app.infrastructure.repositories import SqlAlchemyCompanionTaskRepository
 
 logger = logging.getLogger(__name__)
 
@@ -75,10 +88,6 @@ JOB_ID = "dispatch_companion_tasks"
 # simply picked up on the next one — nothing about correctness depends on
 # finishing everything in one pass.
 MAX_TASKS_PER_TICK = 10
-
-
-def _uuid_id() -> str:
-    return uuid.uuid4().hex
 
 
 class CompanionTaskExecutor:
@@ -128,10 +137,10 @@ class CompanionTaskExecutor:
 
         if task.task_type is CompanionTaskType.EXTRACTION:
             self._run_extraction(db, task_repo, task)
-        elif task.task_type is CompanionTaskType.PLAN_GENERATION:
-            self._run_plan_generation(db, task_repo, task)
-        # Other task types (e.g. SESSION_PREPARATION) are not picked up by
-        # `list_runnable` at all, so nothing reaches this branch for them.
+        # Other task types (PLAN_GENERATION, SESSION_PREPARATION) are not
+        # picked up by `list_runnable` at all, so nothing reaches this
+        # branch for them — see the module docstring for why PLAN_GENERATION
+        # in particular is deliberately excluded.
 
     # -- EXTRACTION -----------------------------------------------------
 
@@ -164,51 +173,4 @@ class CompanionTaskExecutor:
             # crash here loses at most this one unit of work, and the next
             # tick resumes from exactly what was last committed — see the
             # module docstring's "restart survival" paragraph.
-            db.commit()
-
-    # -- PLAN_GENERATION --------------------------------------------------
-
-    def _run_plan_generation(
-        self, db: Session, task_repo: SqlAlchemyCompanionTaskRepository, task: CompanionTask
-    ) -> None:
-        due_items = list((task.input or {}).get("items") or [])
-        if len(due_items) != task.total_units:
-            task.fail("plan_generation task input does not match its declared total_units", utcnow())
-            task_repo.update(task)
-            db.commit()
-            return
-        activity_repo = SqlAlchemyCompanionActivityRepository(db)
-        activity_ids: list[str] = list((task.result or {}).get("activity_ids") or [])
-
-        while task.completed_units < task.total_units:
-            fresh = task_repo.get(task.user_id, task.session_id, task.id)
-            if fresh is None or fresh.status is not CompanionTaskStatus.RUNNING:
-                return
-            task = fresh
-            index = task.completed_units
-            item = due_items[index]
-            now = utcnow()
-            activity = activity_repo.add(
-                LearningActivity(
-                    id=_uuid_id(),
-                    session_id=task.session_id,
-                    user_id=task.user_id,
-                    activity_type=ActivityType.RECALL,
-                    prompt=f"Recall the translation of '{item['term']}'.",
-                    expected_evaluation={"word_id": item["word_id"]},
-                    status=ActivityStatus.ACTIVE,
-                    response=None,
-                    result=None,
-                    operation_id=None,
-                    started_at=now,
-                    updated_at=now,
-                )
-            )
-            activity_ids.append(activity.id)
-            if index + 1 == task.total_units:
-                task.complete({"partial": False, "activity_ids": activity_ids}, now)
-            else:
-                task.update_progress(index + 1, now)
-                task.record_partial_result({"partial": True, "activity_ids": activity_ids}, now)
-            task_repo.update(task)
             db.commit()

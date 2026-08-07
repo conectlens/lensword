@@ -168,6 +168,56 @@ def validate_reply(raw: dict, learner_text: str) -> tuple[str, list[Correction]]
     return reply, corrections
 
 
+# --- Correction feedback (#194 TODO 3) --------------------------------------
+#
+# `validate_reply` above already enforces that a correction quotes text the
+# learner actually wrote and caps how many a single reply may carry. What it
+# cannot do is tell whether the learner *agreed* with a correction — that is
+# a fact about the learner's judgement, not the model's, and it is recorded
+# here as a distinct, append-only outcome rather than folded into the
+# correction itself, the same "a correction is a new record, not an edit"
+# posture `ObservationCorrection` already uses for review observations.
+
+
+class CorrectionOutcome(str, Enum):
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    EDITED = "edited"
+
+
+MAX_EDITED_TEXT_CHARS = 200
+
+
+@dataclass(frozen=True)
+class CorrectionFeedback:
+    """One learner decision about one correction the tutor offered.
+
+    `edited_text` is required exactly when `outcome` is EDITED — a rejected
+    or accepted correction has nothing further for the learner to have
+    written. This is telemetry about what the learner decided, never a
+    verdict on whether the tutor's correction was linguistically right: an
+    ACCEPTED outcome records "the learner agreed", not "the correction was
+    correct".
+    """
+
+    message_id: int
+    user_id: int
+    correction_index: int
+    outcome: CorrectionOutcome
+    edited_text: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.correction_index < 0:
+            raise ValueError("correction_index must not be negative")
+        if self.outcome is CorrectionOutcome.EDITED:
+            if not self.edited_text or not self.edited_text.strip():
+                raise ValueError("an edited correction requires edited_text")
+        elif self.edited_text is not None:
+            raise ValueError("edited_text is only meaningful when outcome is 'edited'")
+        if self.edited_text is not None and len(self.edited_text) > MAX_EDITED_TEXT_CHARS:
+            raise ValueError(f"edited_text is limited to {MAX_EDITED_TEXT_CHARS} characters")
+
+
 def _unique_clean(values: list[str], limit: int) -> list[str]:
     """Deduplicate case-insensitively while keeping the caller's order.
 

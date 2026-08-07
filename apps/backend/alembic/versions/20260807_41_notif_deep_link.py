@@ -10,8 +10,8 @@ a notification fires changes — this only adds where "open" goes.
 from alembic import op
 import sqlalchemy as sa
 
-revision = "20260807_35_notif_deep_link"
-down_revision = "20260807_34_task_input"
+revision = "20260807_41_notif_deep_link"
+down_revision = "20260807_40_task_input"
 branch_labels = None
 depends_on = None
 

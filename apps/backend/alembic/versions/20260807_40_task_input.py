@@ -10,8 +10,8 @@ the due-word items a plan should cover).
 from alembic import op
 import sqlalchemy as sa
 
-revision = "20260807_34_task_input"
-down_revision = "20260807_33_companion_tasks"
+revision = "20260807_40_task_input"
+down_revision = "20260807_38_companion_loop"
 branch_labels = None
 depends_on = None
 

@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { aiSettingsApi, groupsApi, practiceApi, settingsApi, syncApi } from '../../lib/api'
+import { aiSettingsApi, ApiRequestError, groupsApi, mcpOauthApi, practiceApi, settingsApi, syncApi } from '../../lib/api'
 import { QUEUE_CHANGED_EVENT, queueLength } from '../../lib/offlineQueue'
 import { OllamaSetupCheck } from './OllamaSetupCheck'
-import type { AISettings, DailySession, Group, RecallSettings, SyncConflict } from '../../lib/types'
+import type { AISettings, DailySession, Group, McpConnection, RecallSettings, SyncConflict } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { Icon } from '../../components/ui/Icon'
@@ -86,6 +86,7 @@ export function SettingsPage() {
       )}
 
       <McpServersCard />
+      <RemoteCompanionsCard />
       <SelectedTextCaptureCard />
       <ClipboardCaptureCard />
       <AutostartCard />
@@ -551,6 +552,85 @@ function McpServersCard() {
     {error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
     <div className="mt-4"><Button disabled={busy} onClick={save}>Save MCP server</Button></div>
   </Card>
+}
+
+/** Remote MCP companions this account has completed OAuth with (issue
+ *  #196) — a companion running on someone else's infrastructure or in the
+ *  cloud, as opposed to `McpServersCard` above, which manages local stdio
+ *  servers the desktop shell launches itself and which never leave the
+ *  device. The list is empty (and this card renders nothing) both when
+ *  there are genuinely no connections and when the backend has remote MCP
+ *  turned off — a 404 from `REMOTE_MCP_ENABLED=false` and "you have not
+ *  connected anything yet" look the same to a user, which is the correct
+ *  behavior: there is nothing actionable to tell them apart. */
+function RemoteCompanionsCard() {
+  const [connections, setConnections] = useState<McpConnection[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busyClientId, setBusyClientId] = useState<string | null>(null)
+
+  async function refresh() {
+    try {
+      setConnections(await mcpOauthApi.connections())
+    } catch (err) {
+      // 404 means remote MCP is disabled on this server, not a real error —
+      // treat it the same as "no connections" rather than showing a scary
+      // error message for a feature that was never turned on.
+      if (err instanceof ApiRequestError && err.status === 404) setConnections([])
+      else setError(err instanceof Error ? err.message : 'Could not load remote MCP connections.')
+    }
+  }
+
+  useEffect(() => { void refresh() }, []) // eslint-disable-line react-hooks/set-state-in-effect
+
+  if (connections === null) return null
+  if (connections.length === 0 && !error) return null
+
+  async function revoke(clientId: string) {
+    try {
+      setBusyClientId(clientId)
+      setError(null)
+      await mcpOauthApi.revoke(clientId)
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not revoke that connection.')
+    } finally {
+      setBusyClientId(null)
+    }
+  }
+
+  return (
+    <Card className="p-6">
+      <h2 className="font-display text-lg font-bold text-white">Remote companions</h2>
+      <p className="mt-1 text-sm text-white/50">
+        Companions that authorized themselves through OAuth rather than running on this device. Revoking access here blocks
+        every request from that companion immediately.
+      </p>
+      <div className="mt-4 flex flex-col gap-3">
+        {connections.map((connection) => (
+          <div key={connection.client_id} className="rounded-lg border border-white/10 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="font-medium text-white">{connection.client_name}</p>
+                <p className="text-xs text-white/50">
+                  {connection.scope.split(' ').join(', ')} · workspace {connection.workspace}
+                </p>
+                <p className="mt-1 text-xs text-white/40">
+                  Connected {new Date(connection.created_at).toLocaleString()}
+                  {connection.last_used_at ? ` · last used ${new Date(connection.last_used_at).toLocaleString()}` : ' · never used'}
+                  {' · '}
+                  {connection.active_token_count} active session{connection.active_token_count === 1 ? '' : 's'}
+                </p>
+              </div>
+              <Button disabled={busyClientId === connection.client_id} onClick={() => revoke(connection.client_id)}>
+                Revoke access
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+      {error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
+    </Card>
+  )
 }
 
 export function AISettingsCard({ settings, onSave }: { settings: AISettings; onSave: (settings: AISettings) => Promise<void> }) {

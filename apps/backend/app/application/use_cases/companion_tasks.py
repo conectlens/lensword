@@ -7,6 +7,17 @@ logic. `mcp.py`'s bindings and the existing REST router
 state; a task created through either surface is visible and progresses
 identically through the other, because both read and write the same
 `CompanionTaskRepository`.
+
+Only extraction task creation lives here — not plan generation. #194 TODO 4
+already gave `plan_generation` tasks a real, synchronous, context-aware
+lifecycle (`GenerateCompanionActivityPlanUseCase`/
+`ConfirmCompanionActivityPlanUseCase`, wired through
+`app.api.routers.companion_tasks`'s `generate-plan`/`confirm-plan`
+endpoints), discovered while rebasing this change onto `development`. A
+second `plan_generation`-creating use case here would just be a competing,
+less capable implementation of something that already exists — see
+`app.infrastructure.jobs.companion_task_dispatch`'s module docstring for
+the same reasoning on the executor side.
 """
 from __future__ import annotations
 
@@ -19,10 +30,9 @@ from app.domain.repositories import (
     CompanionSessionRepository,
     CompanionTaskRepository,
     RecallSettingsRepository,
-    WordRepository,
 )
 from app.domain.services.companion_sessions import CompanionSessionStatus
-from app.domain.services.companion_task_execution import DueWordRef, extract_candidate_terms, plan_micro_session_units
+from app.domain.services.companion_task_execution import extract_candidate_terms
 from app.domain.services.companion_tasks import CompanionTask, CompanionTaskStatus, CompanionTaskType
 from app.domain.value_objects import utcnow
 
@@ -97,68 +107,6 @@ class CreateExtractionTaskUseCase:
                 created_at=now,
                 updated_at=now,
                 input={"candidates": candidates, "target_language": target_language},
-            )
-        )
-
-
-class CreatePlanGenerationTaskUseCase:
-    """Create a durable task that builds a bounded micro-session plan.
-
-    Each unit creates one real, measurable `LearningActivity` (#194) bound to
-    the session — this is not a preview or a dry run, the activities exist
-    the moment their unit runs.
-    """
-
-    def __init__(
-        self,
-        task_repo: CompanionTaskRepository,
-        session_repo: CompanionSessionRepository,
-        settings_repo: RecallSettingsRepository,
-        word_repo: WordRepository,
-    ):
-        self.task_repo = task_repo
-        self.session_repo = session_repo
-        self.settings_repo = settings_repo
-        self.word_repo = word_repo
-
-    def execute(
-        self,
-        user_id: int,
-        session_id: str,
-        size: int = 5,
-        operation_id: str | None = None,
-    ) -> CompanionTask:
-        _require_companion_enabled(self.settings_repo, user_id)
-        session = _require_active_session(self.session_repo, user_id, session_id)
-        if operation_id:
-            existing = self.task_repo.find_by_operation(user_id, session_id, operation_id)
-            if existing is not None:
-                return existing
-        due_words = [
-            DueWordRef(word_id=word.id, term=word.term)
-            for word in self.word_repo.list_due_for_user(user_id, max(size, 1), session.group_id)
-            if word.id is not None
-        ]
-        selected = plan_micro_session_units(due_words, size)
-        if not selected:
-            raise ValidationError("no due words are available to plan a micro-session from")
-        now = utcnow()
-        return self.task_repo.add(
-            CompanionTask(
-                id=uuid4().hex,
-                session_id=session_id,
-                user_id=user_id,
-                task_type=CompanionTaskType.PLAN_GENERATION,
-                status=CompanionTaskStatus.PENDING,
-                total_units=len(selected),
-                completed_units=0,
-                result=None,
-                error=None,
-                operation_id=operation_id,
-                expires_at=now + timedelta(seconds=DEFAULT_TASK_TTL_SECONDS),
-                created_at=now,
-                updated_at=now,
-                input={"items": [{"word_id": ref.word_id, "term": ref.term} for ref in selected]},
             )
         )
 

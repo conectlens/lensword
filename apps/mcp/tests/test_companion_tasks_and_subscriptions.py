@@ -14,7 +14,6 @@ from lensword_mcp.server import BackendError, MCPServer, StdioMCPServer
 
 _TASK_TOOL_NAMES = (
     "lensword.start_extraction_task",
-    "lensword.start_plan_generation_task",
     "lensword.get_companion_task",
     "lensword.cancel_companion_task",
 )

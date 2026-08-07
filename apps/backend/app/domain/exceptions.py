@@ -91,6 +91,27 @@ class AIProviderUnavailableError(DomainError):
         super().__init__(message)
 
 
+class ConcurrentModificationError(DomainError):
+    """Raised when a write targets a stale revision of an entity.
+
+    The caller read an entity at revision N, another write already moved it
+    to a later revision, and this write's WHERE-clause therefore matched no
+    row. This is not "not found" (the row exists) and not a validation
+    problem with the payload — it is a lost-update race the caller must
+    re-read and retry, which is why it stays a distinct domain error rather
+    than folding into EntityNotFoundError or ValidationError.
+    """
+
+    def __init__(self, entity: str, entity_id: object, expected_revision: int):
+        self.entity = entity
+        self.entity_id = entity_id
+        self.expected_revision = expected_revision
+        super().__init__(
+            f"{entity} '{entity_id}' was not at the expected revision {expected_revision} "
+            "— it was modified concurrently; re-read and retry"
+        )
+
+
 class NotificationExpiredError(DomainError):
     """An action was taken on a notification whose actions have lapsed.
 

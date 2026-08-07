@@ -11,13 +11,10 @@ from __future__ import annotations
 from datetime import timedelta
 
 from app.domain.entities import RecallSettings
-from app.domain.services.companion_activities import ActivityStatus
 from app.domain.services.companion_tasks import CompanionTask, CompanionTaskStatus, CompanionTaskType
 from app.domain.value_objects import utcnow as real_utcnow
 from app.infrastructure.jobs.companion_task_dispatch import CompanionTaskExecutor
 from app.infrastructure.repositories import (
-    SqlAlchemyCompanionActivityRepository,
-    SqlAlchemyCompanionSessionRepository,
     SqlAlchemyCompanionTaskRepository,
     SqlAlchemyRecallSettingsRepository,
     SqlAlchemyUserRepository,
@@ -153,7 +150,14 @@ def test_a_cancelled_task_is_never_advanced_and_keeps_its_partial_result(client,
     assert final.result == {"partial": True, "items": ["uno"]}
 
 
-def test_plan_generation_task_creates_real_activities_and_completes(client, auth_headers, db_session):
+def test_plan_generation_tasks_are_never_touched_by_this_executor(client, auth_headers, db_session):
+    """PLAN_GENERATION already has a real, synchronous lifecycle of its own
+    (generate-plan/confirm-plan, #194 TODO 4) — discovered while rebasing
+    this change onto `development`. This executor must leave such a task
+    exactly as it found it (still PENDING, no `input` interpreted, nothing
+    started) rather than race that existing flow. See
+    companion_task_dispatch.py's module docstring for the full reasoning.
+    """
     headers = auth_headers()
     _enable(db_session, _owner_id(db_session))
     session_id = _start_session(client, headers)
@@ -175,7 +179,6 @@ def test_plan_generation_task_creates_real_activities_and_completes(client, auth
             expires_at=now + timedelta(minutes=10),
             created_at=now,
             updated_at=now,
-            input={"items": [{"word_id": 1, "term": "correr"}, {"word_id": 2, "term": "saltar"}]},
         )
     )
     db_session.flush()
@@ -183,14 +186,9 @@ def test_plan_generation_task_creates_real_activities_and_completes(client, auth
     CompanionTaskExecutor(lambda: db_session)()
 
     task = task_repo.list_for_session(owner_id, session_id)[0]
-    assert task.status is CompanionTaskStatus.COMPLETED
-    activity_ids = task.result["activity_ids"]
-    assert len(activity_ids) == 2
-    activity_repo = SqlAlchemyCompanionActivityRepository(db_session)
-    for activity_id in activity_ids:
-        activity = activity_repo.get(owner_id, session_id, activity_id)
-        assert activity is not None
-        assert activity.status is ActivityStatus.ACTIVE
+    assert task.status is CompanionTaskStatus.PENDING
+    assert task.completed_units == 0
+    assert task.result is None
 
 
 def test_expired_task_is_marked_expired_and_never_run(client, auth_headers, db_session):

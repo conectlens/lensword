@@ -85,6 +85,18 @@ class MistakeEvent:
     # pair, and it is only ever set from real vocabulary rather than guessed.
     confused_with_word_id: int | None = None
     occurred_at: datetime | None = None
+    # The underlying `mistake_events` row id, when the caller has one (issue
+    # #192 TODO 0: "include evidence/provenance IDs for claims"). Optional
+    # and defaulted so every existing construction site — most of them in
+    # tests — stays valid; a `WeaknessProfile` built from events that never
+    # set this simply carries no evidence ids, rather than failing.
+    event_id: int | None = None
+
+
+# Bounded the same way `TOP_CATEGORIES` bounds the categories themselves: a
+# category backed by thousands of mistakes should not turn one weakness
+# profile response into an unbounded list of row ids.
+MAX_EVIDENCE_IDS_PER_CLAIM = 50
 
 
 @dataclass(frozen=True)
@@ -95,6 +107,10 @@ class CategoryWeakness:
     # than instead of it: 60% of five mistakes and 60% of five hundred are very
     # different claims.
     share: float
+    # The `mistake_events` row ids this count was derived from (issue #192
+    # TODO 0), newest-recorded first, bounded by `MAX_EVIDENCE_IDS_PER_CLAIM`.
+    # Empty when the caller supplied events with no `event_id`.
+    evidence_ids: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -109,6 +125,9 @@ class ConfusedPair:
     word_id: int
     confused_with_word_id: int
     occurrences: int
+    # Same provenance concept as `CategoryWeakness.evidence_ids`, for this
+    # specific pair.
+    evidence_ids: tuple[int, ...] = ()
 
 
 @dataclass
@@ -138,8 +157,18 @@ class WeaknessProfileService:
         total = len(events)
         counts = Counter(event.category for event in events)
 
+        ids_by_category: dict[ErrorCategory, list[int]] = defaultdict(list)
+        for event in events:
+            if event.event_id is not None and len(ids_by_category[event.category]) < MAX_EVIDENCE_IDS_PER_CLAIM:
+                ids_by_category[event.category].append(event.event_id)
+
         categories = [
-            CategoryWeakness(category=category, occurrences=count, share=count / total)
+            CategoryWeakness(
+                category=category,
+                occurrences=count,
+                share=count / total,
+                evidence_ids=tuple(ids_by_category.get(category, ())),
+            )
             for category, count in counts.items()
             if count >= min_occurrences
         ]
@@ -250,8 +279,21 @@ def cross_association_report(
 def _confused_pairs(events: list[MistakeEvent], minimum: int) -> list[ConfusedPair]:
     counts = confusion_pair_counts((event.word_id, event.confused_with_word_id, 1) for event in events)
 
+    ids_by_pair: dict[tuple[int, int], list[int]] = defaultdict(list)
+    for event in events:
+        if event.confused_with_word_id is None or event.confused_with_word_id == event.word_id:
+            continue
+        key = (min(event.word_id, event.confused_with_word_id), max(event.word_id, event.confused_with_word_id))
+        if event.event_id is not None and len(ids_by_pair[key]) < MAX_EVIDENCE_IDS_PER_CLAIM:
+            ids_by_pair[key].append(event.event_id)
+
     found = [
-        ConfusedPair(word_id=a, confused_with_word_id=b, occurrences=count)
+        ConfusedPair(
+            word_id=a,
+            confused_with_word_id=b,
+            occurrences=count,
+            evidence_ids=tuple(ids_by_pair.get((a, b), ())),
+        )
         for (a, b), count in counts.items()
         if count >= minimum
     ]
