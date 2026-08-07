@@ -106,7 +106,10 @@ def main(argv: list[str]) -> int:
     if errors:
         print(f"{len(errors)} problem(s) found:\n", file=sys.stderr)
         for e in errors:
-            print(f"  - {e}", file=sys.stderr)
+            # Avoid logging potential sensitive payloads (for example, specific
+            # matched addresses) while still reporting actionable context.
+            safe_error = re.sub(r"\s*\([^)]*\)\s*", " (redacted) ", e).strip()
+            print(f"  - {safe_error}", file=sys.stderr)
         return 1
 
     count = sum(1 for p in MEDIA_DIR.rglob("*") if p.is_file()) if MEDIA_DIR.exists() else 0
