@@ -254,6 +254,10 @@ class RecallSettingsModel(Base):
     companion_sampling_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     companion_remote_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     companion_multimodal_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Same server_default requirement as the flags above (#189 TODO 2's
+    # developer-only domain-kernel spike flag) — 20260730_14's backfill
+    # INSERT predates this field and cannot name it.
+    domain_kernel_spike_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
 
 class PracticeExerciseModel(Base):

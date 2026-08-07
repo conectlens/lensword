@@ -355,6 +355,7 @@ def _settings_to_domain(m: RecallSettingsModel) -> RecallSettings:
         companion_sampling_enabled=m.companion_sampling_enabled,
         companion_remote_enabled=m.companion_remote_enabled,
         companion_multimodal_enabled=m.companion_multimodal_enabled,
+        domain_kernel_spike_enabled=m.domain_kernel_spike_enabled,
     )
 
 
@@ -1081,6 +1082,7 @@ class SqlAlchemyRecallSettingsRepository:
         m.companion_sampling_enabled = settings.companion_sampling_enabled
         m.companion_remote_enabled = settings.companion_remote_enabled
         m.companion_multimodal_enabled = settings.companion_multimodal_enabled
+        m.domain_kernel_spike_enabled = settings.domain_kernel_spike_enabled
         self.db.flush()
         return _settings_to_domain(m)
 
