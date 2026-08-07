@@ -1205,7 +1205,11 @@ def main() -> int:
     def backend_factory(token: str) -> BackendClient:
         return BackendClient(api_url, token, workspace)
 
-    http_server = StreamableHTTPMCPServer(backend_factory, host=host, port=port, allowed_origins=allowed_origins)
+    # The backend is this server's OAuth authorization server (RFC 9728) —
+    # api_url is already required above, so this reuses it rather than
+    # adding a second setting an operator would have to keep in sync with
+    # the first. See http_transport.py's oauth_issuer parameter doc.
+    http_server = StreamableHTTPMCPServer(backend_factory, host=host, port=port, allowed_origins=allowed_origins, oauth_issuer=api_url)
     print(f"lensword-mcp: Streamable HTTP transport listening on http://{host}:{port}{http_server.path}", file=sys.stderr)
     http_server.serve_forever()
     return 0

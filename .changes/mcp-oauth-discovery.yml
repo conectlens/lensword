@@ -1,0 +1,73 @@
+id: mcp-oauth-discovery
+products:
+  - mcp-server
+type: fixed
+summary: >-
+  The remote MCP server now advertises where to authenticate, so an OAuth
+  client (like Claude.ai's connector UI) can find the backend's
+  authorization server instead of failing to register with no useful error.
+technical_summary: >-
+  apps/mcp/lensword_mcp/http_transport.py's StreamableHTTPMCPServer gained
+  an oauth_issuer parameter (wired to the existing LENSWORD_API_URL — no
+  new setting to keep in sync). With it set: GET
+  /.well-known/oauth-protected-resource returns RFC 9728 metadata naming
+  the backend as authorization_servers (the backend already implements
+  the full authorization server at apps/backend/app/api/routers/mcp_oauth.py
+  — dynamic client registration, authorize, token, revoke — behind
+  REMOTE_MCP_ENABLED; this MCP server never implemented any OAuth surface
+  itself, by design, since RFC 9728 treats resource and authorization
+  server as distinct roles). A 401 for a missing bearer token now also
+  carries a WWW-Authenticate: Bearer resource_metadata="..." header, which
+  is how a spec-compliant client finds the metadata endpoint without being
+  told the URL out of band. Both are no-ops (old behavior exactly, bare
+  401/404) when oauth_issuer is unset, and server.py now always passes it
+  (LENSWORD_API_URL is already a required setting for the http transport,
+  so this is not a new requirement).
+  Found by a real connection attempt from an OAuth-based MCP client
+  against a deployed instance, not by inspection — the client's connector
+  UI reported "Couldn't register with LensWord's sign-in service," which
+  traced back to exactly this missing discovery metadata. Verified against
+  a real running Docker container (curl against both the new endpoint and
+  the 401 header), not just unit tests.
+user_impact: >-
+  An OAuth-capable MCP client can now discover LensWord's sign-in service
+  automatically when connecting to the remote MCP server, instead of
+  failing with no actionable error.
+release_status: unreleased
+breaking: false
+migration: none
+known_limitations:
+  - Still not verified against a real, successful end-to-end OAuth flow
+    with a third-party client (authorize -> consent -> token exchange ->
+    an actual tool call) — this fix addresses the discovery step
+    specifically, which is as far as the real attempt that found the gap
+    got.
+compatibility:
+  requires:
+    server_api: null
+verification:
+  automated_tests:
+    status: passed
+    commands:
+      - cd apps/mcp && python -m pytest tests/test_http_transport.py -v (12/12 passing, 4 new)
+      - cd apps/mcp && python -m pytest -q (128/128 passing — one run showed an unrelated flaky ConnectionAbortedError in test_oversized_request_body_is_rejected under Windows socket load; reproduced passing in isolation and on a clean full-suite rerun)
+      - docker build -q -t lensword-mcp-verify -f apps/mcp/Dockerfile apps/mcp (builds clean)
+      - "real running container: curl .../.well-known/oauth-protected-resource returns the expected metadata; curl -i POST /mcp with no bearer token returns 401 with the expected WWW-Authenticate header"
+    workflow_url: null
+  artifact_build:
+    status: passed
+    artifacts:
+      - apps/mcp Docker image (built and smoke-tested live, not just unit-tested)
+  manual_platform_checks:
+    macos: not_applicable
+    windows: not_run
+    linux: not_applicable
+  production_observation:
+    status: observed
+security_impact: none
+documentation_required: true
+date: '2026-08-07'
+references:
+  issues: []
+  pull_requests: []
+  commits: []

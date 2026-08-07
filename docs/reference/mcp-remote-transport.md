@@ -82,6 +82,14 @@ to a backend on the same machine) needs three things, all new in #196:
    implements the request/response half of the MCP Streamable HTTP
    transport. It is a plain, unencrypted HTTP server by itself — the TLS
    requirement above is what makes it safe to expose.
+4. **OAuth *discovery***, so a client can find step 1 without being told
+   the backend's URL out of band. This MCP server is the OAuth *resource*
+   (RFC 9728); the backend is the *authorization server* — deliberately
+   different roles/origins, not a same-process shortcut. The resource
+   server publishes `/.well-known/oauth-protected-resource` (naming the
+   backend as `authorization_servers`) and sends
+   `WWW-Authenticate: Bearer resource_metadata="…"` on a `401`, both
+   derived from `LENSWORD_API_URL` — no separate setting to keep in sync.
 
 ## What is real, tested code today, and what is not
 
@@ -122,11 +130,18 @@ than saying so plainly.
   spec, `GET` + `text/event-stream`). Every tool call and resource read
   this server exposes is plain request/response, so nothing here needs it
   today; a client that requires it gets a clean `405`, not a hang.
-- **No live interop test against a third-party MCP host.** The transport's
+- **No live interop test against a third-party MCP host** for the actual
+  MCP protocol methods (`initialize`, `tools/call`, etc.) — the transport's
   wire shapes are checked against this repository's own stdio
   `MCPServer.handle` (both transports share it) and against the published
-  MCP spec text. That is not the same as having run a real client against
-  it.
+  MCP spec text, not against a running third-party client's real requests.
+  The OAuth *discovery* half specifically — item 4 above — was found
+  missing by exactly this kind of real attempt (a real client's connector
+  UI reported a registration failure against a deployed instance with no
+  `/.well-known/oauth-protected-resource` and no `WWW-Authenticate`
+  challenge to find it) and is now fixed and covered by
+  `apps/mcp/tests/test_http_transport.py`; the deeper protocol-method
+  interop gap remains open.
 - **Shared/distributed rate limiting.** `rate_limit_mcp_oauth` is the same
   single-process, per-instance limiter the rest of this app already uses
   (see the Self-Hosting & Deployment guide's "Rate limiting" section for the identical
