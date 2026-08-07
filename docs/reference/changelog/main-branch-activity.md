@@ -11,6 +11,9 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 
 | Date | Commit | Author | Subject | Changelog fragment |
 |---|---|---|---|---|
+| 2026-08-08 | [38a91b6](https://github.com/conectlens/lensword/commit/38a91b6a2342de1233a6876ff80669ce1acdadf3) | ÖMER FARUK COŞKUN | Add diagnostic logging to MCP OAuth token exchange | none (predates this system) |
+| 2026-08-08 | [d784d97](https://github.com/conectlens/lensword/commit/d784d978bce629161afac9ec4e3bac1489c81069) | ÖMER FARUK COŞKUN | Fix intermittent desktop installer upload failures on the continuous release | none (predates this system) |
+| 2026-08-08 | [882d767](https://github.com/conectlens/lensword/commit/882d7677e4dc6971be0dcd6d60e4ceddeb21322f) | ÖMER FARUK COŞKUN | Fix VitePress build break from a stray angle-bracket placeholder in the OAuth changelog fragment | none (predates this system) |
 | 2026-08-08 | [871419b](https://github.com/conectlens/lensword/commit/871419b643168bf149a43050a18ee63673edb881) | ÖMER FARUK COŞKUN | Fix remote MCP OAuth connection failing on every attempt | none (predates this system) |
 | 2026-08-07 | [2d77c26](https://github.com/conectlens/lensword/commit/2d77c26ad784609d5ca6bac383d962116d824554) | ÖMER FARUK COŞKUN | Fix scheduled background jobs failing on every firing (reminders, acquisition, companion tasks, claim cleanup) | none (predates this system) |
 | 2026-08-07 | [7c66680](https://github.com/conectlens/lensword/commit/7c666802efa4b40a442bfd775bdf1dda76dba54c) | Ömer Faruk Coşkun | Merge branch 'main' into development | none (predates this system) |
@@ -48,8 +51,5 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 | 2026-08-07 | [55f31e7](https://github.com/conectlens/lensword/commit/55f31e7f2b51fc2997ba1bbaeb35736c78d52abf) | Ömer Faruk Coşkun | Merge development into main (#307) | none (predates this system) |
 | 2026-08-07 | [47927b7](https://github.com/conectlens/lensword/commit/47927b7fd247d50c5b9912f009f256d6b5bb39ae) | Ömer Faruk Coşkun | Add Cloudflare deployment infrastructure (backend/MCP Containers, frontend Pages) (#310) | none (predates this system) |
 | 2026-08-07 | [9d52f69](https://github.com/conectlens/lensword/commit/9d52f69f4378a8a34f5eae475ba089717e949cc2) | Lenser | Regenerate changelog ledger against current development | none (predates this system) |
-| 2026-08-07 | [e58dd7d](https://github.com/conectlens/lensword/commit/e58dd7d5e6817010649f8d8c8e83dacc068d9fd7) | Lenser | Regenerate changelog ledger against current development | none (predates this system) |
-| 2026-08-07 | [60bbba7](https://github.com/conectlens/lensword/commit/60bbba7a2ee710c3fc68f5862021a72da0acfc04) | Lenser | Rename companion-heads merge migration to match main's revision id | none (predates this system) |
-| 2026-08-07 | [95073c5](https://github.com/conectlens/lensword/commit/95073c557f614a92f0ed0c14ef49f54f5fe23d9b) | Lenser | Fix CodeQL clear-text-logging finding for SECRET_PATTERNS in check_media.py | none (predates this system) |
 
 Generated from `git log -40 development` — 40 commits shown.

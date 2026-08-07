@@ -1,0 +1,116 @@
+id: split-local-cli-package
+products:
+  - mcp-server
+  - local-cli
+type: changed
+summary: >-
+  The Local CLI is now published from its own apps/cli package
+  (lensword-cli), independently versioned from the MCP server, with a PyPI
+  publish workflow in place — not yet triggered.
+technical_summary: >-
+  Issue #311: apps/mcp used to ship both the MCP server (lensword-mcp entry
+  point) and the Local CLI (lensword entry point, import-context/add/
+  explain/diagnose/review) as one Python package. The only code genuinely
+  shared between the two was BackendClient/BackendError (the HTTP client to
+  the backend's /api/v1/mcp/invoke boundary) — server.py itself had zero
+  references to context_import.py, confirmed by grep before moving
+  anything. Split into a new apps/cli package (lensword-cli, its own
+  pyproject.toml, version 0.1.0): BackendClient/BackendError extracted to
+  apps/cli/lensword_cli/backend_client.py, cli.py and context_import.py
+  moved from apps/mcp/lensword_mcp/ with imports updated. apps/mcp now
+  depends on lensword-cli==0.1.0 and imports BackendClient/BackendError
+  from it rather than defining its own copy; its own lensword entry point
+  was removed from pyproject.toml. Tests split the same way: apps/cli/tests/
+  gained test_cli.py and test_context_import.py (moved), plus a new
+  test_backend_client.py holding the BackendClient.resource() URI-mapping
+  tests that used to live in apps/mcp/tests/test_server.py (they test
+  BackendClient itself, not anything MCP-protocol-specific) and two
+  context_import-specific tests found the same way. apps/mcp/tests/
+  test_server.py and friends now import BackendError from
+  lensword_cli.backend_client instead of relying on lensword_mcp.server's
+  transitive re-export, so the real dependency is visible in the test
+  imports rather than hidden.
+  Since neither package is on PyPI yet, a fresh install needs both from
+  source together (pip install -e apps/cli -e apps/mcp) — confirmed in a
+  clean venv that pip resolves the local lensword-cli==0.1.0 requirement
+  against the sibling editable install rather than reaching PyPI. The
+  apps/mcp production Docker image (render.yaml's lensword-mcp service)
+  needed a build-context change too: its Dockerfile can no longer install
+  from apps/mcp alone now that it depends on the sibling apps/cli
+  directory, so render.yaml's dockerContext moved from ./apps/mcp to the
+  repo root (.), the Dockerfile now COPYs and installs both apps/cli and
+  apps/mcp, and a root .dockerignore was added since Docker only reads a
+  .dockerignore at the build context root. Confirmed with a real `docker
+  build` against the updated Dockerfile/context.
+  Added .github/workflows/publish-cli.yml: builds apps/cli with `python -m
+  build`, checks the artifacts with `twine check`, and publishes via PyPI
+  Trusted Publishing (pypa/gh-action-pypi-publish, OIDC, no API token
+  secret), scoped to a `pypi` GitHub Environment so required-review
+  protection can be added later. Triggers on `cli-v*` tags and
+  workflow_dispatch (for exercising the build/check steps before the first
+  tag or before the trusted publisher exists). A guard step fails the run
+  if the pushed tag's version doesn't match apps/cli/pyproject.toml. This
+  workflow has not actually run in GitHub Actions and no PyPI trusted
+  publisher has been configured yet — see docs/internal/pypi-publishing.md
+  for the setup the repo owner still needs to do.
+  docs/internal/product-registry.json's local-cli entry updated:
+  sourcePath -> apps/cli, versionSource -> apps/cli/pyproject.toml#version,
+  versionTagPrefix -> cli-v (was mcp-v, shared with mcp-server), changelogRoute
+  -> /reference/changelog/local-cli (was shared with mcp-server's
+  /reference/changelog/mcp) — docs/.vitepress/config.mts's changelog nav
+  and scripts/changelog/validate_registry.py's route/nav consistency check
+  updated to match. status stays public-source-install-only (not changed to
+  public — nothing is actually live on PyPI yet); statusNote now mentions
+  the publish workflow's existence and untriggered state.
+  Issue #311's TODO 4 (whether a published CLI build should default
+  LENSWORD_API_URL to the hosted service) was deliberately left untouched —
+  the existing fail-closed behavior (no default, missing env vars exit 2)
+  is unchanged; that's a product/security decision for the repo owner, not
+  made silently here. npm distribution (TODO 2) is also out of scope for
+  this change.
+user_impact: >-
+  No behavior change for anyone using the MCP server or Local CLI today —
+  both still install and run exactly as before (pip install -e apps/cli -e
+  apps/mcp instead of pip install -e apps/mcp alone). The Local CLI is now
+  on its own release cycle (cli-v* tags, its own changelog page) separate
+  from the MCP server's (mcp-v* tags). Nothing is installable from PyPI yet
+  for either product.
+release_status: unreleased
+breaking: false
+migration: none
+known_limitations:
+  - "publish-cli.yml has not been run in GitHub Actions and no PyPI trusted publisher has been configured — pip install lensword-cli / pipx install lensword-cli do not work against the real index yet."
+  - "A pre-existing inconsistency in apps/cli/lensword_cli/cli.py's _backend_from_env (present before this split, unchanged by the move): it constructs BackendClient with 4 positional arguments (api_url, token, requester, workspace) but BackendClient's real constructor only accepts 3 (api_url, token, workspace) plus a timeout — the LENSWORD_MCP_REQUESTER value silently lands in the workspace field and the real workspace value lands in the timeout field. Existing tests never catch this because they monkeypatch BackendClient with a fake that accepts a requester parameter. Left untouched — reproducing an existing bug faithfully during a pure move, not introducing a new one, and fixing it was out of scope for this change."
+compatibility:
+  requires:
+    server_api: null
+verification:
+  automated_tests:
+    status: passed
+    commands:
+      - cd apps/cli && python -m pytest -v (43/43 passing — all moved/split tests)
+      - cd apps/mcp && python -m pytest -v (85/86 passing — the one failure, test_oversized_request_body_is_rejected, is the same pre-existing environment-specific broken-pipe/connection-reset failure present on this branch before the split; also documented as a known flaky failure in an earlier fragment, mcp-oauth-discovery.yml)
+      - python scripts/changelog/validate_registry.py (valid)
+      - "fresh venv: python3.12 -m venv /tmp/cli-check && pip install -e apps/cli && lensword --help (exit 0)"
+      - "fresh venv: python3.12 -m venv /tmp/mcp-check && pip install -e apps/cli -e apps/mcp && lensword-mcp (exit 2, names LENSWORD_API_URL/LENSWORD_TOKEN/LENSWORD_MCP_WORKSPACE — unchanged fail-closed behavior)"
+      - python -m build --outdir dist apps/cli && python -m twine check dist/* (both artifacts pass, with only the pre-existing missing-long-description warning)
+    workflow_url: null
+  artifact_build:
+    status: passed
+    artifacts:
+      - lensword_cli-0.1.0-py3-none-any.whl and lensword_cli-0.1.0.tar.gz (built with python -m build, the same command publish-cli.yml uses)
+      - apps/mcp Docker image (docker build -f apps/mcp/Dockerfile . against the updated render.yaml build context — built successfully, container still exits 2 on missing env vars)
+  manual_platform_checks:
+    macos: passed
+    windows: not_run
+    linux: not_run
+  production_observation:
+    status: not_observed
+security_impact: none
+documentation_required: true
+date: '2026-08-08'
+references:
+  issues:
+    - 311
+  pull_requests: []
+  commits: []
