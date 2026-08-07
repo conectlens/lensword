@@ -35,8 +35,14 @@ class ToolContract:
     errors: tuple[str, ...] = ("unauthorized", "validation_error", "not_found", "rate_limited")
 
 def _schema(properties: dict, required: list[str] = [], *, write: bool = False) -> dict:
-    base = {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "additionalProperties": False, "properties": properties, "required": required}
-    if write: base["properties"]["request_id"] = {"type": "string", "minLength": 1, "maxLength": 128}
+    base = {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "additionalProperties": False, "properties": properties, "required": list(required)}
+    if write:
+        # Mandatory idempotency for writes (issue #196 TODO 4): every write
+        # tool's caller must supply a client-chosen `request_id`, so
+        # mcp.py's IdempotencyStore can always dedupe a retried call instead
+        # of that being an opt-in the caller could simply omit.
+        base["properties"]["request_id"] = {"type": "string", "minLength": 1, "maxLength": 128}
+        base["required"].append("request_id")
     return base
 
 TOOL_CONTRACTS = tuple(ToolContract(name, f"https://lensword.app/mcp/{CONTRACT_VERSION}/{name}.schema.json", access, schema) for name, access, schema in (
