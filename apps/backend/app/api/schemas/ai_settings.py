@@ -40,7 +40,7 @@ class AISettingsUpdateRequest(BaseModel):
     vertex_location: str = Field(default="us-central1", min_length=1, max_length=64)
     vertex_model: str = Field(default="gemini-2.5-flash", min_length=1, max_length=255)
     openai_api_key: str | None = Field(default=None, max_length=512)
-    openai_model: str = Field(default="gpt-5.6", min_length=1, max_length=255)
+    openai_model: str = Field(default="gpt-5.6-luna", min_length=1, max_length=255)
 
 
 class AIProbeResponse(BaseModel):

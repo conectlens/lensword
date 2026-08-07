@@ -53,7 +53,7 @@ def test_admin_can_update_effective_ai_settings_and_they_persist(client, db_sess
         "vertex_project_id": None,
         "vertex_location": "us-central1",
         "vertex_model": "gemini-2.5-flash",
-        "openai_model": "gpt-5.6",
+        "openai_model": "gpt-5.6-luna",
         "openai_api_key_set": False,
     }
     assert read_back.json() == updated.json()

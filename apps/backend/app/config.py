@@ -94,12 +94,15 @@ class Settings(BaseSettings):
     # OpenAI (issue #315) — a single API key from
     # https://platform.openai.com/api-keys.
     openai_api_key: str | None = None
-    # Confirmed as OpenAI's current general-purpose default via the OpenAI
+    # gpt-5.6-luna: OpenAI's cost-optimized tier, confirmed via the OpenAI
     # API documentation (developers.openai.com) while this adapter was
-    # built — model names churn faster than most dependencies, so this is
-    # worth re-checking against the live model list before a production
-    # deploy rather than trusted indefinitely.
-    openai_model: str = "gpt-5.6"
+    # built — matching gemini_model's own reasoning above: this runs on
+    # every learner action, so the default should be the cheap/fast tier
+    # (gpt-5.6-sol/-terra are the more expensive reasoning/balanced tiers a
+    # deployment can opt into via OPENAI_MODEL). Model names churn faster
+    # than most dependencies, so this is worth re-checking against the live
+    # model list before a production deploy rather than trusted indefinitely.
+    openai_model: str = "gpt-5.6-luna"
 
     # Bounds on one generation. Still keeps a steered model from returning an
     # unbounded response body (issue #45), but 200 — sized only for a
@@ -357,7 +360,7 @@ class AISettingsUpdate(BaseModel):
     vertex_location: str = "us-central1"
     vertex_model: str = "gemini-2.5-flash"
     openai_api_key: str | None = None
-    openai_model: str = "gpt-5.6"
+    openai_model: str = "gpt-5.6-luna"
 
 
 def _runtime_override_path(settings: Settings) -> Path:

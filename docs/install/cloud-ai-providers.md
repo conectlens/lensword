@@ -97,7 +97,7 @@ automatically, since where the key file lives is deployment-specific.
 ```bash
 AI_PROVIDER=openai
 OPENAI_API_KEY=your-key-from-platform.openai.com
-OPENAI_MODEL=gpt-5.6
+OPENAI_MODEL=gpt-5.6-luna
 ```
 
 Get a key at

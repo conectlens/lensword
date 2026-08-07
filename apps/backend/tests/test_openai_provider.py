@@ -41,7 +41,7 @@ def _chat_response(content: str) -> httpx.Response:
             "id": "chatcmpl-test",
             "object": "chat.completion",
             "created": 1,
-            "model": "gpt-5.6",
+            "model": "gpt-5.6-luna",
             "choices": [
                 {"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": "stop"}
             ],
@@ -64,7 +64,7 @@ def _enrich(provider, term: str = "prestar"):
 def test_suggest_mnemonic_returns_generated_text():
     def handler(request: httpx.Request) -> httpx.Response:
         body = _request_body(request)
-        assert body["model"] == "gpt-5.6"
+        assert body["model"] == "gpt-5.6-luna"
         assert "ubiquitous" in body["messages"][1]["content"]
         assert "response_format" not in body
         return _chat_response("Think 'you-BIK-wit-us'")
@@ -169,7 +169,7 @@ def test_a_response_with_no_choices_maps_to_unavailable():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
-            json={"id": "chatcmpl-empty", "object": "chat.completion", "created": 1, "model": "gpt-5.6", "choices": []},
+            json={"id": "chatcmpl-empty", "object": "chat.completion", "created": 1, "model": "gpt-5.6-luna", "choices": []},
         )
 
     provider = _provider(handler)
@@ -232,7 +232,7 @@ def test_build_ai_provider_returns_openai_provider_when_configured():
     provider = build_ai_provider(_settings(ai_provider="openai", openai_api_key="key-123"))
 
     assert isinstance(provider, OpenAIProvider)
-    assert provider._model == "gpt-5.6"
+    assert provider._model == "gpt-5.6-luna"
 
 
 def test_build_ai_provider_passes_configured_openai_model_and_bounds():

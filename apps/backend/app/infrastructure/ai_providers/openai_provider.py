@@ -25,12 +25,12 @@ from app.infrastructure.ai_providers.base import (
 
 logger = logging.getLogger(__name__)
 
-# Confirmed as OpenAI's current general-purpose default via the OpenAI API
-# documentation while this adapter was built (2026-08) — see the
-# per-field comment on Settings.openai_model (app/config.py) for the same
-# note. Model names churn faster than most dependencies; re-check the live
-# model list before trusting this indefinitely.
-DEFAULT_OPENAI_MODEL = "gpt-5.6"
+# gpt-5.6-luna: OpenAI's cost-optimized tier, matching GeminiProvider's own
+# default (gemini-2.5-flash) — see the per-field comment on
+# Settings.openai_model (app/config.py) for the full reasoning. Model names
+# churn faster than most dependencies; re-check the live model list before
+# trusting this indefinitely.
+DEFAULT_OPENAI_MODEL = "gpt-5.6-luna"
 
 
 class OpenAIProvider(_TextGeneratingProvider):
