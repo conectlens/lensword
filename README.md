@@ -19,7 +19,7 @@
 
 <p align="center">
   <a href="https://lensword-frontend.pages.dev"><strong>Try the web app</strong></a> ·
-  <a href="https://conectlens.github.io/lensword/">Documentation</a> ·
+  <a href="https://docs.lensword.conectlens.com/">Documentation</a> ·
   <a href="https://github.com/conectlens/lensword/blob/development/docs/internal/render-deployment.md">lensword-api.conectlens.com</a> ·
   <a href="https://github.com/conectlens/lensword/blob/development/docs/reference/mcp-remote-transport.md">lensword-mcp.conectlens.com</a>
 </p>

@@ -29,12 +29,12 @@ jobs:
 
       - name: Build
         working-directory: docs
-        # This repo has no custom domain configured, so GitHub Pages would
-        # serve a project site at /lensword/, not the root — see the base
-        # override note in .vitepress/config.mts. Local dev/preview is
-        # unaffected: DOCS_BASE is only set here, in CI.
-        env:
-          DOCS_BASE: /lensword/
+        # docs.lensword.conectlens.com is a custom domain, so GitHub Pages
+        # serves this site at the domain's root, not a /lensword/ project-page
+        # subpath — DOCS_BASE defaults to '/' (see .vitepress/config.mts) and
+        # is deliberately left unset here. It used to be set to /lensword/
+        # for the pre-custom-domain conectlens.github.io/lensword/ URL; if
+        # that ever changes back, this is the line to restore.
         run: npm run docs:build
 
       - name: Upload build artifact
