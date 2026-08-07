@@ -48,6 +48,20 @@ jobs:
       fail-fast: false
       matrix:
         platform: [macos-latest, ubuntu-latest, windows-latest]
+    # Deliberately serializes the three platforms against each other (the
+    # group name omits matrix.platform on purpose) even though nothing else
+    # about them is order-dependent: all three attach installers to the same
+    # GitHub Release (tag_name), and tauri-action's create-or-update-release
+    # step is not safe against concurrent callers racing that one release
+    # resource. Three simultaneous requests to create/fetch/attach-to one
+    # release produced an intermittent connection reset mid-upload
+    # ("Error: other side closed") after a fully successful Windows build —
+    # observed on a real run of release-continuous.yml (PR #318's merge).
+    # Costs wall-clock time (three sequential builds instead of parallel);
+    # buys a release step that can't lose this race.
+    concurrency:
+      group: desktop-installer-release-${{ inputs.tag_name }}
+      cancel-in-progress: false
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 60
     steps:
