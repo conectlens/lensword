@@ -1,0 +1,36 @@
+{
+  "generatedFrom": "docs/media/demo-frames/review-session",
+  "scenario": "web-review-session",
+  "revision": "4897b475c4cc84b237121c8658fab78000857c31",
+  "fixture": {
+    "username": "demo_reviewer",
+    "email": "demo.reviewer@example.com",
+    "password": "DemoReviewer123!",
+    "groupName": "Spanish Verbs",
+    "targetLanguage": "Spanish",
+    "words": [
+      {
+        "term": "hablar",
+        "translations": [
+          "to speak"
+        ],
+        "example_sentence": "Quiero hablar contigo."
+      },
+      {
+        "term": "el recuerdo",
+        "translations": [
+          "the memory"
+        ],
+        "example_sentence": "Guardo ese recuerdo con cariño."
+      },
+      {
+        "term": "el viaje",
+        "translations": [
+          "the trip / journey"
+        ],
+        "example_sentence": "Planeamos un viaje a Madrid."
+      }
+    ]
+  },
+  "generatedAt": "set by generation script at run time — see git blame on this JSON file for the actual date"
+}

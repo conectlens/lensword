@@ -1,0 +1,12 @@
+{
+  "name": "lensword-demo-media-scripts",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "capture": "node capture-demo-media.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.55.0"
+  }
+}

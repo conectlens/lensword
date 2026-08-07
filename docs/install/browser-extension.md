@@ -48,6 +48,12 @@ what a package would look like if you build one yourself.
 
 Open the extension's popup (click its toolbar icon) and fill in:
 
+![Browser extension popup with API URL, access token, and group ID fields](../media/screenshots/browser-popup.webp)
+
+*Shown rendered standalone (`popup.html` opened directly), not loaded as an
+extension — `chrome://` pages are outside this documentation's browser
+automation, see [Verified capture flow](#verified-capture-flow) below.*
+
 - **API URL** — your LensWord backend, e.g. `http://localhost:18420` for
   the [Docker Compose quick start](/setup/), or your server's HTTPS origin
   if self-hosted.
