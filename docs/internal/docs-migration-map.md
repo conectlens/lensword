@@ -5,6 +5,16 @@
 > canonical VitePress route. Built from the audit in
 > [`repo-audit.md`](./repo-audit.md) for issue #269. Later issues (#271,
 > #272) should execute this map rather than re-deriving it.
+>
+> **Superseded routes:** the proposed `/use-cases/*` and `/trust/*` routes
+> below were the plan as of #269/#271. When #272 actually built the
+> VitePress site, the user asked for the structure to follow
+> [Diátaxis](https://diataxis.fr/) instead — the real, shipped IA is
+> `/setup/` (tutorial), `/install/*` (how-to guides), `/learn/*`
+> (explanation), and `/reference/*` (lookup material); see
+> `docs/.vitepress/config.mts` for the authoritative route list. The
+> dispositions (keep/rewrite/merge/archive) below are still accurate — only
+> the route column is superseded.
 
 | Current path | Disposition | New route / destination | Notes |
 |---|---|---|---|

@@ -36,10 +36,10 @@ No release has shipped yet (see [Current status and known limitations](#current-
 | Surface | Best for | Install / access | Requires | Status |
 |---|---|---|---|---|
 | **Web app** | Everyday review in a browser | `docker compose up --build` (below) | Nothing else — the stack bundles its own Postgres | Public, CI-tested |
-| **Self-hosting for others** | Running LensWord as a shared service | [docs/hosted-deployment.md](docs/hosted-deployment.md) | Managed Postgres, TLS, real secrets | Public, documented; notifications are log-only (see limitations) |
-| **Desktop app** (macOS / Windows / Linux) | A native shell around the same app | Build from source today — see [docs/desktop-app.md](docs/desktop-app.md) | A running LensWord server (remote-only, [ADR 0002](docs/adr/0002-desktop-backend-mode.md)) | **Unreleased** — no installer has been published; CI currently builds macOS and Linux only |
+| **Self-hosting for others** | Running LensWord as a shared service | [docs/install/self-hosting.md](docs/install/self-hosting.md) | Managed Postgres, TLS, real secrets | Public, documented; notifications are log-only (see limitations) |
+| **Desktop app** (macOS / Windows / Linux) | A native shell around the same app | Build from source today — see [docs/install/desktop-app.md](docs/install/desktop-app.md) | A running LensWord server (remote-only, [ADR 0002](docs/reference/adr/0002-desktop-backend-mode.md)) | **Unreleased** — no installer has been published; CI currently builds macOS and Linux only |
 | **Browser extension** | Capturing words while reading | Load unpacked — see [apps/browser/README.md](apps/browser/README.md) | A running LensWord server | Functional, developer-mode only — not on the Chrome Web Store, no CI coverage |
-| **MCP server** | Claude, Codex, Cursor, or another MCP client | Run from source — see [apps/mcp/README.md](apps/mcp/README.md) and [docs/mcp-remote-transport.md](docs/mcp-remote-transport.md) | A LensWord account + API URL; remote transport is off by default | Functional, not on PyPI, no CI coverage |
+| **MCP server** | Claude, Codex, Cursor, or another MCP client | Run from source — see [apps/mcp/README.md](apps/mcp/README.md) and [docs/reference/mcp-remote-transport.md](docs/reference/mcp-remote-transport.md) | A LensWord account + API URL; remote transport is off by default | Functional, not on PyPI, no CI coverage |
 | **Local CLI** | Bounded, offline context preview/import | Run from source — see [apps/mcp/README.md](apps/mcp/README.md) | Local Python install only for `import-context` (offline, never contacts the server) | Functional, not on PyPI |
 
 Per-surface deep-dive guides (verified desktop/browser/MCP walkthroughs) are being written in the documentation epic ([#268](https://github.com/conectlens/lensword/issues/268)) — until they land, the links above point at the most accurate source that exists today. See [docs/internal/repo-audit.md](docs/internal/repo-audit.md) for the full evidence behind this table.
@@ -70,8 +70,8 @@ healthy, and serves traffic on the ports above — confirmed by running it and
 walking through registration, onboarding, adding words, and a review session
 (see the screenshots below).
 
-For everything past this — [local development without Docker](docs/local-development.md), [hosted
-deployment for other people](docs/hosted-deployment.md), [desktop builds](docs/desktop-app.md), [browser extension loading](apps/browser/README.md), [MCP configuration](apps/mcp/README.md), and [local AI](docs/local-ai-ollama.md) — see [Documentation](#documentation) below.
+For everything past this — [local development without Docker](docs/reference/local-development.md), [hosted
+deployment for other people](docs/install/self-hosting.md), [desktop builds](docs/install/desktop-app.md), [browser extension loading](apps/browser/README.md), [MCP configuration](apps/mcp/README.md), and [local AI](docs/install/local-ai-ollama.md) — see [Documentation](#documentation) below.
 
 ## See it in action
 
@@ -113,7 +113,7 @@ evidence-based breakdown per surface.
   personal use, not for a production launch.
 - Backend: 96/96 tests passing, boot-tested with a real `uvicorn` process.
   Frontend: lints clean, type-checks and builds clean, unit tests passing.
-  Full detail in [docs/verification.md](docs/verification.md), which also
+  Full detail in [docs/reference/verification.md](docs/reference/verification.md), which also
   lists every known gap. See
   [docs/internal/evidence-gaps.md](docs/internal/evidence-gaps.md) for what
   has explicitly **not** been verified (e.g. no branch-protection visibility
@@ -121,27 +121,23 @@ evidence-based breakdown per surface.
 
 ## Documentation
 
-- [docs/architecture.md](docs/architecture.md) — backend/frontend architecture and the design decisions behind them.
-- [docs/local-development.md](docs/local-development.md) — running the backend and frontend directly, without Docker.
-- [docs/desktop-app.md](docs/desktop-app.md) — building and running the desktop shell, and what's verified vs. not.
-- [docs/hosted-deployment.md](docs/hosted-deployment.md) — running LensWord for other people: managed Postgres, TLS, secrets, backups.
-- [docs/releasing.md](docs/releasing.md) — how a desktop release is cut and what "verified" means for one.
-- [docs/local-ai-ollama.md](docs/local-ai-ollama.md) — the full local AI (Ollama) setup walkthrough, including Docker networking.
-- [docs/mcp-remote-transport.md](docs/mcp-remote-transport.md) — MCP OAuth/remote transport, what's on by default and what isn't.
-- [apps/browser/README.md](apps/browser/README.md) — loading and using the browser extension.
-- [apps/mcp/README.md](apps/mcp/README.md) — MCP server and local CLI usage.
-- [docs/verification.md](docs/verification.md) — the full test/verification detail behind the status summary above, plus every known gap.
-- [docs/ai-model-verification.md](docs/ai-model-verification.md) — dated, real-model verification log for the Ollama integration.
-- [docs/brand.md](docs/brand.md) — logo, color tokens, and how to regenerate brand assets.
-- [docs/adr/](docs/adr/) — architecture decision records (Tauri choice, desktop remote-only mode, AI provider foundation, memory scheduling, and more).
-- [docs/internal/repo-audit.md](docs/internal/repo-audit.md), [product-registry.json](docs/internal/product-registry.json), [docs-migration-map.md](docs/internal/docs-migration-map.md), [evidence-gaps.md](docs/internal/evidence-gaps.md) — the evidence base this README and the wider documentation rewrite are built on.
+`docs/` is a [VitePress](https://vitepress.dev) site, organized around
+[Diátaxis](https://diataxis.fr/): a **Setup** tutorial, task-oriented
+**Install** how-to guides, **Learn** explanation, and lookup **Reference**
+material. Run it locally with `cd docs && npm install && npm run docs:dev`.
+The same Markdown files are linked directly below, so they're just as
+readable straight from GitHub.
 
-A production VitePress documentation site is planned ([#272](https://github.com/conectlens/lensword/issues/272)); until it exists, the files above are the canonical sources.
+- **Setup:** [docs/setup/index.md](docs/setup/index.md) — the same verified quick start as above, plus where to go next.
+- **Install:** [web app](docs/install/web-app.md) · [desktop](docs/install/desktop-app.md) · [browser extension](docs/install/browser-extension.md) ([apps/browser/README.md](apps/browser/README.md)) · [MCP server & local CLI](docs/install/mcp-local-cli.md) ([apps/mcp/README.md](apps/mcp/README.md)) · [self-hosting](docs/install/self-hosting.md) · [local AI / Ollama](docs/install/local-ai-ollama.md) · [troubleshooting](docs/install/troubleshooting.md)
+- **Learn:** [architecture & design decisions](docs/learn/architecture.md) · [choose your surface](docs/learn/choose-a-surface.md) · [brand assets](docs/learn/brand.md)
+- **Reference:** [verification & known gaps](docs/reference/verification.md) · [AI model verification log](docs/reference/ai-model-verification.md) · [changelog](docs/reference/changelog.md) · [releasing & compatibility](docs/reference/releasing.md) · [MCP remote transport](docs/reference/mcp-remote-transport.md) · [local development](docs/reference/local-development.md) · [ADRs](docs/reference/adr/)
+- **Evidence base:** [docs/internal/repo-audit.md](docs/internal/repo-audit.md), [product-registry.json](docs/internal/product-registry.json), [docs-migration-map.md](docs/internal/docs-migration-map.md), [evidence-gaps.md](docs/internal/evidence-gaps.md) — not part of the published site (internal, excluded from the VitePress build), but this README and the whole documentation rewrite are built on them.
 
 ## Changelog, releases & trust
 
 - [CHANGELOG.md](CHANGELOG.md) tracks every change in Keep-a-Changelog format. It does not yet correspond to any tagged release — see the note at the top of the file.
-- No git tag or GitHub Release has been published for any surface yet. When a desktop release is cut, the process and its verification status are documented in [docs/releasing.md](docs/releasing.md).
+- No git tag or GitHub Release has been published for any surface yet. When a desktop release is cut, the process and its verification status are documented in [docs/reference/releasing.md](docs/reference/releasing.md).
 - A product-aware changelog and release-transparency system is planned in [#281](https://github.com/conectlens/lensword/issues/281)/[#282](https://github.com/conectlens/lensword/issues/282).
 
 ## Sponsorship & support

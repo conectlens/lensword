@@ -28,6 +28,12 @@ apps/desktop/target
 apps/desktop/target/
 apps/desktop/src-tauri/gen/
 
+# Docs (VitePress)
+docs/node_modules
+docs/node_modules/
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+
 # Deployment
 # Compose reads a root .env automatically, and it holds the database password
 # and the token-signing secret. The example beside it is the tracked one.
