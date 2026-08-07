@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import io
 
-from lensword_mcp.context_import import ContextImportPolicy, preview_context
+import pytest
+
+from lensword_cli.context_import import ContextImportPolicy, ContextImportRejected, preview_context
 
 
 def _candidate(preview, term):
@@ -106,7 +108,7 @@ def test_module_performs_no_network_or_filesystem_io():
     services'): the extraction module itself must not import any networking
     or subprocess machinery — only the CLI's --file/--stdin plumbing touches
     the filesystem, and this module never should."""
-    import lensword_mcp.context_import as module
+    import lensword_cli.context_import as module
 
     source = io.open(module.__file__, "r", encoding="utf-8").read()
     for forbidden in ("socket", "urllib", "requests", "subprocess", "httpx"):
@@ -124,3 +126,35 @@ def test_prompt_injection_style_text_is_treated_as_inert_data():
     # No candidate is anything other than a plain extracted token; nothing
     # about the "instruction" text produces a different kind of output.
     assert all(isinstance(c.term, str) and " " not in c.term for c in preview.candidates)
+
+
+# --- Moved from apps/mcp/tests/test_server.py (issue #311): these test
+# context_import.py's own behavior, not anything MCP-protocol-specific, so
+# they belong alongside the module they test rather than the MCP transport
+# test suite. ------------------------------------------------------------
+
+
+def test_context_import_is_bounded_preview_only_and_redacts_secrets():
+    preview = preview_context(
+        "FastAPI FastAPI asyncio password=do-not-store JWT eyJabcdefghijklmnop.qrstuvwxyz.abcdefghijklmnop",
+        source_kind="terminal",
+        source_ref="session-1",
+    )
+    terms = {candidate.term for candidate in preview.candidates}
+    assert "fastapi" in terms and "asyncio" in terms
+    assert "do-not-store" not in terms
+    assert preview.requires_confirmation is True
+    assert preview.writes_performed is False
+
+
+def test_context_import_refuses_unbounded_input_and_source():
+    with pytest.raises(ContextImportRejected):
+        preview_context("x", source_kind="", source_ref="session")
+    preview = preview_context(
+        "term " * 20,
+        source_kind="file",
+        source_ref="README.md",
+        policy=ContextImportPolicy(max_characters=10, max_candidates=2),
+    )
+    assert preview.truncated is True
+    assert len(preview.candidates) <= 2

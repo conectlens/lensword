@@ -90,7 +90,12 @@ services:
     runtime: docker
     repo: https://github.com/conectlens/lensword
     dockerfilePath: ./apps/mcp/Dockerfile
-    dockerContext: ./apps/mcp
+    # Repo root, not ./apps/mcp — this service now depends on the
+    # lensword-cli package (issue #311's split), which lives in a sibling
+    # directory (apps/cli). Neither package is on PyPI yet, so the
+    # Dockerfile installs both from source, which requires apps/cli to be
+    # inside the build context.
+    dockerContext: .
     plan: free
     branch: main
     autoDeploy: true

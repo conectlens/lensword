@@ -10,7 +10,8 @@ from __future__ import annotations
 import io
 import json
 
-from lensword_mcp.server import BackendError, MCPServer, StdioMCPServer
+from lensword_cli.backend_client import BackendError
+from lensword_mcp.server import MCPServer, StdioMCPServer
 
 _TASK_TOOL_NAMES = (
     "lensword_start_extraction_task",

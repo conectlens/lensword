@@ -3,9 +3,9 @@ import json
 
 import pytest
 
-import lensword_mcp.cli as cli
-from lensword_mcp.cli import EXIT_BACKEND_ERROR, EXIT_CANCELLED, EXIT_OK, EXIT_REJECTED, main
-from lensword_mcp.server import BackendError
+import lensword_cli.cli as cli
+from lensword_cli.backend_client import BackendError
+from lensword_cli.cli import EXIT_BACKEND_ERROR, EXIT_CANCELLED, EXIT_OK, EXIT_REJECTED, main
 
 
 def test_import_context_cli_is_offline_preview_only_and_supports_json():
@@ -144,8 +144,8 @@ class FakeBackendClient:
 
     instances: list["FakeBackendClient"] = []
 
-    def __init__(self, api_url, token, requester, workspace, timeout=30.0):
-        self.api_url, self.token, self.requester, self.workspace = api_url, token, requester, workspace
+    def __init__(self, api_url, token, workspace, timeout=30.0):
+        self.api_url, self.token, self.workspace, self.timeout = api_url, token, workspace, timeout
         self.invoke_calls: list[tuple[str, dict]] = []
         self.resource_calls: list[str] = []
         self.invoke_result: dict = {}
@@ -172,10 +172,28 @@ def fake_backend(monkeypatch):
     monkeypatch.setattr(cli, "BackendClient", FakeBackendClient)
     monkeypatch.setenv("LENSWORD_API_URL", "http://localhost:9")
     monkeypatch.setenv("LENSWORD_TOKEN", "test-token")
-    monkeypatch.setenv("LENSWORD_MCP_REQUESTER", "cli-test")
     monkeypatch.setenv("LENSWORD_MCP_WORKSPACE", "/workspace")
     yield FakeBackendClient
     FakeBackendClient.instances = []
+
+
+def test_backend_from_env_maps_each_variable_to_the_matching_constructor_field(fake_backend):
+    """Regression test: `_backend_from_env` used to pass its four env-var
+    values positionally into `BackendClient`'s three real fields
+    (`api_url`, `token`, `workspace`) plus `timeout` — silently landing
+    `LENSWORD_MCP_WORKSPACE`'s value in `timeout` instead of `workspace`.
+    `FakeBackendClient`'s old signature accepted the extra positional
+    argument without complaint, which is exactly why no test caught it."""
+    code = main(
+        ["explain", "--word-id", "1", "--json"],
+        error_stream=io.StringIO(),
+    )
+    assert code in (EXIT_OK, EXIT_BACKEND_ERROR)  # reaching the backend call is what's under test
+    client = FakeBackendClient.instances[0]
+    assert client.api_url == "http://localhost:9"
+    assert client.token == "test-token"
+    assert client.workspace == "/workspace"
+    assert client.timeout == 30.0
 
 
 def test_add_previews_and_requires_confirmation_before_calling_the_backend(fake_backend):
@@ -248,7 +266,7 @@ def test_add_reads_the_term_from_stdin_when_not_given_as_a_flag(fake_backend, mo
 
 
 def test_add_without_backend_env_vars_fails_cleanly(monkeypatch):
-    for name in ("LENSWORD_API_URL", "LENSWORD_TOKEN", "LENSWORD_MCP_REQUESTER", "LENSWORD_MCP_WORKSPACE"):
+    for name in ("LENSWORD_API_URL", "LENSWORD_TOKEN", "LENSWORD_MCP_WORKSPACE"):
         monkeypatch.delenv(name, raising=False)
     error = io.StringIO()
     code = main(["add", "--group-id", "1", "--term", "correr", "--target-language", "Spanish", "--yes"], error_stream=error)

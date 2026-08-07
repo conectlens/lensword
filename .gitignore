@@ -15,6 +15,11 @@ apps/mcp/**/__pycache__/
 apps/mcp/.pytest_cache/
 apps/mcp/*.egg-info/
 
+# Local CLI
+apps/cli/**/__pycache__/
+apps/cli/.pytest_cache/
+apps/cli/*.egg-info/
+
 # Frontend
 apps/frontend/node_modules
 apps/frontend/node_modules/

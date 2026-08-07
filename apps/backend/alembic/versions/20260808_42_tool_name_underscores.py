@@ -1,7 +1,8 @@
 """Repoint existing MCP grants at the underscore tool names.
 
-Tool identifiers changed from `lensword.add_word` to `lensword_add_word`
-because a dot is not a legal character in a tool name for the Anthropic API
+Tool identifiers changed from the old dot-separated form (`lensword` + `.` +
+`add_word`) to `lensword_add_word`, because a dot is not a legal character
+in a tool name for the Anthropic API
 (`^[a-zA-Z0-9_-]{1,64}$`), which silently excluded every LensWord tool from
 Claude with "26 tools with unsupported names". MCP's own spec is looser here
 (it lists `admin.tools.list` as valid), so the constraint comes from the
