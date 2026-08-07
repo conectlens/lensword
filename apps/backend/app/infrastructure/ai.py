@@ -31,15 +31,9 @@ from app.infrastructure.ai_providers.base import (
     build_suggestion_request,
 )
 from app.infrastructure.ai_providers.factory import SUPPORTED_AI_PROVIDERS, build_ai_provider
+from app.infrastructure.ai_providers.google import GeminiProvider, VertexAIProvider
 from app.infrastructure.ai_providers.ollama import OllamaProvider
-
-# TODO(#315, in progress): GeminiProvider/VertexAIProvider (google.py) and
-# OpenAIProvider (openai_provider.py) are re-exported here too once those
-# modules exist — this narrower list is a deliberate, temporary checkpoint so
-# OllamaProvider's refactor onto the shared base can be verified and
-# committed on its own before the new providers are built on top of it.
-# factory.py's SUPPORTED_AI_PROVIDERS/build_ai_provider stay ollama-only
-# until then too.
+from app.infrastructure.ai_providers.openai_provider import OpenAIProvider
 
 __all__ = [
     "AI_SYSTEM_INSTRUCTION",
@@ -48,8 +42,11 @@ __all__ = [
     "DEFAULT_CONTEXT_MAX_CHARS",
     "DEFAULT_MAX_OUTPUT_TOKENS",
     "DEFAULT_TERM_MAX_CHARS",
+    "GeminiProvider",
     "OllamaProvider",
+    "OpenAIProvider",
     "SUPPORTED_AI_PROVIDERS",
+    "VertexAIProvider",
     "_as_data",
     "_unavailable_error",
     "build_ai_provider",
