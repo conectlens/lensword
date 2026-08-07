@@ -27,7 +27,7 @@ TOOL_CONTRACTS = tuple(ToolContract(name, f"https://lensword.app/mcp/{CONTRACT_V
     ("lensword.add_word", AccessClass.WRITE, _schema({"group_id": {"type":"integer", "minimum":1}, "term":{"type":"string","minLength":1,"maxLength":255}, "target_language":{"type":"string"}, "translations":{"type":"array","maxItems":20,"items":{"type":"string","maxLength":255}}}, ["group_id","term","target_language"], write=True)),
     ("lensword.search_words", AccessClass.READ, _schema({"query":{"type":"string","maxLength":255}, "limit":{"type":"integer","minimum":1,"maximum":100}, "cursor":{"type":"string","maxLength":256}})),
     ("lensword.extract_vocabulary", AccessClass.WRITE, _schema({"group_id":{"type":"integer","minimum":1}, "text":{"type":"string","minLength":1,"maxLength":20000}, "target_language":{"type":"string"}, "max_items":{"type":"integer","minimum":1,"maximum":50}}, ["group_id","text","target_language"], write=True)),
-    ("lensword.get_due_reviews", AccessClass.READ, _schema({"group_id":{"type":"integer","minimum":1}, "limit":{"type":"integer","minimum":1,"maximum":100}})),
+    ("lensword.get_due_reviews", AccessClass.READ, _schema({"group_id":{"type":"integer","minimum":1}, "limit":{"type":"integer","minimum":1,"maximum":100}, "cursor":{"type":"string","maxLength":256}})),
     ("lensword.create_study_session", AccessClass.WRITE, _schema({"group_id":{"type":"integer","minimum":1}, "limit":{"type":"integer","minimum":1,"maximum":100}}, write=True)),
     ("lensword.generate_exercises", AccessClass.WRITE, _schema({"word_id":{"type":"integer","minimum":1}, "kind":{"enum":["translation","definition","cloze"]}}, ["word_id"], write=True)),
     ("lensword.get_learning_progress", AccessClass.READ, _schema({"week":{"type":"string","maxLength":32}})),

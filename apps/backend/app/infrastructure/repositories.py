@@ -712,7 +712,9 @@ class SqlAlchemyWordRepository:
         )
         return self.db.scalar(stmt)
 
-    def list_due_for_user(self, user_id: int, limit: int, group_id: int | None = None) -> list[Word]:
+    def list_due_for_user(
+        self, user_id: int, limit: int, group_id: int | None = None, offset: int = 0
+    ) -> list[Word]:
         # Ordered strictly by due_at, and deliberately not by issue #204's
         # semantic-diversity policy: that policy only acts at word
         # introduction, where no observed errors exist yet (its own boundary
@@ -726,7 +728,11 @@ class SqlAlchemyWordRepository:
         )
         if group_id is not None:
             stmt = stmt.where(WordModel.group_id == group_id)
-        stmt = stmt.order_by(WordModel.due_at.asc()).limit(limit)
+        # A secondary key breaks ties on due_at deterministically — without
+        # it, two words due at the same instant can swap order between an
+        # offset page and the next, which would silently skip or repeat a
+        # word at the page boundary.
+        stmt = stmt.order_by(WordModel.due_at.asc(), WordModel.id.asc()).offset(offset).limit(limit)
         return [_word_to_domain(m) for m in self.db.scalars(stmt)]
 
     def add(self, word: Word) -> Word:
