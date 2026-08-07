@@ -1,0 +1,220 @@
+"""HTTP client for LensWord's `/api/v1/mcp/*` boundary.
+
+Extracted from `apps/mcp/lensword_mcp/server.py` (issue #311): this class was
+never actually MCP-protocol-specific — it is the same authenticated HTTP
+client the Local CLI's `add`/`explain`/`diagnose`/`review` subcommands use to
+reach the backend, through the identical policy-gated boundary the MCP
+stdio/HTTP transports use. `apps/mcp` now depends on this package and
+imports `BackendClient`/`BackendError` from here rather than defining its
+own copy.
+"""
+from __future__ import annotations
+
+import json
+import re
+import urllib.error
+import urllib.request
+import uuid
+from dataclasses import dataclass
+from typing import Any
+
+# CompanionSession.id is `uuid4().hex` (see StartCompanionSessionUseCase) —
+# always exactly 32 lowercase hex characters. Checking the shape here, before
+# a request ever reaches the backend, keeps a malformed id a 404 rather than
+# whatever the backend's own routing does with a run of URL-unsafe or
+# oversized text, and matches the words/groups/learning-paths templates,
+# which validate their own id shape the same way.
+_SESSION_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+
+
+class BackendError(RuntimeError):
+    def __init__(self, status: int, detail: str):
+        super().__init__(detail)
+        self.status = status
+        self.detail = detail
+
+
+@dataclass(frozen=True)
+class BackendClient:
+    """Talks to LensWord's `/api/v1/mcp/*` boundary over plain HTTPS/HTTP.
+
+    `token` is a bearer credential the backend authenticates: either the
+    caller's normal login JWT (the local/stdio path, unchanged) or, for a
+    remote companion, an OAuth access token issued by the backend's
+    `/api/v1/mcp/oauth/token` endpoint (issue #196) — never both, and never
+    the login JWT for the remote case. Either way, caller identity is
+    derived by the backend from this token; this client has no `requester`
+    field to set because the backend stopped trusting one in the request
+    body (see app/api/mcp_auth.py in the backend for why).
+    """
+
+    api_url: str
+    token: str
+    workspace: str
+    timeout: float = 30.0
+
+    def _request(self, path: str, body: dict[str, Any] | None = None) -> Any:
+        data = None if body is None else json.dumps(body, separators=(",", ":")).encode()
+        request = urllib.request.Request(
+            f"{self.api_url.rstrip('/')}{path}",
+            data=data,
+            method="POST" if body is not None else "GET",
+            headers={
+                "Accept": "application/json",
+                "Authorization": f"Bearer {self.token}",
+                "Content-Type": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                return json.loads(response.read())
+        except urllib.error.HTTPError as exc:
+            try:
+                detail = json.loads(exc.read()).get("detail", "LensWord request failed")
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                detail = "LensWord request failed"
+            raise BackendError(exc.code, str(detail)) from exc
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            raise BackendError(503, "LensWord API unavailable") from exc
+
+    def capabilities(self) -> dict[str, Any]:
+        return self._request("/api/v1/mcp/capabilities")
+
+    def invoke(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        payload = dict(arguments)
+        if "request_id" not in payload:
+            payload["request_id"] = str(uuid.uuid4())
+        return self._request(
+            "/api/v1/mcp/invoke",
+            {
+                "tool": name,
+                "workspace": self.workspace,
+                "payload": payload,
+            },
+        )
+
+    # --- Bounded companion loop budgets (#195 TODO 2) ----------------------
+    # apps/mcp has no database of its own; these are the durable equivalent
+    # of companion_workflows.CompanionLoopState, kept on the backend so a
+    # workflow's budget survives this process restarting.
+
+    def start_loop(self, session_id: str, **budget: Any) -> dict[str, Any]:
+        return self._request(f"/api/v1/companion/sessions/{session_id}/loop/start", budget)
+
+    def get_loop(self, session_id: str) -> dict[str, Any]:
+        return self._request(f"/api/v1/companion/sessions/{session_id}/loop")
+
+    def reserve_loop(self, session_id: str, kind: str, amount: int = 1) -> dict[str, Any]:
+        return self._request(f"/api/v1/companion/sessions/{session_id}/loop/reserve", {"kind": kind, "amount": amount})
+
+    def fail_loop(self, session_id: str) -> dict[str, Any]:
+        return self._request(f"/api/v1/companion/sessions/{session_id}/loop/fail", {})
+
+    def stop_loop(self, session_id: str, reason: str) -> dict[str, Any]:
+        return self._request(f"/api/v1/companion/sessions/{session_id}/loop/stop", {"reason": reason})
+
+    # --- Sampling provenance/audit (#195 TODO 4) ----------------------------
+
+    def record_sampling_event(self, session_id: str, **fields: Any) -> dict[str, Any]:
+        return self._request(f"/api/v1/companion/sessions/{session_id}/sampling-events", fields)
+
+    # --- Local-AI/deterministic fallback + persistence (#195 TODO 0/3) -----
+
+    def generate_reply(self, session_id: str, **payload: Any) -> dict[str, Any]:
+        return self._request(f"/api/v1/companion/sessions/{session_id}/reply", payload)
+
+    def add_turn(
+        self, session_id: str, *, role: str, content: str, activity_id: str | None = None, operation_id: str | None = None
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {"role": role, "content": content}
+        if activity_id is not None:
+            body["activity_id"] = activity_id
+        if operation_id is not None:
+            body["operation_id"] = operation_id
+        return self._request(f"/api/v1/companion/sessions/{session_id}/turns", body)
+
+    def resource(self, uri: str) -> Any:
+        """Read a bounded learner resource through the authenticated API.
+
+        Resources deliberately use existing read endpoints and the existing
+        policy-gated due/search tools. No resource path accepts an account id;
+        the bearer token remains the sole tenant boundary.
+        """
+        exact_paths = {
+            "lensword://me/profile": "/api/v1/auth/me",
+            "lensword://me/goals": "/api/v1/learning-paths",
+            "lensword://me/weaknesses": "/api/v1/me/weaknesses",
+            "lensword://me/progress": "/api/v1/review/weekly-progress",
+            # Account-wide diagnosis/intervention listings, added once the
+            # backend exposed a bounded endpoint for them — previously these
+            # two URIs were a permanent `{"items": [], "available": False}`
+            # stub, since only per-word endpoints existed.
+            "lensword://me/diagnoses": "/api/v1/me/diagnoses",
+            "lensword://me/interventions": "/api/v1/me/interventions",
+        }
+        if uri in ("lensword://me/today", "lensword://me/due"):
+            return self.invoke("lensword.get_due_reviews", {"limit": 100})
+        if uri == "lensword://me/active-words":
+            return self.invoke("lensword.search_words", {"query": "", "limit": 100})
+        if uri in exact_paths:
+            return self._request(exact_paths[uri])
+
+        if uri.startswith("lensword://groups/") and uri.endswith("/words"):
+            group_id = uri.removeprefix("lensword://groups/").removesuffix("/words")
+            if not group_id.isdigit() or int(group_id) < 1:
+                raise BackendError(404, "Resource not found")
+            return self._request(f"/api/v1/groups/{group_id}/words")
+        if uri.startswith("lensword://words/"):
+            value = uri.removeprefix("lensword://words/")
+            suffix = ""
+            if value.endswith("/diagnosis"):
+                value, suffix = value.removesuffix("/diagnosis"), "/diagnosis"
+            if not value.isdigit() or int(value) < 1:
+                raise BackendError(404, "Resource not found")
+            return self._request(f"/api/v1/words/{value}{suffix}")
+        if uri.startswith("lensword://learning-paths/"):
+            path_id = uri.removeprefix("lensword://learning-paths/")
+            if not path_id.isdigit() or int(path_id) < 1:
+                raise BackendError(404, "Resource not found")
+            return self._request(f"/api/v1/learning-paths/{path_id}")
+        if uri.startswith("lensword://session/"):
+            session_id = uri.removeprefix("lensword://session/")
+            # Same 404-not-403 shape as every id-taking template above: an
+            # id that cannot possibly be this account's (malformed, or
+            # someone else's session — which the bearer token alone would
+            # otherwise distinguish from "no such session" if this returned
+            # anything else) is indistinguishable from "not found" here,
+            # never disclosed as "exists but you can't see it". The backend's
+            # own ownership check (404, not 403 — `companion.py`'s `_owned`)
+            # is what actually decides once past this shape check.
+            if not _SESSION_ID_RE.fullmatch(session_id):
+                raise BackendError(404, "Resource not found")
+            return self._request(f"/api/v1/companion/sessions/{session_id}")
+        raise BackendError(404, "Resource not found")
+
+    def groups(self) -> list[str]:
+        """This account's group names, for prompt-argument completion
+        (issue #192 TODO 3's `group` argument). Best-effort: a completion
+        candidate list failing closed to empty is a worse experience than
+        no completion at all, but never worse than the backend itself
+        already fails for every other resource read here.
+        """
+        try:
+            groups = self._request("/api/v1/groups")
+        except BackendError:
+            return []
+        return [group["name"] for group in groups if isinstance(group, dict) and "name" in group]
+
+    def scenarios(self) -> list[str]:
+        """The fixed, unauthenticated scenario catalog's keys, for
+        prompt-argument completion (issue #192 TODO 3's `scenario`
+        argument). Not account-scoped because the catalog itself isn't —
+        every account sees the same product-defined scenarios, the same
+        way `_LANGUAGES`/`_DURATIONS`/`_DIFFICULTIES` are shared constants
+        rather than per-account data.
+        """
+        try:
+            scenarios = self._request("/api/v1/scenarios")
+        except BackendError:
+            return []
+        return [scenario["key"] for scenario in scenarios if isinstance(scenario, dict) and "key" in scenario]

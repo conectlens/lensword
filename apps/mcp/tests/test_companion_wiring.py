@@ -13,7 +13,8 @@ import json
 
 import pytest
 
-from lensword_mcp.server import BackendError, MCPServer, StdioMCPServer, _stdio_send_request
+from lensword_cli.backend_client import BackendError
+from lensword_mcp.server import MCPServer, StdioMCPServer, _stdio_send_request
 
 
 INIT_WITH_SAMPLING_AND_ELICITATION = {
