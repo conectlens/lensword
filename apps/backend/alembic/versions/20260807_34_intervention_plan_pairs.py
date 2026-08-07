@@ -50,16 +50,21 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # batch mode keeps the downgrade working for the SQLite development DB.
     outcome_columns = {c["name"] for c in sa.inspect(op.get_bind()).get_columns(_OUTCOMES_TABLE)}
     if "horizon" in outcome_columns:
-        op.drop_column(_OUTCOMES_TABLE, "horizon")
+        with op.batch_alter_table(_OUTCOMES_TABLE) as batch:
+            batch.drop_column("horizon")
 
     plan_columns = {c["name"] for c in sa.inspect(op.get_bind()).get_columns(_PLANS_TABLE)}
-    if "prerequisite_ids" in plan_columns:
-        op.drop_column(_PLANS_TABLE, "prerequisite_ids")
-    if "second_word_id" in plan_columns:
-        op.drop_column(_PLANS_TABLE, "second_word_id")
+    if "prerequisite_ids" in plan_columns or "second_word_id" in plan_columns:
+        with op.batch_alter_table(_PLANS_TABLE) as batch:
+            if "prerequisite_ids" in plan_columns:
+                batch.drop_column("prerequisite_ids")
+            if "second_word_id" in plan_columns:
+                batch.drop_column("second_word_id")
 
     diagnosis_columns = {c["name"] for c in sa.inspect(op.get_bind()).get_columns(_DIAGNOSES_TABLE)}
     if "related_word_id" in diagnosis_columns:
-        op.drop_column(_DIAGNOSES_TABLE, "related_word_id")
+        with op.batch_alter_table(_DIAGNOSES_TABLE) as batch:
+            batch.drop_column("related_word_id")
