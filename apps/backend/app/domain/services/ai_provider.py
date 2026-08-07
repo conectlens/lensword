@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    from app.domain.services.companion_coach import CoachContent, CoachRequest
     from app.domain.services.conversation import TutorContext, Turn
     from app.domain.services.scenarios import Scenario
 
@@ -122,4 +123,38 @@ class AIProvider(Protocol):
         Returns a raw dict — `{"scores": {...}, "goals_met": [...], "summary":
         str}` — for the caller to validate and clamp.
         """
+        ...
+
+    # --- Evidence-grounded companion coach content (#187 TODO 0) ----------
+    #
+    # Unlike `converse`/`evaluate_scenario` above, these four return an
+    # already-validated `CoachContent`, not a raw dict the caller must
+    # clean up: `CoachRequest`'s bounds and `validate_generated_content`'s
+    # forbidden-claim/evidence-citation checks (companion_coach.py) are the
+    # structured-output contract TODO 0 asks every provider to enforce, not
+    # an application-layer afterthought a second provider could skip. A
+    # provider that cannot satisfy them raises `CoachContentRejected`
+    # (companion_coach.py) rather than returning content that looks valid
+    # but is not.
+
+    async def explain_diagnosis(self, request: "CoachRequest") -> "CoachContent":
+        """A bounded, evidence-cited explanation of why a diagnosis was
+        reached — the default content for any intervention strategy that
+        has no more specific generator below."""
+        ...
+
+    async def generate_contrast_exercise(self, request: "CoachRequest") -> "CoachContent":
+        """A discriminative exercise between a confused pair, for the
+        CONTRAST intervention strategy (#185's `InterventionStrategy`)."""
+        ...
+
+    async def generate_prerequisite_lesson(self, request: "CoachRequest") -> "CoachContent":
+        """A short lesson on the missing prerequisite(s), for the
+        PREREQUISITE_PATH intervention strategy."""
+        ...
+
+    async def suggest_mnemonic_alternatives(self, request: "CoachRequest") -> "CoachContent":
+        """New mnemonic ideas for the MNEMONIC_REPLACEMENT intervention
+        strategy — never a verdict on whether the *old* mnemonic worked;
+        that stays measured, not generated (see MnemonicStrengthResponse)."""
         ...
