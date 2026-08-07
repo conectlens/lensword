@@ -52,6 +52,21 @@ jobs:
           VITE_API_URL: ${{ secrets.PRODUCTION_API_URL }}
         run: npm run build
 
+      - name: Ensure the Pages project exists
+        # `wrangler pages deploy` does not create the project — confirmed by
+        # an actual failed CI run ("The Pages project ... does not exist").
+        # Idempotent: fails on every run after the first (project already
+        # exists), which is fine — continue-on-error means that failure
+        # never blocks the real deploy step below.
+        uses: cloudflare/wrangler-action@v4
+        continue-on-error: true
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: apps/frontend
+          wranglerVersion: "4.120.0"
+          command: pages project create lensword-frontend --production-branch=main
+
       - name: Deploy
         uses: cloudflare/wrangler-action@v4
         with:
