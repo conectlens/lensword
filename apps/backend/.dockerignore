@@ -5,14 +5,3 @@ data/
 .env
 tests/
 .pytest_cache
-
-# Cloudflare Worker deploy tooling (see wrangler.toml) — not part of the
-# Python image; excluding it keeps the build context small regardless of
-# whether the builder's own context-transfer optimization catches it.
-node_modules
-cf-worker
-package.json
-package-lock.json
-tsconfig.json
-wrangler.toml
-.wrangler

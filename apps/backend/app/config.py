@@ -148,6 +148,26 @@ class Settings(BaseSettings):
             raise ValueError(f"must be greater than 0 (got {value})")
         return value
 
+    @field_validator("database_url")
+    @classmethod
+    def _require_psycopg_driver(cls, value: str) -> str:
+        """A bare `postgresql://`/`postgres://` URL — exactly what Supabase,
+        Neon, Railway, and most managed Postgres providers hand you by
+        default when you copy their connection string — makes SQLAlchemy
+        default to the psycopg2 driver, which this project does not
+        install (`requirements.txt` has psycopg[binary], psycopg3, not
+        psycopg2). The failure mode is a `ModuleNotFoundError` deep inside
+        Alembic's `env.py` on container startup, which gives no hint the
+        actual problem is a missing `+psycopg` in the URL scheme —
+        confirmed by hitting exactly this in a real deployment. Normalizing
+        here means every future deployment of this app is immune to it,
+        rather than every deployer needing to already know this gotcha."""
+        if value.startswith("postgresql://"):
+            return "postgresql+psycopg://" + value[len("postgresql://") :]
+        if value.startswith("postgres://"):
+            return "postgresql+psycopg://" + value[len("postgres://") :]
+        return value
+
     @field_validator("scheduler_job_store")
     @classmethod
     def _known_job_store(cls, value: str) -> str:

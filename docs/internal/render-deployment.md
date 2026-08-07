@@ -91,6 +91,15 @@ up. Supabase's dashboard labels both clearly on the project's Database
 settings page; copy the one marked "Direct connection," not "Transaction
 pooler" or "Session pooler."
 
+Separately — Supabase's (and Neon's, and Railway's) default copy-paste
+string is `postgresql://...`, not `postgresql+psycopg://...`. This used
+to be a required manual edit (missing it fails with a confusing
+`ModuleNotFoundError: No module named 'psycopg2'` deep inside Alembic on
+first deploy — hit exactly this in a real deployment). It's no longer
+something you need to remember: `app/config.py`'s `Settings` normalizes a
+bare `postgresql://`/`postgres://` URL to the `+psycopg` form
+automatically. Paste Supabase's direct-connection string as-is.
+
 ## Frontend: unaffected, stays on Cloudflare Pages
 
 Cloudflare Pages has no equivalent paid-plan gate — the existing
