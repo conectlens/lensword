@@ -5,13 +5,21 @@ and learner feedback (flag as misgraded) are split into #229 alongside
 #182's own deferred learner-facing debugging view — the same reasoning:
 a full new UI+API surface, not an extension of what ships here.
 """
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 
 from app.api.deps import CurrentUser, DiagnosisRepo, WordRepo
-from app.api.schemas.diagnosis import DiagnosisEvidenceResponse, DiagnosisResponse
+from app.api.schemas.diagnosis import DiagnosisEvidenceResponse, DiagnosisListResponse, DiagnosisResponse
 from app.domain.services.diagnosis_contracts import Diagnosis
 
 router = APIRouter(prefix="/api/v1/words", tags=["diagnosis"])
+
+# Issue #192's `/me/diagnoses` companion resource: account-wide rather than
+# per-word, so it gets its own router prefix in this same file instead of a
+# second file — the response mapping (`_response`) is identical either way.
+me_router = APIRouter(prefix="/api/v1/me", tags=["diagnosis"])
+
+DEFAULT_PAGE_SIZE = 50
+MAX_PAGE_SIZE = 200
 
 
 def _response(d: Diagnosis) -> DiagnosisResponse:
@@ -64,3 +72,36 @@ def diagnosis_history(
     original it corrected rather than replacing it."""
     _require_owned_word(word_repo, current_user.id, word_id)
     return [_response(d) for d in diagnosis_repo.list_for_word(current_user.id, word_id, limit)]
+
+
+def _decode_offset_cursor(cursor: str | None) -> int:
+    if not cursor:
+        return 0
+    try:
+        value = int(cursor)
+    except ValueError:
+        return 0
+    return value if value >= 0 else 0
+
+
+@me_router.get("/diagnoses", response_model=DiagnosisListResponse)
+def list_my_diagnoses(
+    current_user: CurrentUser,
+    diagnosis_repo: DiagnosisRepo,
+    limit: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    cursor: str | None = None,
+) -> DiagnosisListResponse:
+    """Every diagnosis across this account's whole vocabulary, newest
+    first — the account-wide counterpart to `latest_diagnosis` above, which
+    is scoped to one word. Backs issue #192's `lensword://me/diagnoses`
+    companion resource, which previously had no real endpoint to call and
+    was a permanent `{"items": [], "available": False}` stub.
+    """
+    offset = _decode_offset_cursor(cursor)
+    rows = diagnosis_repo.list_for_user(current_user.id, limit=limit + 1, offset=offset)
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    return DiagnosisListResponse(
+        items=[_response(d) for d in rows],
+        next_cursor=str(offset + limit) if has_more else None,
+    )

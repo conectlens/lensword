@@ -23,3 +23,17 @@ class DiagnosisResponse(BaseModel):
     sample_size: int
     competing_hypotheses: list[str]
     is_abstention: bool
+
+
+class DiagnosisListResponse(BaseModel):
+    """Issue #192's `/me/diagnoses` companion resource — every diagnosis
+    across the account's whole vocabulary, not one word. Bounded and
+    paginated with a real offset cursor: `next_cursor` is non-null only
+    when a further page genuinely exists, the same honesty
+    `ObservationHistoryResponse.has_more` already provides for observation
+    history, expressed as a cursor rather than a flag to match the MCP
+    resource shape this response backs.
+    """
+
+    items: list[DiagnosisResponse]
+    next_cursor: str | None = None

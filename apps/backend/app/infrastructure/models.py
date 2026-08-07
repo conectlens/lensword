@@ -725,6 +725,28 @@ class ObservationCorrectionModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
 
 
+class ModalityPreferenceModel(Base):
+    """A learner's stated modality preference (issue #186 TODO 0) —
+    append-only, the same reasoning `LearningObservationModel` and
+    `ObservationCorrectionModel` above use: a changed mind is a new row, not
+    an edit to an old one. Never read by `intervention_efficacy.py`'s
+    estimate functions, which are built exclusively from
+    `LearningObservationModel`/`InterventionOutcomeModel` — this table
+    exists precisely so "I like images" and "images measurably help" stay
+    two separate facts.
+    """
+
+    __tablename__ = "modality_preferences"
+    __table_args__ = (
+        Index("ix_modality_preferences_user_stated", "user_id", "stated_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    modality: Mapped[str] = mapped_column(String(32))
+    stated_at: Mapped[datetime] = mapped_column(DateTime)
+
+
 class KnowledgeEdgeModel(Base):
     """One relation between two of a learner's own words (issue #138, #203).
 
