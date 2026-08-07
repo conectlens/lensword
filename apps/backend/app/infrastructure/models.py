@@ -800,6 +800,10 @@ class DiagnosisModel(Base):
     diagnosed_at: Mapped[datetime] = mapped_column(DateTime)
     sample_size: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     competing_hypotheses: Mapped[list] = mapped_column(JSON, default=list)
+    # The other word of a confusion pair, set only by ExactConfusionRule
+    # (#185 TODO 1) so the intervention planner can stage isolate/contrast
+    # without re-parsing evidence description text.
+    related_word_id: Mapped[int | None] = mapped_column(ForeignKey("words.id"), nullable=True)
 
 
 class InterventionPlanModel(Base):
@@ -827,6 +831,15 @@ class InterventionPlanModel(Base):
     rationale: Mapped[str] = mapped_column(String(500))
     planned_at: Mapped[datetime] = mapped_column(DateTime)
     scheduled_for: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # The other word of a confusion pair (#185 TODO 1) — set only when
+    # `strategy` is isolate/contrast. Lets a later phase (#206) recover the
+    # pair a diagnosis actually chose instead of only a graph guess.
+    second_word_id: Mapped[int | None] = mapped_column(ForeignKey("words.id"), nullable=True)
+    # Comma-separated word ids, ranked strongest-first, capped at 3 (#185
+    # TODO 2). A string column rather than a join table: this is a snapshot
+    # of what the planner ranked *at plan time*, not a live relation the
+    # graph should keep in sync.
+    prerequisite_ids: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
 
 class InterventionOutcomeModel(Base):
@@ -849,6 +862,12 @@ class InterventionOutcomeModel(Base):
     result: Mapped[str] = mapped_column(String(48))
     recorded_at: Mapped[datetime] = mapped_column(DateTime)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Which delayed checkpoint this outcome measures (#185 TODO 5):
+    # immediate/24h/7d/next_review. Defaulted rather than added as a new
+    # table so a plan's completion outcomes (TODO 4: resolved/abandoned/
+    # rejected/postponed, always "immediate") and its measured-effectiveness
+    # outcomes (TODO 5) share one append-only history per word/strategy.
+    horizon: Mapped[str] = mapped_column(String(16), default="immediate", server_default="immediate")
 
 
 class CompanionSessionModel(Base):

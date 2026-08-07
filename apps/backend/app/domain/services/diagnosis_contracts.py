@@ -174,6 +174,11 @@ class Diagnosis:
     # #183 TODO 1's "prevent multiple rules from silently claiming the
     # same evidence as independent proof."
     competing_hypotheses: tuple[str, ...] = ()
+    # The other word of a confusion pair, when the winning rule names one
+    # (currently only EXACT_CONFUSION). #185 TODO 1 needs this to decide
+    # isolate-vs-contrast staging without re-parsing evidence description
+    # text; #206 TODO 5 needs it to source a real contrast pair.
+    related_word_id: int | None = None
 
     def __post_init__(self) -> None:
         if self.confidence is not None and not 0.0 <= self.confidence <= 1.0:
@@ -206,6 +211,15 @@ class InterventionPlan:
     rationale: str
     planned_at: datetime
     scheduled_for: datetime | None = None
+    # None until the repository assigns one; a caller referencing an
+    # existing plan (reject/postpone/choose-alternative, #185 TODO 4) always
+    # has a persisted plan, so this is only ever None on a not-yet-saved one.
+    id: int | None = None
+    # The pair's other word, set only for isolate/contrast strategies
+    # (#185 TODO 1).
+    second_word_id: int | None = None
+    # Up to 3 prerequisite word ids, strongest evidence first (#185 TODO 2).
+    prerequisite_ids: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -220,12 +234,19 @@ class InterventionOutcome:
     user_id: int
     strategy: str
     completed: bool
-    # A bounded status ("resolved", "abandoned", ...), not free text — safe
-    # to include in a structured log event (diagnosis_events.py) unlike
-    # InterventionPlan.rationale, which is.
+    # A bounded status, not free text — safe to include in a structured log
+    # event (diagnosis_events.py) unlike InterventionPlan.rationale, which
+    # is. TODO 4's completion outcomes: "resolved"/"abandoned"/"rejected"/
+    # "postponed". TODO 5's measured-effectiveness outcomes, always paired
+    # with a non-"immediate" `horizon` below: "effective"/"ineffective"/
+    # "inconclusive".
     result: str
     recorded_at: datetime
     completed_at: datetime | None = None
+    # Which delayed checkpoint this measures (#185 TODO 5): "immediate"
+    # (TODO 4's completion outcomes, and the default for anything not yet
+    # measuring delayed effectiveness), "24h", "7d", or "next_review".
+    horizon: str = "immediate"
 
 
 @dataclass(frozen=True, slots=True)

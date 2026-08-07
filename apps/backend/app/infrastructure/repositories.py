@@ -2114,6 +2114,7 @@ def _diagnosis_to_domain(m: DiagnosisModel) -> Diagnosis:
         diagnosed_at=m.diagnosed_at,
         sample_size=m.sample_size,
         competing_hypotheses=tuple(m.competing_hypotheses),
+        related_word_id=m.related_word_id,
     )
 
 
@@ -2134,6 +2135,7 @@ class SqlAlchemyDiagnosisRepository:
             diagnosed_at=diagnosis.diagnosed_at,
             sample_size=diagnosis.sample_size,
             competing_hypotheses=list(diagnosis.competing_hypotheses),
+            related_word_id=diagnosis.related_word_id,
         )
         self.db.add(model)
         self.db.flush()
@@ -2159,8 +2161,19 @@ class SqlAlchemyDiagnosisRepository:
         return [_diagnosis_to_domain(m) for m in self.db.scalars(stmt)]
 
 
+def _prerequisite_ids_to_column(ids: tuple[int, ...]) -> str | None:
+    return ",".join(str(i) for i in ids) if ids else None
+
+
+def _prerequisite_ids_from_column(value: str | None) -> tuple[int, ...]:
+    if not value:
+        return ()
+    return tuple(int(part) for part in value.split(","))
+
+
 def _intervention_plan_to_domain(m: InterventionPlanModel) -> InterventionPlan:
     return InterventionPlan(
+        id=m.id,
         word_id=m.word_id,
         user_id=m.user_id,
         diagnosis_outcome=m.diagnosis_outcome,
@@ -2170,6 +2183,8 @@ def _intervention_plan_to_domain(m: InterventionPlanModel) -> InterventionPlan:
         rationale=m.rationale,
         planned_at=m.planned_at,
         scheduled_for=m.scheduled_for,
+        second_word_id=m.second_word_id,
+        prerequisite_ids=_prerequisite_ids_from_column(m.prerequisite_ids),
     )
 
 
@@ -2182,6 +2197,7 @@ def _intervention_outcome_to_domain(m: InterventionOutcomeModel) -> Intervention
         result=m.result,
         recorded_at=m.recorded_at,
         completed_at=m.completed_at,
+        horizon=m.horizon,
     )
 
 
@@ -2203,6 +2219,8 @@ class SqlAlchemyInterventionRepository:
             rationale=plan.rationale,
             planned_at=plan.planned_at,
             scheduled_for=plan.scheduled_for,
+            second_word_id=plan.second_word_id,
+            prerequisite_ids=_prerequisite_ids_to_column(plan.prerequisite_ids),
         )
         self.db.add(model)
         self.db.flush()
@@ -2217,6 +2235,7 @@ class SqlAlchemyInterventionRepository:
             result=outcome.result,
             recorded_at=outcome.recorded_at,
             completed_at=outcome.completed_at,
+            horizon=outcome.horizon,
         )
         self.db.add(model)
         self.db.flush()
@@ -2229,6 +2248,37 @@ class SqlAlchemyInterventionRepository:
             .order_by(InterventionPlanModel.planned_at.desc())
         )
         return [_intervention_plan_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def list_outcomes_for_word(self, user_id: int, word_id: int) -> list[InterventionOutcome]:
+        stmt = (
+            select(InterventionOutcomeModel)
+            .where(InterventionOutcomeModel.user_id == user_id, InterventionOutcomeModel.word_id == word_id)
+            .order_by(InterventionOutcomeModel.recorded_at.desc())
+        )
+        return [_intervention_outcome_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def get_plan(self, user_id: int, plan_id: int) -> InterventionPlan | None:
+        stmt = select(InterventionPlanModel).where(
+            InterventionPlanModel.user_id == user_id, InterventionPlanModel.id == plan_id
+        )
+        model = self.db.scalars(stmt).first()
+        return _intervention_plan_to_domain(model) if model is not None else None
+
+    def list_all_for_user(self, user_id: int) -> list[InterventionPlan]:
+        stmt = (
+            select(InterventionPlanModel)
+            .where(InterventionPlanModel.user_id == user_id)
+            .order_by(InterventionPlanModel.planned_at.desc())
+        )
+        return [_intervention_plan_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def list_all_outcomes_for_user(self, user_id: int) -> list[InterventionOutcome]:
+        stmt = (
+            select(InterventionOutcomeModel)
+            .where(InterventionOutcomeModel.user_id == user_id)
+            .order_by(InterventionOutcomeModel.recorded_at.desc())
+        )
+        return [_intervention_outcome_to_domain(m) for m in self.db.scalars(stmt)]
 
 
 def _companion_session_to_domain(m: CompanionSessionModel) -> CompanionSession:
