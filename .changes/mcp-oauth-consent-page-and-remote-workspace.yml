@@ -22,8 +22,8 @@ technical_summary: >-
   built). Fixed on both ends: apps/frontend/src/features/mcp/
   OAuthAuthorizePage.tsx is that missing page (new route
   /oauth/authorize in App.tsx, not wrapped in ProtectedRoute since it must
-  not carry the app's nav shell) — it redirects to /login?next=<this URL>
-  when logged out (LoginPage.tsx now honors `next`, validated against
+  not carry the app's nav shell) — it redirects to /login with the current
+  URL preserved as its next= param when logged out (LoginPage.tsx now honors `next`, validated against
   open-redirect via a same-origin-relative-path check), otherwise fetches
   the consent preview, renders the requesting client's name and scopes,
   and on approve/deny POSTs the decision and does a hard

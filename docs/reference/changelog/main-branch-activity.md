@@ -11,6 +11,7 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 
 | Date | Commit | Author | Subject | Changelog fragment |
 |---|---|---|---|---|
+| 2026-08-08 | [871419b](https://github.com/conectlens/lensword/commit/871419b643168bf149a43050a18ee63673edb881) | ÖMER FARUK COŞKUN | Fix remote MCP OAuth connection failing on every attempt | none (predates this system) |
 | 2026-08-07 | [2d77c26](https://github.com/conectlens/lensword/commit/2d77c26ad784609d5ca6bac383d962116d824554) | ÖMER FARUK COŞKUN | Fix scheduled background jobs failing on every firing (reminders, acquisition, companion tasks, claim cleanup) | none (predates this system) |
 | 2026-08-07 | [7c66680](https://github.com/conectlens/lensword/commit/7c666802efa4b40a442bfd775bdf1dda76dba54c) | Ömer Faruk Coşkun | Merge branch 'main' into development | none (predates this system) |
 | 2026-08-07 | [11081cf](https://github.com/conectlens/lensword/commit/11081cf0fe096103998ba90cb7cd09fefec3a5f7) | Lenser | chore: switch to Supabase session pooler for IPv4 compatibility and enable MCP remote services with explicit issuer configuration | none (predates this system) |
@@ -50,6 +51,5 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 | 2026-08-07 | [e58dd7d](https://github.com/conectlens/lensword/commit/e58dd7d5e6817010649f8d8c8e83dacc068d9fd7) | Lenser | Regenerate changelog ledger against current development | none (predates this system) |
 | 2026-08-07 | [60bbba7](https://github.com/conectlens/lensword/commit/60bbba7a2ee710c3fc68f5862021a72da0acfc04) | Lenser | Rename companion-heads merge migration to match main's revision id | none (predates this system) |
 | 2026-08-07 | [95073c5](https://github.com/conectlens/lensword/commit/95073c557f614a92f0ed0c14ef49f54f5fe23d9b) | Lenser | Fix CodeQL clear-text-logging finding for SECRET_PATTERNS in check_media.py | none (predates this system) |
-| 2026-08-07 | [c78768d](https://github.com/conectlens/lensword/commit/c78768d2b034dbf4820d181797a12e4e7c8e339a) | Ömer Faruk Coşkun | Fix CodeQL clear-text-logging finding in check_media.py that got stranded off #306 (#308) | none (predates this system) |
 
 Generated from `git log -40 development` — 40 commits shown.
