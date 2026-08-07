@@ -10,6 +10,11 @@ machine — no API key, no account, and nothing leaves the host. The feature is
 **off by default**: an install that sets none of these settings builds no
 provider at all and behaves exactly as it did before.
 
+Ollama needs a daemon reachable at `OLLAMA_BASE_URL`, which rules it out on
+a typical hosted platform. For a deploy that cannot run its own Ollama
+process, see [Cloud AI Providers](cloud-ai-providers.md) for Gemini, Vertex
+AI, and OpenAI instead.
+
 **1. Install Ollama** — download it from [ollama.com/download](https://ollama.com/download),
 or on macOS with Homebrew:
 

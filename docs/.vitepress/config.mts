@@ -84,6 +84,7 @@ export default defineConfig({
           { text: 'MCP Server & Local CLI', link: '/install/mcp-local-cli' },
           { text: 'Self-Hosting & Deployment', link: '/install/self-hosting' },
           { text: 'Local AI / Ollama', link: '/install/local-ai-ollama' },
+          { text: 'Cloud AI Providers', link: '/install/cloud-ai-providers' },
           { text: 'Troubleshooting', link: '/install/troubleshooting' },
         ],
       },
