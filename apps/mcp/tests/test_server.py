@@ -1,7 +1,9 @@
 import io
 import json
 
-from lensword_mcp.server import BackendError, MCPServer, StdioMCPServer
+import pytest
+
+from lensword_mcp.server import BackendClient, BackendError, MCPServer, StdioMCPServer
 from lensword_mcp.context_import import ContextImportPolicy, ContextImportRejected, preview_context
 from lensword_mcp.companion_workflows import (
     CompanionLoopBudget,
@@ -115,6 +117,10 @@ def test_resources_templates_prompts_and_completion_are_exposed_after_initialize
 
     templates = server.handle({"jsonrpc": "2.0", "id": 4, "method": "resources/templates/list"})
     assert any(item["uriTemplate"] == "lensword://words/{word_id}" for item in templates["result"]["resourceTemplates"])
+    # #193 TODO 1: a durable companion session must be readable as a
+    # resource, not just actionable as a tool, so a second client can see
+    # where the first one left off before calling resume_companion_session.
+    assert any(item["uriTemplate"] == "lensword://session/{session_id}" for item in templates["result"]["resourceTemplates"])
     prompts = server.handle({"jsonrpc": "2.0", "id": 5, "method": "prompts/list"})
     assert {item["name"] for item in prompts["result"]["prompts"]} >= {"daily_check_in", "explain_word"}
     prompt = server.handle({"jsonrpc": "2.0", "id": 6, "method": "prompts/get", "params": {"name": "daily_check_in", "arguments": {"duration": "10"}}})
@@ -145,6 +151,51 @@ def test_context_import_is_bounded_preview_only_and_redacts_secrets():
     assert "do-not-store" not in terms
     assert preview.requires_confirmation is True
     assert preview.writes_performed is False
+
+
+class _RecordingBackendClient(BackendClient):
+    """A BackendClient whose `_request` is captured instead of making a real
+    HTTP call, so the URI-to-path mapping in `resource()` (#193 TODO 1) can
+    be tested without a running backend."""
+
+    def _request(self, path, body=None):
+        self.calls.append(path)
+        return {"path": path}
+
+
+def _client():
+    backend = _RecordingBackendClient(api_url="http://backend", token="t", requester="r", workspace="/w")
+    object.__setattr__(backend, "calls", [])
+    return backend
+
+
+def test_session_resource_template_forwards_to_the_companion_session_endpoint():
+    backend = _client()
+    result = backend.resource("lensword://session/" + "a" * 32)
+    assert backend.calls == [f"/api/v1/companion/sessions/{'a' * 32}"]
+    assert result == {"path": f"/api/v1/companion/sessions/{'a' * 32}"}
+
+
+@pytest.mark.parametrize(
+    "session_id",
+    [
+        "",
+        "not-hex-not-32-chars",
+        "a" * 31,
+        "a" * 33,
+        "../../etc/passwd",
+        "A" * 32,  # CompanionSession.id is lowercase uuid4().hex only
+    ],
+)
+def test_session_resource_template_rejects_malformed_ids_as_404_not_403(session_id):
+    """Same disclosure shape as the word/group/learning-path templates: a
+    session id that cannot possibly be valid never reaches the backend and
+    never distinguishes "not yours" from "does not exist"."""
+    backend = _client()
+    with pytest.raises(BackendError) as excinfo:
+        backend.resource(f"lensword://session/{session_id}")
+    assert excinfo.value.status == 404
+    assert backend.calls == []
 
 
 def test_context_import_refuses_unbounded_input_and_source():

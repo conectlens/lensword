@@ -62,6 +62,15 @@ class CompanionActionResponse(BaseModel):
     session: CompanionSessionResponse
 
 
+class CompanionSessionTransferRequest(BaseModel):
+    """Reassigns which companion connection currently controls a session
+    (#193 TODO 3), e.g. handing an in-progress session from a desktop client
+    to a mobile one without losing turns or restarting."""
+
+    connection_id: str = Field(min_length=1, max_length=128)
+    client_id: str = Field(min_length=1, max_length=128)
+
+
 class CompanionActivityCreateRequest(BaseModel):
     activity_type: str = Field(min_length=1, max_length=32)
     prompt: str = Field(min_length=1, max_length=4000)

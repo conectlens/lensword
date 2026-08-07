@@ -630,6 +630,19 @@ class OllamaProvider:
             )
             feedback = payload.get("feedback")
             return feedback.strip() if isinstance(feedback, str) else ""
+        if field == "companion_session_summary":
+            # The caller (SummarizeCompanionSessionUseCase) re-validates this
+            # output against the same facts before trusting it, and falls
+            # back to a deterministic summary if it invents anything — this
+            # instruction is a first line of defence, not the enforcement.
+            payload = await self._json_generation(
+                "Return JSON only with a concise `feedback` recap of this companion session. "
+                "Use only the supplied facts; never invent turn counts, activity ids, goals, or "
+                "any other detail not listed.",
+                f"{DATA_BLOCK_BEGIN}\nfacts: {_as_data(context or '', self._context_max_chars)}\n{DATA_BLOCK_END}",
+            )
+            feedback = payload.get("feedback")
+            return feedback.strip() if isinstance(feedback, str) else ""
         result = await self.enrich_word(term, source_language, target_language)
         values = {
             "example": result.examples, "mnemonic": [result.mnemonic or ""], "definition": result.definitions,

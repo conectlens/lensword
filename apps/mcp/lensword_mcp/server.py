@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -34,7 +35,20 @@ _RESOURCE_TEMPLATES = (
     ("lensword://words/{word_id}", "One learner-owned word"),
     ("lensword://words/{word_id}/diagnosis", "Diagnosis for one learner-owned word"),
     ("lensword://learning-paths/{path_id}", "One learner-owned learning path"),
+    # #193 TODO 1: a companion session's normalized state (turns, summary,
+    # status, revision) is what makes cross-client continuity possible — a
+    # second client reading this resource is how it learns where the first
+    # one left off before it calls resume_companion_session.
+    ("lensword://session/{session_id}", "One learner-owned durable companion session"),
 )
+
+# CompanionSession.id is `uuid4().hex` (see StartCompanionSessionUseCase) —
+# always exactly 32 lowercase hex characters. Checking the shape here, before
+# a request ever reaches the backend, keeps a malformed id a 404 rather than
+# whatever the backend's own routing does with a run of URL-unsafe or
+# oversized text, and matches the words/groups/learning-paths templates
+# above, which validate their own id shape the same way.
+_SESSION_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 
 _PROMPTS = (
     ("daily_check_in", "Review today's due facts and choose a bounded next step."),
@@ -150,6 +164,17 @@ class BackendClient:
             if not path_id.isdigit() or int(path_id) < 1:
                 raise BackendError(404, "Resource not found")
             return self._request(f"/api/v1/learning-paths/{path_id}")
+        if uri.startswith("lensword://session/"):
+            session_id = uri.removeprefix("lensword://session/")
+            # Same 404-not-403 shape as every id-taking template above: an
+            # id that cannot possibly be this account's (malformed, or
+            # someone else's session — which the bearer token alone would
+            # otherwise distinguish from "no such session" if this returned
+            # anything else) is indistinguishable from "not found" here,
+            # never disclosed as "exists but you can't see it".
+            if not _SESSION_ID_RE.fullmatch(session_id):
+                raise BackendError(404, "Resource not found")
+            return self._request(f"/api/v1/companion/sessions/{session_id}")
         raise BackendError(404, "Resource not found")
 
 

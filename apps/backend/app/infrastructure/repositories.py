@@ -11,6 +11,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import delete, exists, func, or_, select
+from sqlalchemy import update as sa_update
 from sqlalchemy.orm import Session, selectinload
 
 from app.domain.entities import (
@@ -29,6 +30,7 @@ from app.domain.entities import (
     User,
     Word,
 )
+from app.domain.exceptions import ConcurrentModificationError
 from app.domain.services.cefr_progress import MASTERY_STRENGTH
 from app.domain.services.acquisition import AcquisitionScheduler
 from app.domain.services.companion_sessions import (
@@ -2300,26 +2302,58 @@ class SqlAlchemyCompanionSessionRepository:
         )
         return _companion_session_to_domain(model) if model else None
 
-    def update(self, session: CompanionSession) -> CompanionSession:
-        model = self.db.scalar(
-            select(CompanionSessionModel).where(
+    def update(self, session: CompanionSession, *, expected_revision: int) -> CompanionSession:
+        """Optimistic-locking write (#193 TODO 3).
+
+        The previous implementation loaded the row, mutated the ORM object in
+        place, and flushed — an in-memory `revision += 1` with no enforcement
+        that the row was still at that revision when the write landed. Two
+        concurrent readers (two tabs, two companion clients) could both read
+        revision N and both flush, the second silently clobbering the first's
+        change while still "succeeding".
+
+        A `sqlalchemy.update()` core statement with `revision == expected_revision`
+        in its WHERE clause makes the compare-and-swap atomic at the database
+        level (works identically on SQLite and Postgres, no SELECT...FOR UPDATE
+        needed): only one concurrent writer's UPDATE can match the row, and its
+        `rowcount` tells us whether we won the race.
+        """
+        exists_stmt = select(CompanionSessionModel.id).where(
+            CompanionSessionModel.id == session.id,
+            CompanionSessionModel.user_id == session.user_id,
+        )
+        if self.db.scalar(exists_stmt) is None:
+            raise ValueError("Companion session not found")
+
+        result = self.db.execute(
+            sa_update(CompanionSessionModel)
+            .where(
                 CompanionSessionModel.id == session.id,
                 CompanionSessionModel.user_id == session.user_id,
+                CompanionSessionModel.revision == expected_revision,
+            )
+            .values(
+                connection_id=session.connection_id,
+                client_id=session.client_id,
+                goal=session.goal,
+                language=session.language,
+                group_id=session.group_id,
+                difficulty=session.difficulty,
+                active_activity=session.active_activity,
+                consent_snapshot=session.consent_snapshot,
+                summary=session.summary,
+                status=session.status.value,
+                revision=session.revision,
+                updated_at=session.updated_at,
             )
         )
-        if model is None:
-            raise ValueError("Companion session not found")
-        model.goal = session.goal
-        model.language = session.language
-        model.group_id = session.group_id
-        model.difficulty = session.difficulty
-        model.active_activity = session.active_activity
-        model.consent_snapshot = session.consent_snapshot
-        model.summary = session.summary
-        model.status = session.status.value
-        model.revision = session.revision
-        model.updated_at = session.updated_at
+        if result.rowcount == 0:
+            raise ConcurrentModificationError("Companion session", session.id, expected_revision)
         self.db.flush()
+        # Re-select rather than trust the in-memory `session` argument: this
+        # keeps the returned value a true read of what is now persisted,
+        # matching every other repository method here.
+        model = self.db.scalar(select(CompanionSessionModel).where(CompanionSessionModel.id == session.id))
         return _companion_session_to_domain(model)
 
     def list_turns(self, user_id: int, session_id: str, limit: int = 100) -> list[CompanionTurn]:

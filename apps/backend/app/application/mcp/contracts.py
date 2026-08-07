@@ -32,6 +32,23 @@ TOOL_CONTRACTS = tuple(ToolContract(name, f"https://lensword.app/mcp/{CONTRACT_V
     ("lensword.generate_exercises", AccessClass.WRITE, _schema({"word_id":{"type":"integer","minimum":1}, "kind":{"enum":["translation","definition","cloze"]}}, ["word_id"], write=True)),
     ("lensword.get_learning_progress", AccessClass.READ, _schema({"week":{"type":"string","maxLength":32}})),
     ("lensword.record_answer", AccessClass.WRITE, _schema({"session_id":{"type":"integer","minimum":1}, "word_id":{"type":"integer","minimum":1}, "outcome":{"enum":["correct","incorrect","skipped"]}}, ["session_id","word_id","outcome"], write=True)),
+    # Durable companion sessions (#193 TODO 1). `session_id` is the opaque
+    # hex id `CompanionSession.id` — bounded to 64 chars to match
+    # CompanionSessionModel.id (String(64)), same as every other resource
+    # id in this registry.
+    ("lensword.start_companion_session", AccessClass.WRITE, _schema({
+        "connection_id": {"type":"string","minLength":1,"maxLength":128},
+        "client_id": {"type":"string","minLength":1,"maxLength":128},
+        "goal": {"type":"string","maxLength":500},
+        "language": {"type":"string","maxLength":64},
+        "group_id": {"type":"integer","minimum":1},
+        "difficulty": {"type":"string","maxLength":32},
+        "active_activity": {"type":"string","maxLength":128},
+    }, ["connection_id","client_id"], write=True)),
+    ("lensword.get_companion_session", AccessClass.READ, _schema({"session_id": {"type":"string","minLength":1,"maxLength":64}}, ["session_id"])),
+    ("lensword.resume_companion_session", AccessClass.WRITE, _schema({"session_id": {"type":"string","minLength":1,"maxLength":64}}, ["session_id"], write=True)),
+    ("lensword.pause_companion_session", AccessClass.WRITE, _schema({"session_id": {"type":"string","minLength":1,"maxLength":64}}, ["session_id"], write=True)),
+    ("lensword.finish_companion_session", AccessClass.WRITE, _schema({"session_id": {"type":"string","minLength":1,"maxLength":64}}, ["session_id"], write=True)),
 ))
 
 def capabilities() -> dict:
