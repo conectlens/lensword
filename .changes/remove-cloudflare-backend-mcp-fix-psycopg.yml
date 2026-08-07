@@ -1,0 +1,64 @@
+id: remove-cloudflare-backend-mcp-fix-psycopg
+products:
+  - backend
+  - mcp-server
+  - web
+type: fixed
+summary: >-
+  Removed the Cloudflare Containers deploy config for backend/MCP (Render
+  is the actual deployment path now) and fixed a real bug where a
+  standard postgresql:// connection string (what Supabase/Neon/Railway
+  hand you by default) crashed the app on startup instead of connecting.
+technical_summary: >-
+  apps/backend/wrangler.toml, apps/backend/cf-worker/, apps/mcp/wrangler.toml,
+  apps/mcp/cf-worker/, and the Node/TS deploy tooling
+  (package.json/package-lock.json/tsconfig.json) for both were deleted
+  entirely, along with .github/workflows/deploy-backend.yml and
+  deploy-mcp.yml — not just disabled. Confirmed via a real deploy that
+  Cloudflare Containers requires the Workers Paid plan; Render (see
+  render-deployment.md) is the deployment path actually in use.
+  apps/mcp/Dockerfile is kept — Render's render.yaml references it too.
+
+  app/config.py's Settings.database_url gained a validator
+  (_require_psycopg_driver) that rewrites a bare postgresql:// or
+  postgres:// URL to postgresql+psycopg://. Without it, a standard
+  connection string (exactly what Supabase's dashboard gives you to
+  copy-paste) makes SQLAlchemy default to the psycopg2 driver, which
+  isn't installed — the failure is a ModuleNotFoundError deep inside
+  Alembic's env.py on container startup, with nothing pointing at the
+  actual cause. Hit this exact failure in a real deployment attempt, not
+  found by inspection.
+user_impact: >-
+  Pasting a standard Postgres connection string (Supabase, Neon, Railway,
+  etc.) as DATABASE_URL now works without any manual edit. No change for
+  anyone already using the +psycopg form.
+release_status: unreleased
+breaking: false
+migration: none
+known_limitations: []
+compatibility:
+  requires:
+    server_api: null
+verification:
+  automated_tests:
+    status: passed
+    commands:
+      - cd apps/backend && python -m pytest tests/test_database_url_config.py -v (4/4 passing, tested against the real Settings class with the exact scheme forms Supabase/Neon/Railway use)
+      - cd apps/backend && python -m pytest -q (full backend suite — run to completion in this PR's CI; too slow to wait out in the authoring session)
+    workflow_url: null
+  artifact_build:
+    status: not_run
+    artifacts: []
+  manual_platform_checks:
+    macos: not_applicable
+    windows: not_applicable
+    linux: not_applicable
+  production_observation:
+    status: observed
+security_impact: none
+documentation_required: false
+date: '2026-08-07'
+references:
+  issues: []
+  pull_requests: []
+  commits: []
