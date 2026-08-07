@@ -198,13 +198,16 @@ class _MCPHTTPRequestHandler(BaseHTTPRequestHandler):
             return True
         return origin in self.server_transport.allowed_origins
 
+    def _safe_header_value(self, value: str) -> str:
+        return value.replace("\r", "").replace("\n", "")
+
     def _send_json(self, status: int, payload: dict | None, *, session_id: str | None = None) -> None:
         body = b"" if payload is None else json.dumps(payload, separators=(",", ":")).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         if session_id is not None:
-            self.send_header(SESSION_ID_HEADER, session_id)
+            self.send_header(SESSION_ID_HEADER, self._safe_header_value(session_id))
         self.end_headers()
         if body:
             self.wfile.write(body)
@@ -265,7 +268,7 @@ class _MCPHTTPRequestHandler(BaseHTTPRequestHandler):
         if response is None:
             self.send_response(202)
             self.send_header("Content-Length", "0")
-            self.send_header(SESSION_ID_HEADER, session_id)
+            self.send_header(SESSION_ID_HEADER, self._safe_header_value(session_id))
             self.end_headers()
             return
         self._send_json(200, response, session_id=session_id)
