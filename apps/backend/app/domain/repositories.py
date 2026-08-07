@@ -34,6 +34,7 @@ from app.domain.services.diagnosis_contracts import (
     InterventionOutcome,
     InterventionPlan,
     LearningObservation,
+    ModalityPreference,
     ObservationCorrection,
 )
 from app.domain.services.companion_sessions import CompanionSession, CompanionTurn
@@ -233,6 +234,20 @@ class InterventionRepository(Protocol):
         self, user_id: int, limit: int | None = None, offset: int = 0
     ) -> list[InterventionPlan]: ...
     def list_all_outcomes_for_user(self, user_id: int) -> list[InterventionOutcome]: ...
+
+
+class ModalityPreferenceRepository(Protocol):
+    """A learner's stated modality preferences (#186 TODO 0), append-only —
+    the same reasoning `LearningObservationRepository` documents: a changed
+    mind is a new record, not an edit that erases what was stated before.
+    """
+
+    def add(self, preference: ModalityPreference) -> ModalityPreference: ...
+    # The most recently stated preference — "what does the learner say they
+    # prefer right now" has one answer, even though the history behind it
+    # is append-only.
+    def latest_for_user(self, user_id: int) -> ModalityPreference | None: ...
+    def list_for_user(self, user_id: int) -> list[ModalityPreference]: ...
 
 
 class CompanionSessionRepository(Protocol):
