@@ -95,22 +95,22 @@
       "id": "local-cli",
       "name": "Local CLI",
       "kind": "public-product",
-      "sourcePath": "apps/mcp",
-      "purpose": "Command-line entry point ('lensword') distinct from the MCP server, with add/explain/diagnose/review/import-context subcommands.",
+      "sourcePath": "apps/cli",
+      "purpose": "Command-line entry point ('lensword'), independently packaged from the MCP server (issue #311), with add/explain/diagnose/review/import-context subcommands.",
       "runtimeDependencies": ["apps/backend (all subcommands except import-context)"],
       "install": ["pip install from source — entry point 'lensword'"],
       "platforms": ["any Python 3.11+ environment"],
-      "versionSource": "apps/mcp/pyproject.toml#version",
+      "versionSource": "apps/cli/pyproject.toml#version",
       "currentVersion": "0.1.0",
       "status": "public-source-install-only",
-      "statusNote": "import-context is read-only/offline by design (never writes, never contacts the backend, redacts secrets, 50,000-char default cap). Other subcommands need the same backend env vars as the MCP server.",
+      "statusNote": "import-context is read-only/offline by design (never writes, never contacts the backend, redacts secrets, 50,000-char default cap). Other subcommands need the same backend env vars as the MCP server. A PyPI publish workflow now exists (.github/workflows/publish-cli.yml) but has not been triggered — no tag has been pushed and no trusted publisher has been configured on PyPI's side yet, so 'pip install lensword-cli' from the real index does not work.",
       "ciCoverage": [],
       "releaseChannel": null,
-      "changelogRoute": "/reference/changelog/mcp",
+      "changelogRoute": "/reference/changelog/local-cli",
       "installRoute": "/install/mcp-local-cli",
-      "versionTagPrefix": "mcp-v",
+      "versionTagPrefix": "cli-v",
       "releaseStatus": "unreleased",
-      "artifactTypes": ["sdist/wheel (shares apps/mcp's package with mcp-server — same tag prefix, not versioned separately)"]
+      "artifactTypes": ["sdist/wheel (built locally only, never published to PyPI)"]
     },
     {
       "id": "backend",
@@ -187,7 +187,7 @@
       "label": "Preview/import developer context through the local CLI",
       "ownerProduct": "local-cli",
       "status": "supported",
-      "prerequisites": ["local Python install of apps/mcp"],
+      "prerequisites": ["local Python install of apps/cli"],
       "limitations": []
     },
     {
