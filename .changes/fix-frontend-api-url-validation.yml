@@ -1,0 +1,53 @@
+id: fix-frontend-api-url-validation
+products:
+  - web
+type: fixed
+summary: >-
+  Fixed a bug where a scheme-less VITE_API_URL silently sent every API
+  request to the wrong place instead of failing clearly.
+technical_summary: >-
+  apps/frontend/src/lib/runtimeConfig.ts's browser-path fallback used
+  VITE_API_URL as-is with no validation. A value missing its http(s)://
+  scheme (e.g. "lensword-api.conectlens.com" instead of
+  "https://lensword-api.conectlens.com") doesn't fail the build — every
+  fetch() call silently treats it as a relative path and resolves it
+  against the page's own origin. Caught this exact way in production:
+  real requests going to
+  https://lensword.conectlens.com/lensword-api.conectlens.com/api/v1/...
+  and failing with a confusing 405, with nothing pointing at the actual
+  misconfigured environment variable. Added an explicit check
+  (assertAbsoluteHttpUrl) that throws a specific, actionable error at
+  first use instead.
+user_impact: >-
+  A misconfigured API URL now fails immediately with a clear error
+  instead of silently sending every request to the wrong place with a
+  confusing 405/404.
+release_status: unreleased
+breaking: false
+migration: none
+known_limitations: []
+compatibility:
+  requires:
+    server_api: null
+verification:
+  automated_tests:
+    status: passed
+    commands:
+      - cd apps/frontend && npx vitest run src/lib/runtimeConfig.test.ts (5/5 passing, pre-existing tests unaffected)
+    workflow_url: null
+  artifact_build:
+    status: not_run
+    artifacts: []
+  manual_platform_checks:
+    macos: not_applicable
+    windows: not_applicable
+    linux: not_applicable
+  production_observation:
+    status: observed
+security_impact: none
+documentation_required: false
+date: '2026-08-07'
+references:
+  issues: []
+  pull_requests: []
+  commits: []

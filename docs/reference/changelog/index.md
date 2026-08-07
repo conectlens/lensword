@@ -82,6 +82,22 @@ Original SVG mark (lens + word-line) in brand/logo/svg/, with a reproducible gen
 
 References: [#270](https://github.com/conectlens/lensword/issues/270), [PR #291](https://github.com/conectlens/lensword/pull/291)
 
+**Web Application**
+
+<a id="fix-frontend-api-url-validation"></a>
+
+### Fixed: Fixed a bug where a scheme-less VITE_API_URL silently sent every API request to the wrong place instead of failing clearly.
+
+*2026-08-07* — verification: automated tests: passed; production observation: observed
+
+A misconfigured API URL now fails immediately with a clear error instead of silently sending every request to the wrong place with a confusing 405/404.
+
+<details><summary>Technical detail</summary>
+
+apps/frontend/src/lib/runtimeConfig.ts's browser-path fallback used VITE_API_URL as-is with no validation. A value missing its http(s):// scheme (e.g. "lensword-api.conectlens.com" instead of "https://lensword-api.conectlens.com") doesn't fail the build — every fetch() call silently treats it as a relative path and resolves it against the page's own origin. Caught this exact way in production: real requests going to https://lensword.conectlens.com/lensword-api.conectlens.com/api/v1/... and failing with a confusing 405, with nothing pointing at the actual misconfigured environment variable. Added an explicit check (assertAbsoluteHttpUrl) that throws a specific, actionable error at first use instead.
+
+</details>
+
 **Desktop Application, Web Application, Backend (API)**
 
 <a id="fix-desktop-build-and-selfhost-env-gaps"></a>
