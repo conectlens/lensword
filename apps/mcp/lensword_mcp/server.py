@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -34,14 +35,23 @@ _RESOURCE_TEMPLATES = (
     ("lensword://words/{word_id}", "One learner-owned word"),
     ("lensword://words/{word_id}/diagnosis", "Diagnosis for one learner-owned word"),
     ("lensword://learning-paths/{path_id}", "One learner-owned learning path"),
-    # Issue #193 landed `CompanionSession` and `GET
-    # /api/v1/companion/sessions/{session_id}` before this template did —
-    # this is the last of TODO 1's five named templates ("group, word,
-    # session, diagnosis, and learning-path"). Session ids are opaque
-    # hex tokens (`uuid4().hex`), not integers like the other templates, so
-    # `BackendClient.resource` validates this one differently below.
-    ("lensword://session/{session_id}", "One learner-owned companion session"),
+    # #193 TODO 1: a companion session's normalized state (turns, summary,
+    # status, revision) is what makes cross-client continuity possible — a
+    # second client reading this resource is how it learns where the first
+    # one left off before it calls resume_companion_session. Session ids
+    # are opaque `uuid4().hex` tokens, not integers like the other
+    # templates, so `BackendClient.resource` validates this one
+    # differently below.
+    ("lensword://session/{session_id}", "One learner-owned durable companion session"),
 )
+
+# CompanionSession.id is `uuid4().hex` (see StartCompanionSessionUseCase) —
+# always exactly 32 lowercase hex characters. Checking the shape here, before
+# a request ever reaches the backend, keeps a malformed id a 404 rather than
+# whatever the backend's own routing does with a run of URL-unsafe or
+# oversized text, and matches the words/groups/learning-paths templates
+# above, which validate their own id shape the same way.
+_SESSION_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 
 _PROMPTS = (
     ("daily_check_in", "Review today's due facts and choose a bounded next step."),
@@ -160,12 +170,15 @@ class BackendClient:
             return self._request(f"/api/v1/learning-paths/{path_id}")
         if uri.startswith("lensword://session/"):
             session_id = uri.removeprefix("lensword://session/")
-            # Session ids are opaque `uuid4().hex` tokens, not integers —
-            # bounded length and a safe character set stand in for the
-            # `isdigit()` check the other templates use, then the backend's
-            # own ownership check (404, not 403, for someone else's
-            # session — `companion.py`'s `_owned`) is what actually decides.
-            if not session_id or len(session_id) > 128 or not all(c.isalnum() or c in "-_" for c in session_id):
+            # Same 404-not-403 shape as every id-taking template above: an
+            # id that cannot possibly be this account's (malformed, or
+            # someone else's session — which the bearer token alone would
+            # otherwise distinguish from "no such session" if this returned
+            # anything else) is indistinguishable from "not found" here,
+            # never disclosed as "exists but you can't see it". The backend's
+            # own ownership check (404, not 403 — `companion.py`'s `_owned`)
+            # is what actually decides once past this shape check.
+            if not _SESSION_ID_RE.fullmatch(session_id):
                 raise BackendError(404, "Resource not found")
             return self._request(f"/api/v1/companion/sessions/{session_id}")
         raise BackendError(404, "Resource not found")
