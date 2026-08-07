@@ -91,7 +91,7 @@ Protocols. `app/application/use_cases/domain_kernel_spike.py`'s
 `RunSoftwareConceptSpikeUseCase` is the one real, gated entry point,
 checking `RecallSettings.domain_kernel_spike_enabled` (default off,
 persisted the same way every other `RecallSettings` flag is, migration
-`20260807_36_domain_kernel_spike_flag`) before running anything — but
+`20260807_36`) before running anything — but
 deliberately **not** surfaced in `RecallSettingsResponse`/
 `RecallSettingsUpdateRequest` or any router: there is nothing for an end
 user to opt into, this is a developer/architecture flag, not a product
