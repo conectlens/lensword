@@ -145,18 +145,30 @@ def validate_payload(contract: ToolContract, payload: dict) -> str | None:
     available without accepting arbitrary schema features or adding a second
     dynamic execution surface. It deliberately fails closed on every unknown
     property and malformed primitive.
+
+    `request_id` is always allowed even when a READ contract's schema doesn't
+    declare it: every apps/mcp client call (server.py's BackendClient.invoke)
+    attaches one unconditionally, since a caller can't generally know a
+    tool's access class up front. The /api/v1/mcp/invoke route handler
+    (api/routers/mcp.py) already treats request_id as optional/unused for
+    reads and mandatory for writes (its `contract.access != AccessClass.READ`
+    checks) — this validator rejecting it outright for reads contradicted
+    that route handler's own logic and broke every read-tool call made
+    through apps/mcp's stdio server.
     """
     schema = contract.input_schema
     if not isinstance(payload, dict):
         return "payload must be an object"
     properties = schema["properties"]
-    unknown = set(payload) - set(properties)
+    unknown = set(payload) - set(properties) - {"request_id"}
     if unknown:
         return f"unsupported payload field: {sorted(unknown)[0]}"
     missing = [name for name in schema.get("required", []) if name not in payload]
     if missing:
         return f"missing required payload field: {missing[0]}"
     for name, value in payload.items():
+        if name == "request_id" and name not in properties:
+            continue
         rules = properties[name]
         if "enum" in rules and value not in rules["enum"]:
             return f"invalid value for {name}"
