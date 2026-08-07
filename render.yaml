@@ -68,6 +68,22 @@ services:
         value: "true"
       - key: MCP_ISSUER_URL
         value: https://lensword-api.conectlens.com
+      # Where a connector's browser redirect for consent actually lands —
+      # this backend's own /api/v1/mcp/oauth/authorize is a Bearer-token
+      # JSON API, not something a browser navigation can call; see
+      # Settings.mcp_consent_url's docstring. Must be the deployed
+      # frontend's real origin (the first entry in CORS_ORIGINS above) plus
+      # /oauth/authorize.
+      - key: MCP_CONSENT_URL
+        value: https://lensword.conectlens.com/oauth/authorize
+      # The workspace a remote OAuth grant (Claude.ai, no local filesystem)
+      # is recorded under, since no external client sends the app's own
+      # workspace concept. Must be byte-for-byte identical to
+      # LENSWORD_MCP_WORKSPACE on lensword-mcp below — that service presents
+      # this same string on every tool-invocation request, and a grant
+      # recorded under a different value would never match it.
+      - key: MCP_REMOTE_WORKSPACE
+        value: production
 
   - type: web
     name: lensword-mcp
@@ -93,5 +109,7 @@ services:
       # correct value beats an unverified cross-reference.
       - key: LENSWORD_API_URL
         value: https://lensword-api.conectlens.com
+      # Must be byte-for-byte identical to MCP_REMOTE_WORKSPACE on
+      # lensword-backend above — see that key's comment.
       - key: LENSWORD_MCP_WORKSPACE
         value: production

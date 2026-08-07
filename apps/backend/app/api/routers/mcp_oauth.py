@@ -85,7 +85,10 @@ def authorization_server_metadata() -> dict:
     base = settings_.mcp_issuer_url.rstrip("/")
     return {
         "issuer": settings_.mcp_issuer_url,
-        "authorization_endpoint": f"{base}/api/v1/mcp/oauth/authorize",
+        # The frontend's consent page, not this API — see mcp_consent_url's
+        # docstring for why a browser can never be sent to the API URL
+        # directly.
+        "authorization_endpoint": settings_.mcp_consent_url,
         "token_endpoint": f"{base}/api/v1/mcp/oauth/token",
         "registration_endpoint": f"{base}/api/v1/mcp/oauth/clients",
         "revocation_endpoint": f"{base}/api/v1/mcp/oauth/revoke",
@@ -174,9 +177,15 @@ class ConsentPreviewResponse(BaseModel):
 
 @router.get("/authorize", response_model=ConsentPreviewResponse)
 def preview_authorization(
-    current_user: CurrentUser, db: DbSession, client_id: str, redirect_uri: str, scope: str, workspace: str,
+    current_user: CurrentUser, db: DbSession, client_id: str, redirect_uri: str, scope: str,
+    workspace: str | None = None,
     response_type: str = "code", code_challenge: str = "", code_challenge_method: str = "", state: str = "",
 ) -> ConsentPreviewResponse:
+    # No external OAuth client (Claude.ai included) ever sends `workspace` —
+    # it names a local-filesystem concept of this app's, not anything an
+    # RFC 8707-style `resource` parameter maps to. Absent, this is always a
+    # remote grant; see mcp_remote_workspace's docstring.
+    workspace = workspace or get_settings().mcp_remote_workspace
     client = _load_client(db, client_id)
     if not redirect_uri_matches(redirect_uri, client.redirect_uris):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="redirect_uri does not match a registered value")
@@ -204,7 +213,7 @@ class AuthorizeDecisionRequest(BaseModel):
     code_challenge: str = Field(min_length=43, max_length=128)
     code_challenge_method: str = Field(pattern=f"^{SUPPORTED_CODE_CHALLENGE_METHOD}$")
     scope: str = Field(min_length=1, max_length=512)
-    workspace: str = Field(min_length=1, max_length=1024)
+    workspace: str | None = Field(default=None, max_length=1024)
     state: str = Field(min_length=1, max_length=512)
     approve: bool
 
@@ -220,7 +229,12 @@ def decide_authorization(payload: AuthorizeDecisionRequest, current_user: Curren
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="redirect_uri does not match a registered value")
     if not payload.approve:
         return AuthorizeDecisionResponse(redirect_uri=f"{payload.redirect_uri}?error=access_denied&state={payload.state}")
-    if not is_valid_workspace(payload.workspace):
+    # Same default as the GET preview above — kept in sync deliberately: a
+    # client that omitted workspace on the preview and now includes it (or
+    # vice versa) would otherwise see a grant workspace that doesn't match
+    # what it was just shown.
+    workspace = payload.workspace or get_settings().mcp_remote_workspace
+    if not is_valid_workspace(workspace):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_workspace")
     requested = parse_scope_string(payload.scope)
     if not requested:
@@ -236,11 +250,11 @@ def decide_authorization(payload: AuthorizeDecisionRequest, current_user: Curren
         access = _TOOL_ACCESS[tool].value
         existing = (
             db.query(MCPGrantModel)
-            .filter_by(requester=requester, server="lensword", tool=tool, access=access, workspace=payload.workspace)
+            .filter_by(requester=requester, server="lensword", tool=tool, access=access, workspace=workspace)
             .one_or_none()
         )
         if existing is None:
-            db.add(MCPGrantModel(requester=requester, server="lensword", tool=tool, access=access, workspace=payload.workspace, mode=GrantMode.ALWAYS.value))
+            db.add(MCPGrantModel(requester=requester, server="lensword", tool=tool, access=access, workspace=workspace, mode=GrantMode.ALWAYS.value))
         elif existing.revoked_at is not None:
             existing.revoked_at = None
 
@@ -249,7 +263,7 @@ def decide_authorization(payload: AuthorizeDecisionRequest, current_user: Curren
         MCPOAuthAuthorizationCodeModel(
             code_hash=hash_token(code), client_id=payload.client_id, user_id=current_user.id or 0,
             redirect_uri=payload.redirect_uri, code_challenge=payload.code_challenge,
-            code_challenge_method=payload.code_challenge_method, scope=payload.scope, workspace=payload.workspace,
+            code_challenge_method=payload.code_challenge_method, scope=payload.scope, workspace=workspace,
             expires_at=now + timedelta(seconds=get_settings().mcp_authorization_code_ttl_seconds), created_at=now,
         )
     )

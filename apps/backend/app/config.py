@@ -118,6 +118,30 @@ class Settings(BaseSettings):
     # a remote client actually reaches this API on; the insecure default is
     # fine for local development only.
     mcp_issuer_url: str = "http://localhost:8000"
+    # Where `authorization_endpoint` (in the authorization-server metadata
+    # document) sends a connector's browser redirect. This backend has no
+    # page-rendering layer of its own — GET/POST /api/v1/mcp/oauth/authorize
+    # are a JSON API requiring a Bearer token, which a browser navigation
+    # can never attach — so the endpoint a browser can actually be sent to
+    # must be the frontend's consent page (OAuthAuthorizePage), which calls
+    # that JSON API itself with the logged-in user's stored token. Must be
+    # this deployment's real frontend origin plus "/oauth/authorize" (the
+    # frontend route); the insecure localhost default is fine for local
+    # development only, matching mcp_issuer_url's own default.
+    mcp_consent_url: str = "http://localhost:5173/oauth/authorize"
+    # `workspace` elsewhere in this codebase (MCPGrantModel, InvokeRequest,
+    # is_valid_workspace) names an absolute local filesystem path the desktop
+    # companion is sandboxed to — meaningless for a remote, browser-connected
+    # OAuth client like Claude.ai, which has no local filesystem at all and
+    # has no way to supply one (it sends RFC 8707's `resource`, not this
+    # app-specific concept). This is the one workspace value remote grants
+    # use instead, standing in for "no real workspace" — see
+    # is_valid_workspace's special case for it. Must match the *deployed
+    # remote MCP resource server's* LENSWORD_MCP_WORKSPACE exactly (like
+    # mcp_issuer_url must match that service's LENSWORD_API_URL): that
+    # service presents this same string on every tool-invocation request, and
+    # a grant recorded under a different workspace would never match it.
+    mcp_remote_workspace: str = "production"
     # Independent budget for the OAuth token endpoint (issue #196 TODO 4),
     # keyed by IP the same way rate_limit_login is — there is no account
     # bound to a code/refresh-token exchange attempt until it succeeds.

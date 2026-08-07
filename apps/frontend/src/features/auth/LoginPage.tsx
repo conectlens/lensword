@@ -1,14 +1,25 @@
 import { useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { ApiRequestError } from '../../lib/api'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { Icon } from '../../components/ui/Icon'
 
+// A single leading slash, never "//..." (a protocol-relative URL — the
+// classic open-redirect trick, since a browser treats "//evil.example" as
+// "same scheme, different host") and never an embedded "://". `next` comes
+// from the URL, i.e. from whoever sent the user here, so it is untrusted
+// input even though it names a route inside this app.
+function safeNextPath(value: string | null): string | null {
+  if (!value || !value.startsWith('/') || value.startsWith('//') || value.includes('://')) return null
+  return value
+}
+
 export function LoginPage() {
   const { login } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -21,7 +32,7 @@ export function LoginPage() {
     setLoading(true)
     try {
       await login(email, password)
-      navigate('/dashboard')
+      navigate(safeNextPath(searchParams.get('next')) ?? '/dashboard')
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Something went wrong. Please try again.')
     } finally {

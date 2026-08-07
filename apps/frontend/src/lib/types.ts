@@ -172,6 +172,36 @@ export interface McpConnection {
   active_token_count: number
 }
 
+/** Query params an OAuth client (e.g. Claude.ai) redirects the browser to
+ *  this app's /oauth/authorize page with. `workspace` is deliberately
+ *  absent — no external client sends it, see McpAuthorizePreview. */
+export interface McpAuthorizeRequest {
+  response_type: string
+  client_id: string
+  redirect_uri: string
+  code_challenge: string
+  code_challenge_method: string
+  scope: string
+  state: string
+}
+
+/** GET /api/v1/mcp/oauth/authorize's response: what to show on the consent
+ *  screen. `workspace` is server-resolved (defaulted when the request omitted
+ *  it) and must be sent back unchanged on the POST decision below. */
+export interface McpAuthorizePreview {
+  client_id: string
+  client_name: string
+  redirect_uri: string
+  workspace: string
+  scopes: string[]
+  already_granted_scopes: string[]
+  new_scopes: string[]
+}
+
+export interface McpAuthorizeDecision {
+  redirect_uri: string
+}
+
 export interface RecallSettings {
   scheduler: 'sm2' | 'fsrs'
   enabled: boolean

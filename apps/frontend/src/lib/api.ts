@@ -1,5 +1,5 @@
 import type {
-  AdminStats, AcquisitionState, Group, McpConnection, MnemonicNote, ProfileOverview, RecallSettings, Room,
+  AdminStats, AcquisitionState, Group, McpAuthorizeDecision, McpAuthorizePreview, McpAuthorizeRequest, McpConnection, MnemonicNote, ProfileOverview, RecallSettings, Room,
   SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile, CefrProgress, Prerequisites, RelatedWord, WordRevision, AiState, OllamaProbe, LearningPath, GeneratePathResult, Conversation, ConversationMessage, SendMessageResult, Difficulty, Scenario, ScenarioAttempt, ScenarioVocabulary, ObservationHistoryResponse, ObservationCorrection, ObservationCorrectionReason, QueuedOperation, SyncOperationResult, SyncConflict, EfficacyEstimate, ModalityPreference,
 } from './types'
 import { resolveApiBase } from './runtimeConfig'
@@ -310,6 +310,14 @@ export const mcpOauthApi = {
   connections: () => request<McpConnection[]>('/api/v1/mcp/oauth/connections'),
   revoke: (clientId: string) =>
     request<void>(`/api/v1/mcp/oauth/connections/${encodeURIComponent(clientId)}/revoke`, { method: 'POST' }),
+  // The consent-preview step of the OAuth flow (OAuthAuthorizePage). No
+  // `workspace` param here — see McpAuthorizeRequest.
+  authorize: (params: McpAuthorizeRequest) =>
+    request<McpAuthorizePreview>(`/api/v1/mcp/oauth/authorize?${new URLSearchParams({ ...params }).toString()}`),
+  // The approve/deny decision. `workspace` must be the value the preview
+  // call above returned, not anything the caller invents.
+  decide: (payload: McpAuthorizeRequest & { workspace: string; approve: boolean }) =>
+    request<McpAuthorizeDecision>('/api/v1/mcp/oauth/authorize', { method: 'POST', body: JSON.stringify(payload) }),
 }
 
 export const observationsApi = {
