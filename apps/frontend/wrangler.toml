@@ -1,0 +1,9 @@
+# Cloudflare Pages project config for the frontend static build. Schema
+# confirmed against developers.cloudflare.com/pages/functions/wrangler-configuration/
+# as of this writing. Unlike backend/mcp, this is a plain static-asset
+# deploy — no Container, no Durable Object, no Worker glue needed; the SPA
+# calls the backend Container's public URL directly (VITE_API_URL, baked
+# in at build time — see .github/workflows/deploy-frontend.yml).
+name = "lensword-frontend"
+pages_build_output_dir = "./dist"
+compatibility_date = "2025-01-01"

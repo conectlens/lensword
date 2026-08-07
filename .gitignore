@@ -9,11 +9,19 @@ apps/backend/*.egg-info/
 apps/backend/.pytest_cache/
 apps/backend/data/
 apps/backend/.env
+# Cloudflare Worker glue deploy tooling (cf-worker/) — see wrangler.toml.
+apps/backend/node_modules
+apps/backend/node_modules/
+apps/backend/.wrangler/
 
 # MCP
 apps/mcp/**/__pycache__/
 apps/mcp/.pytest_cache/
 apps/mcp/*.egg-info/
+# Cloudflare Worker glue deploy tooling (cf-worker/) — see wrangler.toml.
+apps/mcp/node_modules
+apps/mcp/node_modules/
+apps/mcp/.wrangler/
 
 # Frontend
 apps/frontend/node_modules
@@ -21,6 +29,7 @@ apps/frontend/node_modules/
 apps/frontend/dist/
 apps/frontend/.env
 apps/frontend/tsconfig.tsbuildinfo
+apps/frontend/.wrangler/
 
 # Desktop shell
 # Both forms, for the same reason as the backend entries above.

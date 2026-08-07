@@ -57,13 +57,12 @@ product's page from that single source, so the views can't drift apart.
 [`.changes/README.md`](https://github.com/conectlens/lensword/blob/development/.changes/README.md)
 has the full schema and authoring guide.
 
-Fragment validation (`scripts/changelog/schema.py`) exists today as a
-script contributors and reviewers can run by hand. CI enforcement —
-failing a pull request that changes observable behavior without a
-fragment, or that claims verification it can't back up — is tracked
-separately in
-[issue #282](https://github.com/conectlens/lensword/issues/282) and
-doesn't exist yet.
+Fragment validation (`scripts/changelog/schema.py`) is enforced in CI
+(`.github/workflows/changelog.yml`, [issue #282](https://github.com/conectlens/lensword/issues/282)):
+a pull request that touches a registered product's source with no
+changelog fragment at all fails the build, and a `passed` verification
+claim with no referenced command, workflow, or artifact is rejected at
+authoring time.
 
 ## Versioning and tags
 
@@ -77,12 +76,49 @@ one ambiguous `v*` tag standing in for the whole ecosystem:
 | Browser Extension | `browser-v` | `apps/browser/manifest.json` |
 | MCP Server / Local CLI | `mcp-v` | `apps/mcp/pyproject.toml` (both entry points ship in one package) |
 
-This is a **documented decision, not yet a completed migration**: no tag
-of any kind has ever been pushed against this repository (`git tag -l` is
-empty), and `.github/workflows/release.yml` still triggers on a bare `v*`
-tag for desktop only. Updating that workflow to the namespaced convention
-above, and cutting a first real release under it, is follow-up work this
-page intentionally doesn't claim is already done.
+`.github/workflows/release.yml` triggers on the namespaced `desktop-v*`
+convention above (`v*` still works too, as a legacy alias — see that
+workflow's own comment). No tag of any kind has ever actually been pushed
+against this repository (`git tag -l` is empty) — the workflow accepting
+the right pattern is not the same claim as a release having happened; see
+[Releases](/reference/releases/) for what has (still nothing).
+
+## Release channels (desktop)
+
+Two distinct channels produce desktop installers, both via
+`.github/workflows/build-desktop-installers.yml` (shared packaging/signing
+logic, so they can't silently drift apart):
+
+- **Tagged releases** (`.github/workflows/release.yml`, triggered by
+  pushing a `desktop-v*` tag) — a specific, deliberately cut version.
+  Published as a GitHub Releases **draft** so a tag never publishes
+  installers without someone looking first.
+- **Continuous build** (`.github/workflows/release-continuous.yml`,
+  triggered by every push to `main` that touches the desktop shell or
+  frontend) — always reflects the current tip of `main`. Published
+  immediately (not a draft) under a fixed rolling tag,
+  `desktop-continuous`, replacing the previous build's release and assets
+  each time; marked `prerelease: true` so it's visually distinct from a
+  real release in GitHub's own UI. This is what "download and try what's
+  on `main` right now" means for this project — it is explicitly **not**
+  a stable or reviewed release, and its own release notes say so.
+
+Both channels bake the hosted production endpoints in as the
+zero-configuration default (`apps/desktop/api-config/src/lib.rs`'s
+`DEFAULT_API_BASE`, set at compile time via `LENSWORD_RELEASE_API_BASE` —
+see that file's doc comment): the backend at
+`https://lensword-api.conectlens.com`. A local `cargo tauri dev`/`cargo
+build` never sets that variable, so local development keeps defaulting to
+`http://127.0.0.1:8000` unaffected, and the runtime `LENSWORD_API_URL`
+environment variable and the `api-endpoint` config file both still
+outrank the compiled-in default in either build — self-hosting a
+downloaded installer against your own backend remains fully supported,
+only the out-of-the-box default changes. See
+[Self-Hosting & Deployment](/install/self-hosting) and
+[docs/internal/cloudflare-deployment.md](https://github.com/conectlens/lensword/blob/development/docs/internal/cloudflare-deployment.md)
+for how `lensword-api.conectlens.com` itself is deployed, and
+`lensword-mcp.conectlens.com`/`lensword.conectlens.com` for the MCP
+server's remote transport and the hosted web app, respectively.
 
 ## Promoting a change from Unreleased to Released
 

@@ -82,6 +82,26 @@ Original SVG mark (lens + word-line) in brand/logo/svg/, with a reproducible gen
 
 References: [#270](https://github.com/conectlens/lensword/issues/270), [PR #291](https://github.com/conectlens/lensword/pull/291)
 
+**Desktop Application**
+
+<a id="desktop-production-default-and-continuous-release"></a>
+
+### Added: A desktop installer built by CI (either release channel) now defaults to the hosted production API instead of a local loopback address, and a new automatic "continuous build" channel publishes an always-current desktop build on every push to main.
+
+*2026-08-07* — verification: automated tests: passed
+
+A LensWord Desktop installer downloaded from GitHub now works against the real hosted service out of the box, with no configuration step, instead of only working once a local backend is also running. A new "Continuous Build" release (tag desktop-continuous, marked prerelease) reflects the current tip of main and updates automatically; the existing desktop-v* tagged-release channel is unchanged in behavior beyond also getting this same production default.
+
+<details><summary>Technical detail</summary>
+
+apps/desktop/api-config/src/lib.rs's DEFAULT_API_BASE is now resolved via option_env!("LENSWORD_RELEASE_API_BASE") at compile time, falling back to the existing http://127.0.0.1:8000 literal when unset. Only CI release builds set that variable (.github/workflows/build-desktop-installers.yml, a new reusable workflow extracted from release.yml's original single-file form so release.yml and the new release-continuous.yml share identical packaging/signing logic rather than risking drift between two copies). cargo build/cargo tauri dev never set it, so local development is unaffected — verified by running the existing 25-test suite unchanged, then re-running with LENSWORD_RELEASE_API_BASE set and confirming the one test that hardcodes the loopback literal fails for exactly the expected reason (the compiled constant genuinely changed). The runtime LENSWORD_API_URL env var and api-endpoint config file both still outrank the compiled-in default either way, so a downloaded installer remains fully self-hostable. release-continuous.yml triggers on push to main (path-filtered to apps/desktop and apps/frontend), deletes and recreates a rolling `desktop-continuous` GitHub prerelease each time via `gh release delete` before invoking the shared reusable workflow — chosen specifically to avoid depending on unverified behavior of tauri-action's own handling of re-publishing to an already-existing tag.
+
+</details>
+
+**Known limitations:**
+- Not verified end to end against a real deploy — the production API (lensword-api.conectlens.com) this defaults to did not exist as a live service when this was written (see the Cloudflare deployment PR); a downloaded installer using the new default won't actually reach a server until that's deployed.
+- release-continuous.yml itself has not run for real (no push to main happened from this session) — the reusable workflow it calls is verified only by inspection and by the fact that release.yml's unchanged packaging/signing steps already work; the new delete-then-recreate rolling-release step is untested against a live GitHub Releases API.
+
 **Browser Extension**
 
 <a id="browser-notification-icon-fix"></a>
@@ -113,3 +133,4 @@ Changes reviewed and confirmed to have no user-observable effect (internal-only,
 |---|---|---|---|
 | 2026-08-07 | Web Application, Desktop Application, Browser Extension, MCP Server, Local CLI, Backend (API) | Adds CI enforcement (registry validation, fragment schema, product-impact detection, generation idempotency) for the changelog/release-transparency system #281 introduced. No product's runtime behavior changes — this is contributor-workflow and CI tooling only. | [#282](https://github.com/conectlens/lensword/issues/282) |
 | 2026-08-07 | Web Application, Desktop Application, Browser Extension, MCP Server, Local CLI | Adds automated documentation QA (route/link integrity, code-block syntax, media size/secret scanning, accessibility smoke test) and fixes two broken-anchor bugs and one accessibility contrast issue the new tooling found. No product's runtime behavior changes. | [#283](https://github.com/conectlens/lensword/issues/283) |
+| 2026-08-07 | Web Application, Backend (API), MCP Server | Adds Cloudflare deployment infrastructure (Dockerfile, wrangler.toml, GitHub Actions workflows) for web (Pages), backend (Containers), and the MCP server's remote transport (Containers). No application code changed — this is deploy tooling only, and nothing deploys automatically until the required Cloudflare secrets are configured (see docs/internal/cloudflare-deployment.md). | — |

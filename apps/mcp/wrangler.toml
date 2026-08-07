@@ -1,0 +1,36 @@
+# Deploys apps/mcp's remote Streamable HTTP transport as a Cloudflare
+# Container. See apps/backend/wrangler.toml's header comment — same
+# pattern, same "needs verification against current Cloudflare docs"
+# caveat. Schema confirmed against developers.cloudflare.com/containers as
+# of this writing: [[containers]], [[durable_objects.bindings]], and
+# [[migrations]] with new_sqlite_classes are current.
+name = "lensword-mcp"
+main = "cf-worker/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Custom domain — same prerequisite/caveat as apps/backend/wrangler.toml.
+[[routes]]
+pattern = "lensword-mcp.conectlens.com"
+custom_domain = true
+
+[[containers]]
+class_name = "MCPContainer"
+image = "./Dockerfile"
+max_instances = 1
+
+[[durable_objects.bindings]]
+name = "MCP_CONTAINER"
+class_name = "MCPContainer"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["MCPContainer"]
+
+# Not secret — the backend's public URL and a workspace label, not
+# credentials. Override per-environment with `wrangler deploy --var` or by
+# editing these directly; see docs/internal/cloudflare-deployment.md.
+[vars]
+LENSWORD_API_URL = "https://lensword-api.conectlens.com"
+LENSWORD_MCP_WORKSPACE = "production"
+LENSWORD_MCP_ALLOWED_ORIGINS = ""

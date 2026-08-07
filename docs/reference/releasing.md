@@ -5,18 +5,28 @@ description: How a desktop release is cut, and what "verified" means for one.
 
 # Releasing
 
-Pushing a `v*` tag builds the desktop shell on macOS, Windows and Linux and
-attaches the installers to a **draft** GitHub release
-(`.github/workflows/release.yml`).
+Pushing a `desktop-v*` tag (`v*` also still works, as a legacy alias) builds
+the desktop shell on macOS, Windows and Linux and attaches the installers to
+a **draft** GitHub release (`.github/workflows/release.yml`).
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag desktop-v0.1.0
+git push origin desktop-v0.1.0
 ```
 
 The release is a draft on purpose. Whether a given run was signed is not
 visible from the workflow's green tick, so a tag should never publish
 installers without someone looking at them first.
+
+**A second, separate channel** (`.github/workflows/release-continuous.yml`)
+rebuilds and republishes installers automatically on every push to `main`,
+under a fixed rolling `desktop-continuous` tag — not draft, marked
+prerelease. Both channels share the actual packaging/signing logic
+(`.github/workflows/build-desktop-installers.yml`), so everything below
+applies to either one equally. See
+[Release process § Release channels](/reference/trust/release-process#release-channels-desktop)
+for the full comparison, including the production API endpoint both
+channels bake in by default.
 
 ## Signing
 
