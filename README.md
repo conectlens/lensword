@@ -147,14 +147,26 @@ readable straight from GitHub.
 - **Setup:** [docs/setup/index.md](docs/setup/index.md) — the same verified quick start as above, plus where to go next.
 - **Install:** [web app](docs/install/web-app.md) · [desktop](docs/install/desktop-app.md) · [browser extension](docs/install/browser-extension.md) ([apps/browser/README.md](apps/browser/README.md)) · [MCP server & local CLI](docs/install/mcp-local-cli.md) ([apps/mcp/README.md](apps/mcp/README.md)) · [self-hosting](docs/install/self-hosting.md) · [local AI / Ollama](docs/install/local-ai-ollama.md) · [troubleshooting](docs/install/troubleshooting.md)
 - **Learn:** [architecture & design decisions](docs/learn/architecture.md) · [choose your surface](docs/learn/choose-a-surface.md) · [brand assets](docs/learn/brand.md)
-- **Reference:** [verification & known gaps](docs/reference/verification.md) · [AI model verification log](docs/reference/ai-model-verification.md) · [changelog](docs/reference/changelog.md) · [releasing & compatibility](docs/reference/releasing.md) · [MCP remote transport](docs/reference/mcp-remote-transport.md) · [local development](docs/reference/local-development.md) · [ADRs](docs/reference/adr/)
+- **Reference:** [verification & known gaps](docs/reference/verification.md) · [AI model verification log](docs/reference/ai-model-verification.md) · [changelog](docs/reference/changelog/index.md) · [releasing & compatibility](docs/reference/releasing.md) · [MCP remote transport](docs/reference/mcp-remote-transport.md) · [local development](docs/reference/local-development.md) · [ADRs](docs/reference/adr/)
 - **Evidence base:** [docs/internal/repo-audit.md](docs/internal/repo-audit.md), [product-registry.json](docs/internal/product-registry.json), [docs-migration-map.md](docs/internal/docs-migration-map.md), [evidence-gaps.md](docs/internal/evidence-gaps.md) — not part of the published site (internal, excluded from the VitePress build), but this README and the whole documentation rewrite are built on them.
 
 ## Changelog, releases & trust
 
-- [CHANGELOG.md](CHANGELOG.md) tracks every change in Keep-a-Changelog format. It does not yet correspond to any tagged release — see the note at the top of the file.
-- No git tag or GitHub Release has been published for any surface yet. When a desktop release is cut, the process and its verification status are documented in [docs/reference/releasing.md](docs/reference/releasing.md).
-- A product-aware changelog and release-transparency system is planned in [#281](https://github.com/conectlens/lensword/issues/281)/[#282](https://github.com/conectlens/lensword/issues/282).
+LensWord isn't one product with one version — Web, Desktop, Browser
+Extension, and MCP Server/Local CLI each have their own changelog,
+release identity, and verification evidence, generated from structured
+fragments under [`.changes/`](.changes/) rather than hand-copied between
+places:
+
+- [docs/reference/changelog/index.md](docs/reference/changelog/index.md) — the changelog overview, with a page per product.
+- [docs/reference/changelog/main-branch-activity.md](docs/reference/changelog/main-branch-activity.md) — what's merged into `development`, explicitly **not** the same as released.
+- [docs/reference/releases/index.md](docs/reference/releases/index.md) — published, immutable release records. None exist yet for any product — confirmed via `git tag -l` and `gh release list`, both empty.
+- [docs/reference/trust/verification-levels.md](docs/reference/trust/verification-levels.md) — what "Automated Tests Passed," "Manually Verified," etc. actually mean, and don't mean.
+- [docs/reference/trust/release-process.md](docs/reference/trust/release-process.md) — the versioning/tagging decision (namespaced per product: `desktop-v`, `web-v`, `browser-v`, `mcp-v`) and how a merged change becomes a released one.
+- [docs/reference/trust/compatibility.md](docs/reference/trust/compatibility.md) — cross-product compatibility. Every cell reads "Not declared" today, honestly, since no release has ever existed to declare one.
+- [CHANGELOG.md](CHANGELOG.md) / [docs/reference/changelog/legacy.md](docs/reference/changelog/legacy.md) — the original, repository-wide changelog, preserved in full as a historical record rather than retroactively (and speculatively) reclassified into per-product entries.
+
+CI enforcement of changelog fragments (failing a PR that changes observable behavior without one) is tracked separately in [#282](https://github.com/conectlens/lensword/issues/282) and doesn't exist yet — `scripts/changelog/schema.py` validates fragments today as a script contributors can run by hand.
 
 ## Sponsorship & support
 

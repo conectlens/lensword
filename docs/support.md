@@ -50,6 +50,6 @@ No response-time guarantee exists for any of these channels.
 
 - [Contributing](/contributing) — development setup and the pull request process.
 - [Code of Conduct](https://github.com/conectlens/lensword/blob/development/CODE_OF_CONDUCT.md)
-- [Changelog](/reference/changelog) — what's shipped so far.
+- [Changelog](/reference/changelog/) — what's shipped so far.
 - [Roadmap](https://github.com/conectlens/lensword/blob/development/ROADMAP.md) — what's planned; sponsorship doesn't reorder it.
 - [Trust & verification](/reference/verification) — what's actually been tested, stated plainly.

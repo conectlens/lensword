@@ -1,0 +1,60 @@
+id: lensword-brand-identity
+products:
+  - web
+  - desktop
+  - browser-extension
+type: added
+summary: >-
+  LensWord has a canonical logo and icon set for the first time — a
+  favicon in the web app, real desktop app icons, and a real browser
+  extension icon, replacing generic/unbranded placeholders.
+technical_summary: >-
+  Original SVG mark (lens + word-line) in brand/logo/svg/, with a
+  reproducible generation script (scripts/generate-brand-assets.py) that
+  derives every PNG/WebP/ICO/ICNS raster asset from the vector sources.
+  Wired into apps/frontend's favicon/Open Graph tags, apps/desktop's Tauri
+  icon set (replacing the default Tauri-generated placeholder), and
+  apps/browser's manifest icons/action.default_icon (previously unset —
+  the extension had no working icon at all, since MV3 doesn't accept SVG
+  for that field).
+user_impact: >-
+  The web app now has a real favicon and social-preview image, the
+  desktop app has a real icon instead of Tauri's default, and the browser
+  extension shows a real icon in the toolbar and extensions page instead
+  of nothing.
+release_status: unreleased
+breaking: false
+migration: none
+known_limitations:
+  - Desktop icon change was not visually re-verified on a packaged
+    installer (none has ever been built) — confirmed only that the icon
+    files exist at the correct paths/sizes referenced by tauri.conf.json.
+compatibility:
+  requires:
+    server_api: null
+verification:
+  automated_tests:
+    status: passed
+    commands:
+      - "python -c \"import json; json.load(open('docs/internal/product-registry.json'))\""
+      - cd apps/frontend && npm run build
+    workflow_url: null
+  artifact_build:
+    status: passed
+    artifacts:
+      - apps/frontend dist/ (favicon, og-image present)
+      - apps/desktop/src-tauri/icons/* (regenerated, correct sizes)
+      - apps/browser/icons/* (16/32/48/128px)
+  manual_platform_checks:
+    macos: not_applicable
+    windows: not_run
+    linux: not_applicable
+  production_observation:
+    status: not_observed
+security_impact: none
+documentation_required: true
+date: '2026-08-07'
+references:
+  issues: [270]
+  pull_requests: [291]
+  commits: []

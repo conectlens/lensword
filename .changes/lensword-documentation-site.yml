@@ -1,0 +1,58 @@
+id: lensword-documentation-site
+products:
+  - web
+  - desktop
+  - browser-extension
+  - mcp-server
+  - local-cli
+type: documentation
+summary: >-
+  LensWord has a real documentation site (docs/, built with VitePress),
+  organized around Diátaxis (Setup tutorial, Install how-to guides, Learn
+  explanation, Reference material) — replacing a flat, uncurated docs/
+  folder.
+technical_summary: >-
+  docs/.vitepress/config.mts defines the site; every existing doc was
+  moved (not deleted) into the new structure, apps/browser/README.md and
+  apps/mcp/README.md are pulled in via VitePress's markdown @include
+  feature so they can't drift from source, and a SurfaceChooser Vue
+  component reads docs/internal/product-registry.json directly so the
+  surface-comparison table can't drift from the audit that backs it.
+user_impact: >-
+  Every surface (Web, Desktop, Browser Extension, MCP Server, Local CLI)
+  now has a real, verified guide instead of scattered or missing
+  documentation — including install steps, security/privacy behavior, and
+  an honest account of what has and hasn't been tested for that surface.
+release_status: unreleased
+breaking: false
+migration: none
+known_limitations:
+  - GitHub Pages deployment for the site is wired up but not yet enabled
+    (repository Settings -> Pages -> Source is still unset) — the site
+    builds successfully in CI but has no public URL yet.
+compatibility:
+  requires:
+    server_api: null
+verification:
+  automated_tests:
+    status: passed
+    commands:
+      - cd docs && npm run docs:build
+    workflow_url: .github/workflows/docs.yml
+  artifact_build:
+    status: passed
+    artifacts:
+      - docs/.vitepress/dist/ (29 pages, zero dead links)
+  manual_platform_checks:
+    macos: not_applicable
+    windows: passed
+    linux: not_applicable
+  production_observation:
+    status: not_applicable
+security_impact: none
+documentation_required: false
+date: '2026-08-07'
+references:
+  issues: [272]
+  pull_requests: [295]
+  commits: []
