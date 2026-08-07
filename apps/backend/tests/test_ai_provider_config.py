@@ -93,6 +93,15 @@ def test_settings_accept_the_supported_values_in_any_casing(unset_env):
     assert _settings(ai_provider=" none ").ai_provider == "none"
 
 
+def test_settings_treat_a_blank_ai_provider_as_unset(unset_env):
+    """Some platforms (Render's dashboard included) create an env var key
+    with an empty string rather than omitting it, which bypasses pydantic's
+    "fall back to the default when absent" behaviour and previously crashed
+    startup with a ValidationError instead of just staying disabled."""
+    assert _settings(ai_provider="").ai_provider == "none"
+    assert _settings(ai_provider="   ").ai_provider == "none"
+
+
 def _enable_ollama(monkeypatch, model="mistral", base_url="http://ollama.internal:9999"):
     """Configure AI the way an operator would — environment only — and drop
     the process-wide caches so the app rebuilds from it."""

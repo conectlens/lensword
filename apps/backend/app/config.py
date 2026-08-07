@@ -216,8 +216,17 @@ class Settings(BaseSettings):
         Validating here rather than only in the factory means a misspelled
         AI_PROVIDER stops startup outright, instead of lying dormant until
         someone's first suggestion request turns it into a 500.
+
+        A blank value is treated as "unset", not a typo: some deployment
+        platforms (Render's dashboard included) create an env var key with
+        an empty string rather than omitting it, and pydantic-settings only
+        falls back to the field default when the variable is absent
+        entirely — an empty string overrides "none" and previously crashed
+        both app startup and every `alembic upgrade` with a ValidationError.
         """
         normalized = value.strip().lower()
+        if normalized == "":
+            return "none"
         if normalized not in SUPPORTED_AI_PROVIDERS:
             raise ValueError(
                 f"must be one of {', '.join(SUPPORTED_AI_PROVIDERS)} (got '{value}')"
