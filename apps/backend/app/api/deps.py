@@ -25,6 +25,7 @@ from app.infrastructure.repositories import (
     SqlAlchemyKnowledgeEdgeRepository,
     SqlAlchemyDiagnosisRepository,
     SqlAlchemyInterventionRepository,
+    SqlAlchemyModalityPreferenceRepository,
     SqlAlchemyCompanionSessionRepository,
     SqlAlchemyCompanionActivityRepository,
     SqlAlchemyCompanionTaskRepository,
@@ -124,6 +125,10 @@ def get_intervention_repository(db: DbSession) -> SqlAlchemyInterventionReposito
     return SqlAlchemyInterventionRepository(db)
 
 
+def get_modality_preference_repository(db: DbSession) -> SqlAlchemyModalityPreferenceRepository:
+    return SqlAlchemyModalityPreferenceRepository(db)
+
+
 def get_companion_session_repository(db: DbSession) -> SqlAlchemyCompanionSessionRepository:
     return SqlAlchemyCompanionSessionRepository(db)
 
@@ -221,6 +226,9 @@ LearningObservationRepo = Annotated[
 KnowledgeEdgeRepo = Annotated[SqlAlchemyKnowledgeEdgeRepository, Depends(get_knowledge_edge_repository)]
 DiagnosisRepo = Annotated[SqlAlchemyDiagnosisRepository, Depends(get_diagnosis_repository)]
 InterventionRepo = Annotated[SqlAlchemyInterventionRepository, Depends(get_intervention_repository)]
+ModalityPreferenceRepo = Annotated[
+    SqlAlchemyModalityPreferenceRepository, Depends(get_modality_preference_repository)
+]
 CompanionSessionRepo = Annotated[
     SqlAlchemyCompanionSessionRepository, Depends(get_companion_session_repository)
 ]
