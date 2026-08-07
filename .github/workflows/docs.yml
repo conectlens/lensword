@@ -43,15 +43,37 @@ jobs:
           path: docs/.vitepress/dist
 
   # Publishes to GitHub Pages. This requires a one-time manual step before it
-  # can succeed: a repository admin must set Settings -> Pages -> Source to
-  # "GitHub Actions". Until that's done, this job will fail — harmlessly,
-  # since it's independent of the `build` job and of the required CI checks
-  # in ci.yml. See docs/internal/repo-audit.md for why no hosting decision
-  # has been made in this repository yet.
-  deploy:
-    name: Deploy to GitHub Pages
+  # can do anything: a repository admin must set Settings -> Pages -> Source
+  # to "GitHub Actions" (https://github.com/conectlens/lensword/settings/pages).
+  # Until that's done, `check` below detects it and the `deploy` job skips
+  # cleanly instead of `actions/deploy-pages` failing with a 404 — deploying
+  # here is independent of the required CI checks in ci.yml either way. See
+  # docs/internal/repo-audit.md for why no hosting decision has been made in
+  # this repository yet.
+  check:
+    name: Check Pages is enabled
     if: github.event_name == 'push' && github.ref == 'refs/heads/development'
     needs: build
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - name: Check
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/${{ github.repository }}/pages" >/dev/null 2>&1; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::GitHub Pages is not enabled for this repository yet (Settings -> Pages -> Source -> GitHub Actions). Skipping deploy rather than failing."
+          fi
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: check
+    if: needs.check.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     permissions:
       pages: write
