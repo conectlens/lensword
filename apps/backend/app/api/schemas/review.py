@@ -115,6 +115,15 @@ class MnemonicResponse(BaseModel):
     created_at: datetime
 
 
+class MnemonicStrengthResponse(BaseModel):
+    """Issue #185 TODO 3: "works well" / "works poorly" / "not enough
+    evidence" — never an AI's opinion of its own prose."""
+
+    verdict: Literal["strong", "weak", "insufficient_data"]
+    delayed_accuracy: float | None
+    sample_size: int
+
+
 class MnemonicSuggestionDisabled(BaseModel):
     """No AI provider is configured. A deployment setting, not a fault — the
     client shows a calm notice, never an error."""

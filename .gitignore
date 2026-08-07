@@ -10,6 +10,11 @@ apps/backend/.pytest_cache/
 apps/backend/data/
 apps/backend/.env
 
+# MCP
+apps/mcp/**/__pycache__/
+apps/mcp/.pytest_cache/
+apps/mcp/*.egg-info/
+
 # Frontend
 apps/frontend/node_modules
 apps/frontend/node_modules/

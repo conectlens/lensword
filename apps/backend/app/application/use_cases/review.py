@@ -15,6 +15,7 @@ from app.application.use_cases.knowledge_graph import RecomputeKnowledgeEdgesFor
 from app.application.use_cases.vocabulary import _require_word_owner
 from app.domain.repositories import (
     GroupRepository,
+    LearningObservationRepository,
     MnemonicRepository,
     ReviewSessionRepository,
     UserRepository,
@@ -22,6 +23,8 @@ from app.domain.repositories import (
 )
 from app.domain.services.ai_provider import AIProvider
 from app.domain.services.diagnosis_contracts import LearningObservation
+from app.domain.services.mnemonic_scoring import MnemonicStrength, evaluate_mnemonic_strength
+from app.domain.value_objects import ReviewOutcome
 from app.domain.services.distractors import DistractorSelection, select_distractors
 from app.domain.services.knowledge_graph import KnowledgeGraph
 from app.domain.services.spaced_repetition import Scheduler
@@ -411,6 +414,42 @@ class ListMnemonicsUseCase:
     def execute(self, owner_id: int, word_id: int) -> list[MnemonicNote]:
         _require_word_owner(self.word_repo, self.group_repo, word_id, owner_id)
         return self.mnemonic_repo.list_by_word(word_id)
+
+
+class EvaluateMnemonicStrengthUseCase:
+    """Issue #185 TODO 3: whether a mnemonic is working, from measured
+    delayed recall and the learner's own vote — never from asking an AI if
+    the text sounds good."""
+
+    def __init__(
+        self,
+        mnemonic_repo: MnemonicRepository,
+        observation_repo: LearningObservationRepository,
+        word_repo: WordRepository,
+        group_repo: GroupRepository,
+    ):
+        self.mnemonic_repo = mnemonic_repo
+        self.observation_repo = observation_repo
+        self.word_repo = word_repo
+        self.group_repo = group_repo
+
+    def execute(self, owner_id: int, word_id: int, mnemonic_id: int) -> MnemonicStrength:
+        _require_word_owner(self.word_repo, self.group_repo, word_id, owner_id)
+        note = self.mnemonic_repo.get_by_id(mnemonic_id)
+        if note is None or note.word_id != word_id:
+            raise EntityNotFoundError("MnemonicNote", mnemonic_id)
+
+        # Reviews answered after the note was written — "delayed recall
+        # while it was active" — excluding anything from before it existed.
+        delayed = [
+            o for o in self.observation_repo.list_for_word(owner_id, word_id)
+            if o.observed_at >= note.created_at
+        ]
+        delayed_correct = sum(1 for o in delayed if o.outcome is ReviewOutcome.CORRECT)
+
+        return evaluate_mnemonic_strength(
+            delayed_correct=delayed_correct, delayed_total=len(delayed), learner_score=note.score
+        )
 
 
 class SuggestMnemonicUseCase:
