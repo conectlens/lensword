@@ -194,6 +194,14 @@ def owned(client, two_accounts, db_session):
         json={"task_type": "plan_generation", "total_units": 1, "operation_id": "audit-plan-task"},
         headers=owner,
     ).json()
+    # #195: a loop budget must already exist for GET/reserve/fail/stop to be
+    # reachable at all, the same way the task/activity above must exist
+    # before their own owner-reachability checks can prove anything.
+    client.post(
+        f"/api/v1/companion/sessions/{companion_session['id']}/loop/start",
+        json={},
+        headers=owner,
+    )
     # Seeded directly: starting an attempt needs no AI provider, and this audit
     # deliberately does not stand one up.
     from app.infrastructure.repositories import SqlAlchemyScenarioAttemptRepository
@@ -402,6 +410,23 @@ CROSS_TENANT_CASES = [
         "/api/v1/conversations/{conversation}/messages/{conversation_message}/corrections/{correction_index}/feedback",
         {"outcome": "accepted"},
     ),
+    # Bounded companion loop budgets and sampling provenance (#195). All are
+    # owner-scoped through the same companion session.
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/loop/start", {}),
+    _case("GET", "/api/v1/companion/sessions/{companion_session}/loop"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/loop/reserve", {"kind": "tool", "amount": 1}),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/loop/fail"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/loop/stop", {"reason": "cancelled"}),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/sampling-events", {
+        "requester": "audit-client", "prompt_template_version": "companion-v1",
+        "source_facts_ref": "sha256:abc123", "validation_result": "accepted",
+        "fallback_path": "sampling_unavailable_used_deterministic",
+    }),
+    _case("GET", "/api/v1/companion/sessions/{companion_session}/sampling-events"),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/reply", {
+        "task": "Explain", "target_language": "Spanish", "intervention_type": "explanation",
+        "evidence": [{"evidence_id": "obs-1", "fact": "borrow was answered as lend", "source": "review_observation"}],
+    }),
 ]
 
 
