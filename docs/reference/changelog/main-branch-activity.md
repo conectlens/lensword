@@ -11,8 +11,15 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 
 | Date | Commit | Author | Subject | Changelog fragment |
 |---|---|---|---|---|
+| 2026-08-07 | [7c66680](https://github.com/conectlens/lensword/commit/7c666802efa4b40a442bfd775bdf1dda76dba54c) | Ömer Faruk Coşkun | Merge branch 'main' into development | none (predates this system) |
+| 2026-08-07 | [11081cf](https://github.com/conectlens/lensword/commit/11081cf0fe096103998ba90cb7cd09fefec3a5f7) | Lenser | chore: switch to Supabase session pooler for IPv4 compatibility and enable MCP remote services with explicit issuer configuration | none (predates this system) |
+| 2026-08-07 | [03599c3](https://github.com/conectlens/lensword/commit/03599c3f25e640230f9d41cc77ca7305849ea709) | Lenser | Fix Settings crash when AI_PROVIDER env var is set but blank | none (predates this system) |
+| 2026-08-07 | [999c420](https://github.com/conectlens/lensword/commit/999c4200ea6909cd82859bbbf7a92780da1c5069) | Ömer Faruk Coşkun | Merge pull request #314 from conectlens/development | none (predates this system) |
+| 2026-08-07 | [25f068c](https://github.com/conectlens/lensword/commit/25f068c258127cc1b7bb7c427a3e1d58f526149c) | Lenser | Fix Linux desktop installer build: missing appindicator dev library | none (predates this system) |
 | 2026-08-07 | [a8330ce](https://github.com/conectlens/lensword/commit/a8330ce8d237cc127348da28a3f8ed8b7b974d6e) | Lenser | Fix docs site: custom domain serves at root, not the old /lensword/ project-page path | none (predates this system) |
+| 2026-08-07 | [1c5ce77](https://github.com/conectlens/lensword/commit/1c5ce77d26909b3ef0d65a53c3149b28883190fe) | Ömer Faruk Coşkun | Merge pull request #313 from conectlens/development | none (predates this system) |
 | 2026-08-07 | [dbf786d](https://github.com/conectlens/lensword/commit/dbf786da97a5fab831266c4094e3694227e8c3ec) | Lenser | Fix Tauri desktop icons/fonts (CSP-blocked Google Fonts) and an MCP HTTP keep-alive body-drain bug | none (predates this system) |
+| 2026-08-07 | [6d1d20a](https://github.com/conectlens/lensword/commit/6d1d20a48093e1b5de7a85400917cb1dcb34d9e9) | Ömer Faruk Coşkun | Merge pull request #312 from conectlens/development | none (predates this system) |
 | 2026-08-07 | [677b3c2](https://github.com/conectlens/lensword/commit/677b3c2d25aae5d717537768fc59d0205265d90d) | Lenser | Add BRANCH.md: main only changes via a merged PR, never a direct push or cherry-pick | none (predates this system) |
 | 2026-08-07 | [5aad283](https://github.com/conectlens/lensword/commit/5aad283aa25e5cc516c35ac9fa38aeb08726e908) | Lenser | Fix changelog schema violation blocking PR #312 (type: none requires documentation_required: false) | none (predates this system) |
 | 2026-08-07 | [a0c63d6](https://github.com/conectlens/lensword/commit/a0c63d625337883fcbf39a14ea17b4b93b43d0db) | Ömer Faruk Coşkun | Merge branch 'main' into development | none (predates this system) |
@@ -44,12 +51,5 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 | 2026-08-07 | [95073c5](https://github.com/conectlens/lensword/commit/95073c557f614a92f0ed0c14ef49f54f5fe23d9b) | Lenser | Fix CodeQL clear-text-logging finding for SECRET_PATTERNS in check_media.py | none (predates this system) |
 | 2026-08-07 | [c78768d](https://github.com/conectlens/lensword/commit/c78768d2b034dbf4820d181797a12e4e7c8e339a) | Ömer Faruk Coşkun | Fix CodeQL clear-text-logging finding in check_media.py that got stranded off #306 (#308) | none (predates this system) |
 | 2026-08-07 | [65e618b](https://github.com/conectlens/lensword/commit/65e618b07fe4be165cfe654372a39be2a053ecbe) | Ömer Faruk Coşkun | Resolve alembic merge-heads naming conflict blocking dev->main promotion (#309) | none (predates this system) |
-| 2026-08-07 | [b7ae946](https://github.com/conectlens/lensword/commit/b7ae946645139dc470841335f2c7c39dbb09e91a) | Ömer Faruk Coşkun | Potential fix for pull request finding 'CodeQL / HTTP Response Splitting' | none (predates this system) |
-| 2026-08-07 | [a2b0023](https://github.com/conectlens/lensword/commit/a2b0023943e5f4beee00eedb630b4eb140dc33be) | Ömer Faruk Coşkun | Add documentation QA gates: route/link, code-block, media, accessibility (#283) (#306) | none (predates this system) |
-| 2026-08-07 | [410846b](https://github.com/conectlens/lensword/commit/410846b31cd343d898f34a08ea5ac113d02f7094) | Ömer Faruk Coşkun | Enforce changelog fragments, product-impact, and registry validity in CI (#282) (#305) | none (predates this system) |
-| 2026-08-07 | [983c0cb](https://github.com/conectlens/lensword/commit/983c0cbfe2b7595fe2e388fc4c3a4192b501b3a7) | Ömer Faruk Coşkun | Implement the product-aware changelog, release-transparency, and trust system (#281) (#304) | none (predates this system) |
-| 2026-08-07 | [0905871](https://github.com/conectlens/lensword/commit/0905871fe0d943ec7469fb6a4ebc257a7fb64c57) | Ömer Faruk Coşkun | Skip the Pages deploy job cleanly instead of failing when Pages isn't enabled (#303) | none (predates this system) |
-| 2026-08-07 | [154611e](https://github.com/conectlens/lensword/commit/154611e7dbf0e150bd1a732fb9c4f5a9554a0b6f) | Ömer Faruk Coşkun | Add LensWord sponsorship, contact, partnership, and support surfaces (#280) (#302) | none (predates this system) |
-| 2026-08-07 | [83e96e0](https://github.com/conectlens/lensword/commit/83e96e0449eb4a2951a4ad63442fc738592b3c70) | Ömer Faruk Coşkun | Capture reproducible LensWord screenshots and generate README demo animations (#278) (#301) | none (predates this system) |
 
 Generated from `git log -40 development` — 40 commits shown.

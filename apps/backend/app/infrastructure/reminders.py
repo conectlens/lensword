@@ -137,12 +137,32 @@ class ApSchedulerReminderScheduler:
         )
 
 
+# Kept as a module global, read by the top-level wrapper below, rather than
+# passed to the scheduler as ReminderDispatcher(session_factory, channel)
+# directly: APScheduler's persistent SQLAlchemyJobStore names a job's func by
+# a bare "module:qualname" reference (apscheduler.util.obj_to_ref), which for
+# a constructed instance collapses to a reference to its class — the
+# constructor arguments are silently dropped, and every future firing calls
+# ReminderDispatcher(reminder_id) instead of the intended
+# ReminderDispatcher(session_factory, channel)(reminder_id), raising
+# TypeError. See app.infrastructure.scheduler's identical fix and comment
+# for the other three background jobs, which shared this exact bug.
+_reminder_dispatcher: ReminderDispatcher | None = None
+
+
+def _run_reminder_dispatch(reminder_id: int) -> None:
+    assert _reminder_dispatcher is not None, "build_reminder_scheduler must run before this job can fire"
+    _reminder_dispatcher(reminder_id)
+
+
 def build_reminder_scheduler(
     scheduler: BaseScheduler,
     session_factory: Callable[[], Session],
     channel: NotificationChannel,
 ) -> ApSchedulerReminderScheduler:
-    return ApSchedulerReminderScheduler(scheduler, dispatch=ReminderDispatcher(session_factory, channel))
+    global _reminder_dispatcher
+    _reminder_dispatcher = ReminderDispatcher(session_factory, channel)
+    return ApSchedulerReminderScheduler(scheduler, dispatch=_run_reminder_dispatch)
 
 
 def restore_reminder_jobs(

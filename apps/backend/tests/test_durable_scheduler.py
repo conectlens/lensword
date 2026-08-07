@@ -15,6 +15,8 @@ from datetime import date, datetime, time, timedelta
 
 import pytest
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
+from apscheduler.schedulers.background import BackgroundScheduler
+from sqlalchemy import create_engine
 
 from app.config import Settings
 from app.domain.entities import Reminder, User
@@ -253,3 +255,112 @@ def test_an_unknown_job_store_is_rejected_at_startup():
     fall back to in-memory and lose every job on the next restart."""
     with pytest.raises(ValueError):
         Settings(scheduler_job_store="postgres", _env_file=None)
+
+
+# --- Regression: a persisted job's callable must survive the round trip ----
+#
+# Every test above (and the rest of the suite, per conftest's
+# SCHEDULER_JOB_STORE=memory) only ever runs a job through the *same* Job
+# object that add_job() created. That never exercised what a real restart
+# does: SQLAlchemyJobStore.add_job() persists Job.__getstate__() (a plain
+# "module:qualname" string plus args/kwargs, not the callable itself — see
+# apscheduler.util.obj_to_ref/ref_to_obj), and the next load rebuilds `func`
+# from that string alone via Job.__setstate__(). Passing a *constructed*
+# dispatcher instance (ClaimPurger(session_factory), etc.) as `func` used to
+# collapse to a reference to its bare class on this round trip — obj_to_ref
+# has no way to name an instance, only a type — silently dropping the
+# constructor's session_factory/channel. Every firing after the very first
+# add_job() then called e.g. ClaimPurger() with no arguments and raised
+# TypeError, in production, every ten seconds.
+#
+# Two independent AsyncIOScheduler instances sharing one on-disk SQLite file
+# simulate two separate process starts against the same persisted store,
+# which is the only way to actually exercise Job.__setstate__ instead of
+# reusing the in-memory Job object add_job() already had a live reference to.
+
+
+@pytest.fixture()
+def persisted_jobstore_path(tmp_path):
+    return f"sqlite:///{tmp_path / 'apscheduler_jobs.db'}"
+
+
+def test_background_jobs_survive_a_simulated_restart(db_session, persisted_jobstore_path):
+    from app.infrastructure.scheduler import (
+        ACQUISITION_DISPATCH_JOB_ID,
+        COMPANION_TASK_DISPATCH_JOB_ID,
+        PURGE_CLAIMS_JOB_ID,
+        register_jobs,
+    )
+
+    jobstore_engine = create_engine(persisted_jobstore_path)
+    settings = Settings(environment="production", _env_file=None)
+    session_factory = lambda: db_session  # noqa: E731 - matches this file's other dispatcher tests
+
+    # BackgroundScheduler rather than the app's usual AsyncIOScheduler: this
+    # test only exercises jobstore persistence, which is scheduler-type
+    # agnostic, and a thread-based scheduler needs no asyncio event loop to
+    # .start() synchronously in a plain test function.
+    first_run_scheduler = BackgroundScheduler(
+        jobstores={"default": SQLAlchemyJobStore(engine=jobstore_engine)}
+    )
+    register_jobs(first_run_scheduler, settings, session_factory, _RecordingChannel())
+    # add_job() only queues in memory until start() flushes it to the
+    # jobstore (see this file's own scheduler.py's identical comment on
+    # `replace_existing` not being enough by itself) — paused so nothing
+    # actually fires on this scheduler's background thread.
+    first_run_scheduler.start(paused=True)
+    first_run_scheduler.shutdown(wait=False)
+
+    # A fresh scheduler over the same file, with none of the first one's
+    # in-memory state — Job.__setstate__ is the only thing that can produce
+    # its jobs' `func` and `args`.
+    restarted_scheduler = BackgroundScheduler(
+        jobstores={"default": SQLAlchemyJobStore(engine=jobstore_engine)}
+    )
+    restarted_scheduler.start(paused=True)  # loads jobs from the store without firing them
+
+    try:
+        for job_id in (PURGE_CLAIMS_JOB_ID, ACQUISITION_DISPATCH_JOB_ID, COMPANION_TASK_DISPATCH_JOB_ID):
+            job = restarted_scheduler.get_job(job_id)
+            assert job is not None, f"{job_id} did not survive the restart"
+            # This is exactly what apscheduler.executors.base.run_job does.
+            # It must not raise TypeError: <Class>.__init__() missing ... —
+            # the bug this test exists to catch.
+            job.func(*job.args, **job.kwargs)
+    finally:
+        restarted_scheduler.shutdown(wait=False)
+
+
+def test_reminder_jobs_survive_a_simulated_restart(db_session, daily_reminder, persisted_jobstore_path):
+    from app.infrastructure.reminders import build_reminder_scheduler
+
+    jobstore_engine = create_engine(persisted_jobstore_path)
+    session_factory = lambda: db_session  # noqa: E731
+
+    first_run_scheduler = BackgroundScheduler(
+        jobstores={"default": SQLAlchemyJobStore(engine=jobstore_engine)}
+    )
+    channel = _RecordingChannel()
+    adapter = build_reminder_scheduler(first_run_scheduler, session_factory, channel)
+    adapter.schedule(daily_reminder, "UTC")
+    first_run_scheduler.start(paused=True)
+    first_run_scheduler.shutdown(wait=False)
+
+    restarted_scheduler = BackgroundScheduler(
+        jobstores={"default": SQLAlchemyJobStore(engine=jobstore_engine)}
+    )
+    restarted_scheduler.start(paused=True)
+
+    try:
+        jobs = restarted_scheduler.get_jobs()
+        assert len(jobs) == 1
+        job = jobs[0]
+
+        # Same call shape as apscheduler.executors.base.run_job. Delivery
+        # itself (claims, channel fan-out) is covered elsewhere in this
+        # file; this is only asserting the callable reference survived the
+        # restart intact.
+        job.func(*job.args, **job.kwargs)
+        assert channel.sent
+    finally:
+        restarted_scheduler.shutdown(wait=False)

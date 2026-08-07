@@ -19,6 +19,22 @@ The shared backend (`apps/backend`) is not an independently released product —
 
 ## Latest changes, all products
 
+**Backend (API)**
+
+<a id="scheduler-persisted-job-callable-collapse"></a>
+
+### Fixed: Four background jobs — reminder delivery, acquisition-ladder notifications, companion task progress, and scheduler-claim cleanup — no longer fail every time they fire in production.
+
+*2026-08-07* — verification: automated tests: passed; production observation: observed
+
+Reminders are delivered, acquisition-ladder nudges are sent, and companion task extraction actually makes progress again — all four were silently failing on every scheduled firing.
+
+<details><summary>Technical detail</summary>
+
+apps/backend/app/infrastructure/scheduler.py registered each job by passing a *constructed* dispatcher instance directly as the job's func, e.g. scheduler.add_job(CompanionTaskExecutor(session_factory), ...); apps/backend/app/infrastructure/reminders.py did the same with ReminderDispatcher via ApSchedulerReminderScheduler. The persistent SQLAlchemyJobStore does not pickle a job's callable — it stores a plain "module:qualname" string (apscheduler.util.obj_to_ref) and re-derives the callable from that string alone on every load. For a constructed instance, that collapses to a reference to its bare class: obj_to_ref has no way to name an instance, only a type, so the constructor's session_factory/channel arguments were silently dropped. Every dispatch after the first add_job() then called e.g. CompanionTaskExecutor() with no arguments and raised TypeError: CompanionTaskExecutor.__init__() missing 1 required positional argument: 'session_factory' — reproduced live in this deployment's logs for CompanionTaskExecutor (every 10s) and AcquisitionDispatcher (every 5m); ReminderDispatcher shared the identical bug but had not yet fired in production since no enabled reminder had come due. Confirmed empirically that the underlying session_factory (a live SQLAlchemy sessionmaker bound to a real Engine) is not picklable, which ruled out registering a bound method instead (APScheduler's own fallback for stateful job bodies, which pickles the instance into the job's stored args) as a fix. Fixed by keeping each dispatcher instance as a module-level global and registering a plain, zero/primitive-argument top-level function (e.g. _run_companion_task_executor) as the job's func instead — such a reference round-trips correctly, and the wrapper reads the live instance from module state at call time, which is safe because every job in this store only ever runs inside the process that registered it. Two new regression tests in apps/backend/tests/test_durable_scheduler.py register jobs on one scheduler, load them on a second, independent scheduler instance backed by the same on-disk SQLite store (simulating a real restart), and invoke the resulting job.func(*job.args, **job.kwargs) directly — exactly what apscheduler.executors.base.run_job does. Verified both tests fail with the exact production TypeError against the pre-fix code and pass against the fix; no prior test exercised this path since the rest of the suite runs with SCHEDULER_JOB_STORE=memory precisely to avoid sharing APScheduler's own table across tests.
+
+</details>
+
 **Backend (API), MCP Server, Web Application**
 
 <a id="remove-cloudflare-backend-mcp-fix-psycopg"></a>
