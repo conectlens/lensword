@@ -12,7 +12,7 @@ field in their own response dicts, so they do not share that leak.
 """
 from typing import Any
 
-from app.api.mappers import word_to_response
+from app.api.mappers import word_to_companion_view, word_to_response
 from app.application.use_cases.mcp_dev_workflow import (
     CheckKnownTermUseCase,
     ContextOccurrenceInput,
@@ -40,6 +40,38 @@ from app.domain.services.spaced_repetition import Scheduler
 from app.domain.services.ai_provider import AIProvider
 
 
+def _decode_cursor(cursor: Any) -> int:
+    """An offset encoded as an opaque string. Anything absent, empty, or not
+    a non-negative integer starts from the first page — a malformed cursor
+    fails open to page one rather than erroring, since a client that lost
+    its cursor should see the start of the list again, not a hard failure.
+    """
+    if not isinstance(cursor, str) or not cursor:
+        return 0
+    try:
+        value = int(cursor)
+    except ValueError:
+        return 0
+    return value if value >= 0 else 0
+
+
+def _encode_cursor(offset: int) -> str:
+    return str(offset)
+
+
+def _paginate(items: list, limit: int, offset: int) -> tuple[list, str | None]:
+    """Real cursor-based paging over a page fetched one row oversized:
+    `items` must already have been requested with `limit + 1` rows starting
+    at `offset`. Slices back down to `limit` and reports a `next_cursor`
+    only when that extra row proved there is more — never a cosmetic
+    `None` regardless of how much data actually exists.
+    """
+    has_more = len(items) > limit
+    page = items[:limit]
+    next_cursor = _encode_cursor(offset + limit) if has_more else None
+    return page, next_cursor
+
+
 def add_word_handler(words: WordRepository, groups: GroupRepository):
     def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         word = AddWordUseCase(words, groups).execute(
@@ -58,14 +90,27 @@ def due_reviews_handler(words: WordRepository):
     def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         limit = min(int(payload.get("limit", 20)), 100)
         group_id = int(payload["group_id"]) if payload.get("group_id") is not None else None
-        return {"items": [word_to_response(word).model_dump(mode="json") for word in words.list_due_for_user(user_id, limit, group_id)], "next_cursor": None}
+        offset = _decode_cursor(payload.get("cursor"))
+        fetched = words.list_due_for_user(user_id, limit + 1, group_id, offset)
+        page, next_cursor = _paginate(fetched, limit, offset)
+        # Redacted, not `word_to_response`: this handler backs the
+        # `lensword://me/due` MCP resource (and the equivalent tool call),
+        # both read by an AI companion rather than the learner's own client
+        # — see `CompanionWordView`'s docstring for why mnemonics never
+        # reach this surface (issue #192 TODO 0).
+        return {"items": [word_to_companion_view(word).model_dump(mode="json") for word in page], "next_cursor": next_cursor}
     return handle
 
 
 def search_words_handler(words: WordRepository, groups: GroupRepository):
     def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
-        items = SearchWordsUseCase(words, groups).execute(user_id, str(payload.get("query", "")), min(int(payload.get("limit", 20)), 100))
-        return {"items": [word_to_response(word).model_dump(mode="json") for word in items], "next_cursor": None}
+        limit = min(int(payload.get("limit", 20)), 100)
+        offset = _decode_cursor(payload.get("cursor"))
+        fetched = SearchWordsUseCase(words, groups).execute(user_id, str(payload.get("query", "")), limit + 1, offset)
+        page, next_cursor = _paginate(fetched, limit, offset)
+        # Redacted for the same reason as `due_reviews_handler` above — this
+        # backs `lensword://me/active-words`.
+        return {"items": [word_to_companion_view(word).model_dump(mode="json") for word in page], "next_cursor": next_cursor}
     return handle
 
 
