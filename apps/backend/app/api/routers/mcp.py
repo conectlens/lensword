@@ -7,8 +7,8 @@ from pydantic import BaseModel, Field
 from app.application.mcp.contracts import CONTRACT_VERSION, capabilities, validate_payload
 from app.application.mcp.dispatcher import MCPDispatcher, UnboundMCPToolError, UnknownMCPToolError
 from app.application.mcp.idempotency import IdempotencyStore
-from app.application.mcp.bindings import add_word_handler, create_study_session_handler, due_reviews_handler, extract_vocabulary_handler, generate_exercises_handler, learning_progress_handler, record_answer_handler, search_words_handler
-from app.api.deps import CurrentUser, DbSession, GroupRepo, OptionalAIProvider, PracticeExerciseRepo, ReviewSessionRepo, WordRepo
+from app.application.mcp.bindings import add_word_handler, cancel_companion_task_handler, create_study_session_handler, due_reviews_handler, extract_vocabulary_handler, generate_exercises_handler, get_companion_task_handler, learning_progress_handler, record_answer_handler, search_words_handler, start_extraction_task_handler, start_plan_generation_task_handler
+from app.api.deps import CompanionSessionRepo, CompanionTaskRepo, CurrentUser, DbSession, GroupRepo, OptionalAIProvider, PracticeExerciseRepo, RecallSettingsRepo, ReviewSessionRepo, WordRepo
 from app.domain.services.mcp_policy import AccessClass, GrantMode, MCPGrant, MCPPolicyGate, redact_and_chain
 from app.domain.services.spaced_repetition import SpacedRepetitionScheduler
 from app.domain.value_objects import utcnow
@@ -51,6 +51,7 @@ def _audit(db, request: InvokeRequest, decision: str, *, payload_bytes: int) -> 
 async def invoke(
     request: InvokeRequest, current_user: CurrentUser, db: DbSession, groups: GroupRepo, words: WordRepo,
     sessions: ReviewSessionRepo, exercises: PracticeExerciseRepo, provider: OptionalAIProvider,
+    companion_sessions: CompanionSessionRepo, companion_tasks: CompanionTaskRepo, recall_settings: RecallSettingsRepo,
 ) -> dict:
     payload_bytes = len(dumps(request.payload, sort_keys=True, default=str).encode())
     if not _valid_workspace(request.workspace):
@@ -62,6 +63,10 @@ async def invoke(
         "lensword.get_due_reviews": due_reviews_handler(words), "lensword.create_study_session": create_study_session_handler(sessions, words),
         "lensword.generate_exercises": generate_exercises_handler(exercises, words, groups), "lensword.get_learning_progress": learning_progress_handler(sessions),
         "lensword.record_answer": record_answer_handler(sessions, words, SpacedRepetitionScheduler()), "lensword.extract_vocabulary": extract_vocabulary_handler(groups, provider),
+        "lensword.start_extraction_task": start_extraction_task_handler(companion_tasks, companion_sessions, recall_settings),
+        "lensword.start_plan_generation_task": start_plan_generation_task_handler(companion_tasks, companion_sessions, recall_settings, words),
+        "lensword.get_companion_task": get_companion_task_handler(companion_tasks, companion_sessions, recall_settings),
+        "lensword.cancel_companion_task": cancel_companion_task_handler(companion_tasks, companion_sessions, recall_settings),
     }
     dispatcher = MCPDispatcher(handlers)
     try: contract = dispatcher.contract_for(request.tool)

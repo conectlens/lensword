@@ -22,6 +22,11 @@ class DesktopNotificationResponse(BaseModel):
     actions: list[str]
     # After this the actions are refused. Null means they never lapse.
     expires_at: datetime | None = None
+    # A `lensword://` deep link into a companion prompt or resumable session
+    # (#197 TODO 0). Present only when the recipient has AI Companion
+    # enabled; this is the notification's only companion "action" — opening
+    # it is always the user's choice, never something pushed by MCP itself.
+    companion_deep_link: str | None = None
 
 
 class PendingDesktopNotificationsResponse(BaseModel):

@@ -6,9 +6,23 @@ from app.application.use_cases.vocabulary import AddWordUseCase, SearchWordsUseC
 from app.application.use_cases.review import GetWeeklyProgressUseCase, StartReviewSessionUseCase, SubmitAnswerUseCase
 from app.application.use_cases.practice import GenerateExerciseUseCase
 from app.application.use_cases.extract import ExtractVocabularyUseCase
+from app.application.use_cases.companion_tasks import (
+    CancelCompanionTaskUseCase,
+    CreateExtractionTaskUseCase,
+    CreatePlanGenerationTaskUseCase,
+    GetCompanionTaskUseCase,
+)
 from app.application.use_cases.vocabulary import _require_word_owner
-from app.domain.repositories import GroupRepository, PracticeExerciseRepository, WordRepository
+from app.domain.repositories import (
+    CompanionSessionRepository,
+    CompanionTaskRepository,
+    GroupRepository,
+    PracticeExerciseRepository,
+    RecallSettingsRepository,
+    WordRepository,
+)
 from app.domain.repositories import ReviewSessionRepository
+from app.domain.services.companion_tasks import CompanionTask
 from app.domain.value_objects import SupportedLanguage
 from app.domain.value_objects import ReviewOutcome, SessionMode
 from app.domain.services.spaced_repetition import Scheduler
@@ -76,4 +90,76 @@ def extract_vocabulary_handler(groups: GroupRepository, provider: AIProvider | N
     async def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         items, source = await ExtractVocabularyUseCase(groups, provider).execute(user_id, int(payload["group_id"]), str(payload["text"]), payload.get("source_language"), str(payload["target_language"]), min(int(payload.get("max_items", 20)), 50), payload.get("min_level"))
         return {"source": source, "items": [{"term": item.term, "translations": item.translations, "examples": item.examples, "cefr_level": item.cefr_level} for item in items]}
+    return handle
+
+
+def _companion_task_response(task: CompanionTask) -> dict[str, Any]:
+    return {
+        "id": task.id,
+        "session_id": task.session_id,
+        "task_type": task.task_type.value,
+        "status": task.status.value,
+        "total_units": task.total_units,
+        "completed_units": task.completed_units,
+        "progress": task.progress,
+        "result": task.result,
+        "error": task.error,
+        "expires_at": task.expires_at.isoformat(),
+        "updated_at": task.updated_at.isoformat(),
+        "revision": task.revision,
+    }
+
+
+def start_extraction_task_handler(
+    task_repo: CompanionTaskRepository, sessions: CompanionSessionRepository, settings: RecallSettingsRepository
+):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        task = CreateExtractionTaskUseCase(task_repo, sessions, settings).execute(
+            user_id,
+            str(payload["companion_session_id"]),
+            str(payload["text"]),
+            str(payload["target_language"]),
+            int(payload.get("max_terms", 20)),
+            payload.get("request_id"),
+        )
+        return _companion_task_response(task)
+    return handle
+
+
+def start_plan_generation_task_handler(
+    task_repo: CompanionTaskRepository,
+    sessions: CompanionSessionRepository,
+    settings: RecallSettingsRepository,
+    words: WordRepository,
+):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        task = CreatePlanGenerationTaskUseCase(task_repo, sessions, settings, words).execute(
+            user_id,
+            str(payload["companion_session_id"]),
+            int(payload.get("size", 5)),
+            payload.get("request_id"),
+        )
+        return _companion_task_response(task)
+    return handle
+
+
+def get_companion_task_handler(
+    task_repo: CompanionTaskRepository, sessions: CompanionSessionRepository, settings: RecallSettingsRepository
+):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        task = GetCompanionTaskUseCase(task_repo, sessions, settings).execute(
+            user_id, str(payload["companion_session_id"]), str(payload["task_id"])
+        )
+        return _companion_task_response(task)
+    return handle
+
+
+def cancel_companion_task_handler(
+    task_repo: CompanionTaskRepository, sessions: CompanionSessionRepository, settings: RecallSettingsRepository
+):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        task = CancelCompanionTaskUseCase(task_repo, sessions, settings).execute(
+            user_id, str(payload["companion_session_id"]), str(payload["task_id"])
+        )
+        return _companion_task_response(task)
     return handle

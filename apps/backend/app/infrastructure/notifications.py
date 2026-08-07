@@ -23,8 +23,16 @@ logger = logging.getLogger(__name__)
 
 
 class LogNotificationChannel:
-    def send(self, user: User, message: str, channel: str) -> None:
-        logger.info("notification[%s] to %s: %s", channel, user.username, message)
+    def send(
+        self, user: User, message: str, channel: str, companion_deep_link: str | None = None
+    ) -> None:
+        logger.info(
+            "notification[%s] to %s: %s%s",
+            channel,
+            user.username,
+            message,
+            f" ({companion_deep_link})" if companion_deep_link else "",
+        )
 
 
 class DesktopNotificationChannel:
@@ -74,9 +82,11 @@ class DesktopNotificationChannel:
             self.session_factory, self.fallback, reminder_id, self.action_ttl
         )
 
-    def send(self, user: User, message: str, channel: str) -> None:
+    def send(
+        self, user: User, message: str, channel: str, companion_deep_link: str | None = None
+    ) -> None:
         if channel != Channel.DESKTOP.value:
-            self.fallback.send(user, message, channel)
+            self.fallback.send(user, message, channel, companion_deep_link)
             return
         if user.id is None:
             # An unsaved user has nothing to scope the outbox row to. Logged
@@ -98,6 +108,7 @@ class DesktopNotificationChannel:
                     # property of the firing, not of when someone got round to
                     # looking at their tray.
                     expires_at=utcnow() + self.action_ttl,
+                    companion_deep_link=companion_deep_link,
                 )
             )
             db.commit()

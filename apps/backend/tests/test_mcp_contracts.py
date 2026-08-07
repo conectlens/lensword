@@ -4,7 +4,7 @@ from app.application.mcp.dispatcher import MCPDispatcher, UnboundMCPToolError, U
 import pytest
 
 def test_contracts_are_versioned_bounded_and_classified():
-    assert CONTRACT_VERSION == "1.0.0" and len(TOOL_CONTRACTS) == 8
+    assert CONTRACT_VERSION == "1.0.0" and len(TOOL_CONTRACTS) == 12
     for tool in TOOL_CONTRACTS:
         assert tool.schema_id.endswith(".schema.json")
         assert tool.input_schema["additionalProperties"] is False

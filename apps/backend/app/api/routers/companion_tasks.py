@@ -47,6 +47,7 @@ def _response(task: CompanionTask) -> CompanionTaskResponse:
         created_at=task.created_at,
         updated_at=task.updated_at,
         revision=task.revision,
+        input=task.input,
     )
 
 
@@ -97,6 +98,7 @@ def create_task(
                 expires_at=now + timedelta(seconds=payload.expires_in_seconds),
                 created_at=now,
                 updated_at=now,
+                input=payload.input,
             )
         )
     except ValueError as exc:

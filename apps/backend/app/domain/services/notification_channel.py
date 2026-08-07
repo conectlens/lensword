@@ -13,4 +13,6 @@ from app.domain.entities import User
 
 
 class NotificationChannel(Protocol):
-    def send(self, user: User, message: str, channel: str) -> None: ...
+    def send(
+        self, user: User, message: str, channel: str, companion_deep_link: str | None = None
+    ) -> None: ...

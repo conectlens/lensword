@@ -42,7 +42,7 @@ class _RecordingChannel:
     def __init__(self):
         self.sent = []
 
-    def send(self, user, message, channel):
+    def send(self, user, message, channel, companion_deep_link=None):
         self.sent.append((user.username, channel))
 
 

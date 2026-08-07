@@ -32,6 +32,17 @@ TOOL_CONTRACTS = tuple(ToolContract(name, f"https://lensword.app/mcp/{CONTRACT_V
     ("lensword.generate_exercises", AccessClass.WRITE, _schema({"word_id":{"type":"integer","minimum":1}, "kind":{"enum":["translation","definition","cloze"]}}, ["word_id"], write=True)),
     ("lensword.get_learning_progress", AccessClass.READ, _schema({"week":{"type":"string","maxLength":32}})),
     ("lensword.record_answer", AccessClass.WRITE, _schema({"session_id":{"type":"integer","minimum":1}, "word_id":{"type":"integer","minimum":1}, "outcome":{"enum":["correct","incorrect","skipped"]}}, ["session_id","word_id","outcome"], write=True)),
+    # Companion task tools (#197 TODO 2): genuinely long-running work only.
+    # Both wrap the existing companion_tasks.py state machine and the
+    # background executor in app.infrastructure.jobs.companion_task_dispatch
+    # — these tools never do the work synchronously themselves, they only
+    # create/read/cancel the durable task record. The MCP transport
+    # (apps/mcp/lensword_mcp/server.py) gates exposing them on the client
+    # having declared task capability during initialize.
+    ("lensword.start_extraction_task", AccessClass.WRITE, _schema({"companion_session_id":{"type":"string","minLength":1,"maxLength":64}, "text":{"type":"string","minLength":1,"maxLength":8000}, "target_language":{"type":"string","minLength":1,"maxLength":64}, "max_terms":{"type":"integer","minimum":1,"maximum":50}}, ["companion_session_id","text","target_language"], write=True)),
+    ("lensword.start_plan_generation_task", AccessClass.WRITE, _schema({"companion_session_id":{"type":"string","minLength":1,"maxLength":64}, "size":{"type":"integer","minimum":1,"maximum":20}}, ["companion_session_id"], write=True)),
+    ("lensword.get_companion_task", AccessClass.READ, _schema({"companion_session_id":{"type":"string","minLength":1,"maxLength":64}, "task_id":{"type":"string","minLength":1,"maxLength":64}}, ["companion_session_id","task_id"])),
+    ("lensword.cancel_companion_task", AccessClass.WRITE, _schema({"companion_session_id":{"type":"string","minLength":1,"maxLength":64}, "task_id":{"type":"string","minLength":1,"maxLength":64}}, ["companion_session_id","task_id"], write=True)),
 ))
 
 def capabilities() -> dict:
