@@ -40,8 +40,8 @@ not build.
 | `KnowledgeGraph.Relation.TOPIC` / `.COLLOCATION` | **Keep, generic (mostly)** | "Share a grouping" (`TOPIC`) and "co-occur" (`COLLOCATION`) are reusable. The kernel exposes `KernelRelation.RELATED` for the `TOPIC` case; `COLLOCATION` has no kernel equivalent since nothing in the spike needed co-occurrence evidence. |
 | `KnowledgeGraph.prerequisites()` | **Adapt, with real friction — see the go/no-go section** | Derives "easier related item" from two mechanisms built for vocabulary: any edge connecting two nodes, plus a `cefr_level` string ordinal comparison. Neither is a dedicated "is a prerequisite of" relation. The kernel adapts both rather than fixing either (below). |
 | CEFR level handling (`WordNode.cefr_level`, `_CEFR_ORDER`) | **Language-specific — needs a real adapter concept, not built here** | Exactly the issue's own prediction. `KernelItem.difficulty_tier` currently *borrows* the literal `"A1"`–`"C2"` strings as an ordinal encoding so `KnowledgeGraph.prerequisites()` has something to compare — this is a stand-in, not a difficulty-tier concept, and is called out as such in `domain_kernel.py`'s own docstring. A real, CEFR-independent difficulty-tier type is future work, deferred because one spike is not two use cases. |
-| `InterventionStrategy.MORPHOLOGY_DECOMPOSITION`, `.CONTEXT_VARIATION` | **Language-flavored names, not moved** | "Morphology" (word-part decomposition) and its vocabulary framing don't transfer cleanly; the spike never selects either (its confusion/prerequisite cases route to `CONTRAST` and `PREREQUISITE_PATH`). Left as-is — no evidence this phase produces that they need to change. |
-| `InterventionStrategy.ISOLATE`, `.CONTRAST`, `.PREREQUISITE_PATH`, `.PRODUCTION_PRACTICE`, `.ACQUISITION_RESTART` | **Keep, generic** | The spike's confusion pair maps to `CONTRAST`, its prerequisite pair maps to `PREREQUISITE_PATH`, both through the unmodified `_STRATEGY_FOR_CATEGORY` table — no changes needed. |
+| `InterventionStrategy.MORPHOLOGY_DECOMPOSITION`, `.CONTEXT_VARIATION` | **Language-flavored names, not moved** | "Morphology" (word-part decomposition) and its vocabulary framing don't transfer cleanly; the spike never selects either (its confusion/prerequisite cases route to `ISOLATE`/`CONTRAST` and `PREREQUISITE_PATH`). Left as-is — no evidence this phase produces that they need to change. |
+| `InterventionStrategy.ISOLATE`, `.CONTRAST`, `.PREREQUISITE_PATH`, `.PRODUCTION_PRACTICE`, `.ACQUISITION_RESTART` | **Keep, generic** | The spike's confusion pair stages to `ISOLATE` first (#185 TODO 1's isolate-before-contrast policy — `CONTRAST` only follows a recorded-effective prior `ISOLATE` plan for the same pair, which this spike does not fabricate), its prerequisite pair maps to `PREREQUISITE_PATH` — both through the unmodified `plan_intervention()`/`_STRATEGY_FOR_CATEGORY` — no changes needed. |
 | `InterventionStrategy.SPATIAL_ANCHOR`, `.MNEMONIC_REPLACEMENT` | **Not evaluated** | Never auto-selected today even for vocabulary (SPATIAL_ANCHOR) or tied to `PhoneticInterferenceRule` (MNEMONIC_REPLACEMENT), which this phase already ruled language-specific above. Out of scope. |
 | `intervention_efficacy.py` (`InterventionObservation`, `estimate_efficacy`) | **Keep, already generic — no changes made or needed** | Already parameterized by `item_class: str` and `language: str` as plain strings, not vocabulary types. The spike's delayed-outcome test uses it completely unmodified with `item_class="software_concept"`, `language="n/a"`. This is the cleanest "already done" finding in the audit. |
 | FSRS scheduler (`spaced_repetition.py`) | **Keep, already generic — confirmed, not touched** | Operates purely on `ReviewState` (interval, stability, due date); nothing in it reads a word, a language, or a CEFR level. Not exercised by the spike (which does not model long-term scheduling), but nothing about it would need to change to be exercised. |
@@ -91,7 +91,7 @@ Protocols. `app/application/use_cases/domain_kernel_spike.py`'s
 `RunSoftwareConceptSpikeUseCase` is the one real, gated entry point,
 checking `RecallSettings.domain_kernel_spike_enabled` (default off,
 persisted the same way every other `RecallSettings` flag is, migration
-`20260807_34_domain_kernel_spike_flag`) before running anything — but
+`20260807_36_domain_kernel_spike_flag`) before running anything — but
 deliberately **not** surfaced in `RecallSettingsResponse`/
 `RecallSettingsUpdateRequest` or any router: there is nothing for an end
 user to opt into, this is a developer/architecture flag, not a product
@@ -102,7 +102,11 @@ intervention → delayed-outcome cycle for the process/thread confusion pair
 through the **unmodified** `diagnose()` and `plan_intervention()`
 functions, plus `intervention_efficacy.estimate_efficacy()` for the
 delayed-outcome measurement — all three imported from their existing
-modules, none forked or subclassed. It also demonstrates a second
+modules, none forked or subclassed. (`plan_intervention()` stages a fresh
+confusion diagnosis to `ISOLATE`, not `CONTRAST` — #185 TODO 1's own
+policy, unrelated to this phase — and the spike test asserts that real
+behavior rather than the `CONTRAST`-only mapping an earlier draft of this
+phase was written against.) It also demonstrates a second
 diagnosis category (`WEAK_ACQUISITION`, for repeated stack/heap failure
 with no prior recall) and the prerequisite pair (`MISSING_PREREQUISITE`
 for authorization before authentication is solid), documenting the real

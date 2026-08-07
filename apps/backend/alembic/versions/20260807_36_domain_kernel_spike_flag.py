@@ -1,7 +1,7 @@
 """Add the domain-kernel spike developer flag (#189 TODO 2).
 
-Revision ID: 20260807_34_domain_kernel_spike_flag
-Revises: 20260807_33_companion_tasks
+Revision ID: 20260807_36_domain_kernel_spike_flag
+Revises: 20260807_35
 
 domain_kernel_spike_enabled gates the software-concepts domain-kernel
 spike (app.domain.services.software_concepts_spike), the one non-language
@@ -13,8 +13,8 @@ settings API — there is nothing for an end user to opt into here.
 from alembic import op
 import sqlalchemy as sa
 
-revision = "20260807_34_domain_kernel_spike_flag"
-down_revision = "20260807_33_companion_tasks"
+revision = "20260807_36_domain_kernel_spike_flag"
+down_revision = "20260807_35"
 branch_labels = None
 depends_on = None
 

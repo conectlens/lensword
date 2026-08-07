@@ -74,9 +74,13 @@ def test_full_cycle_for_a_software_concept_confusion_pair():
     assert diagnosis.evidence
 
     # 2. Diagnosis -> intervention, via the unmodified plan_intervention().
+    # A first-time confusion diagnosis stages to ISOLATE, not CONTRAST
+    # directly (#185 TODO 1's staging policy) — CONTRAST only follows a
+    # prior, recorded-effective ISOLATE plan for this exact pair, which
+    # this spike does not fabricate.
     plan = plan_intervention(diagnosis)
     assert plan is not None
-    assert plan.strategy == InterventionStrategy.CONTRAST.value
+    assert plan.strategy == InterventionStrategy.ISOLATE.value
 
     # 3. Intervention -> content, via the kernel's own content protocol.
     content = content_source.content_for(
@@ -99,32 +103,34 @@ def test_full_cycle_for_a_software_concept_confusion_pair():
 
     # 5. Delayed-outcome measurement: the same intervention_efficacy.py
     # vocabulary already uses, scoped to a software-concept item_class,
-    # comparing the contrast-intervention arm (thread/process) against an
-    # unintervened control arm (stack/heap).
+    # comparing the isolate-intervention arm (thread/process) against an
+    # unintervened control arm (stack/heap). learner_id/modality are both
+    # required context axes (#186 TODO 0/TODO 1) — this test supplies real
+    # values for both rather than defaults, the same as any real caller must.
     intervention_arm = [
         InterventionObservation(
             evidence_id=f"thread-delayed-{i}", learner_id=USER, item_id=thread.numeric_id,
-            exposure_id=f"exp-thread-{i}", intervention_type="contrast", item_class="software_concept",
-            language="n/a", prompt_direction="concept_to_label", difficulty="n/a", horizon_days=5,
-            correct=True, is_control=False, observed_at=BASE + timedelta(days=5 + i),
+            exposure_id=f"exp-thread-{i}", intervention_type=plan.strategy, item_class="software_concept",
+            language="n/a", prompt_direction="concept_to_label", difficulty="n/a", modality="text",
+            horizon_days=5, correct=True, is_control=False, observed_at=BASE + timedelta(days=5 + i),
         )
         for i in range(2)
     ]
     control_arm = [
         InterventionObservation(
             evidence_id=f"stack-delayed-{i}", learner_id=USER, item_id=spike.CATALOG["stack"].numeric_id,
-            exposure_id=f"exp-stack-{i}", intervention_type="contrast", item_class="software_concept",
-            language="n/a", prompt_direction="concept_to_label", difficulty="n/a", horizon_days=5,
-            correct=False, is_control=True, observed_at=BASE + timedelta(days=5 + i),
+            exposure_id=f"exp-stack-{i}", intervention_type=plan.strategy, item_class="software_concept",
+            language="n/a", prompt_direction="concept_to_label", difficulty="n/a", modality="text",
+            horizon_days=5, correct=False, is_control=True, observed_at=BASE + timedelta(days=5 + i),
         )
         for i in range(2)
     ]
     estimate = estimate_efficacy(
         intervention_arm + control_arm,
-        intervention_type="contrast",
+        intervention_type=plan.strategy,
         context=EfficacyContext(
-            item_class="software_concept", language="n/a", prompt_direction="concept_to_label",
-            difficulty="n/a", horizon_days=5,
+            learner_id=USER, item_class="software_concept", language="n/a",
+            prompt_direction="concept_to_label", difficulty="n/a", modality="text", horizon_days=5,
         ),
         minimum_samples=2,
     )
@@ -203,6 +209,6 @@ def test_spike_use_case_runs_the_full_cycle_once_enabled():
     result = RunSoftwareConceptSpikeUseCase().execute(settings, user_id=USER)
     assert result.diagnosis.outcome == DiagnosisCategory.EXACT_CONFUSION.value
     assert result.plan is not None
-    assert result.plan.strategy == InterventionStrategy.CONTRAST.value
+    assert result.plan.strategy == InterventionStrategy.ISOLATE.value
     assert result.content is not None
     assert result.outcome is not None and result.outcome.completed

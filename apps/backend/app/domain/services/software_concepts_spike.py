@@ -134,6 +134,7 @@ class AuthPrerequisiteSource:
 # than raising — a content source abstaining from specificity is a normal
 # outcome, matching the rest of this epic's "prefer abstention" bias.
 _CONTENT_TEMPLATES: dict[str, str] = {
+    "isolate": "Practice {label} on its own, away from {other}, until recalling it alone is automatic.",
     "contrast": "Compare {label} with {other}, and name one concrete difference between them.",
     "prerequisite_path": "Before continuing with {label}, make sure {other} is solid first.",
     "acquisition_restart": "Restart {label} from a clean example, without leaning on {other}.",
