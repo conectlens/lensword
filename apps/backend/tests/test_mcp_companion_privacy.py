@@ -9,30 +9,35 @@ something to redact by default. This file locks that down at the MCP
 boundary while confirming the REST API, which is a different audience the
 same data belongs to unredacted, is untouched.
 """
-from pathlib import Path
-
 from app.infrastructure.models import MCPGrantModel
 
-# `mcp.py`'s `_valid_workspace` checks `pathlib.PurePath(...).is_absolute()`,
-# which resolves to the *native* path flavor at import time — "/approved" is
-# absolute on POSIX but not on Windows, where a drive letter is required.
-# Anchoring to the current working directory's own anchor keeps this test
-# platform-independent instead of assuming a POSIX runner.
-_WORKSPACE = Path.cwd().anchor + "approved"
+# mcp.py's `is_valid_workspace` now always uses `pathlib.PurePosixPath`
+# regardless of host OS (issue #196 fixed the platform-dependent
+# `pathlib.PurePath` bug this used to work around with `Path.cwd().anchor`
+# — every workspace string in this codebase is written POSIX-style), so a
+# plain "/approved" is absolute on every platform the tests run on.
+_WORKSPACE = "/approved"
 
 
-def _grant(db_session, *, tool: str, requester: str = "fixture-client", workspace: str = _WORKSPACE):
-    item = MCPGrantModel(requester=requester, server="lensword", tool=tool, access="read", workspace=workspace, mode="always")
+# Caller identity is derived server-side from the authenticated bearer token
+# (issue #196 TODO 2) — a grant must be bound to the real "user:{id}"
+# requester string, not an arbitrary caller-chosen label.
+def _user_id(client, headers) -> int:
+    return client.get("/api/v1/auth/me", headers=headers).json()["id"]
+
+
+def _grant(db_session, *, tool: str, user_id: int, workspace: str = _WORKSPACE):
+    item = MCPGrantModel(requester=f"user:{user_id}", server="lensword", tool=tool, access="read", workspace=workspace, mode="always")
     db_session.add(item)
     db_session.flush()
     return item
 
 
-def _invoke(client, headers, *, tool: str, payload: dict, requester: str = "fixture-client", workspace: str = _WORKSPACE):
+def _invoke(client, headers, *, tool: str, payload: dict, workspace: str = _WORKSPACE):
     return client.post(
         "/api/v1/mcp/invoke",
         headers=headers,
-        json={"requester": requester, "workspace": workspace, "tool": tool, "payload": payload},
+        json={"workspace": workspace, "tool": tool, "payload": payload},
     )
 
 
@@ -57,7 +62,7 @@ def _word_with_mnemonic(client, headers) -> dict:
 def test_mcp_search_words_never_exposes_a_mnemonic(client, auth_headers, db_session):
     headers = auth_headers()
     _word_with_mnemonic(client, headers)
-    _grant(db_session, tool="lensword.search_words")
+    _grant(db_session, tool="lensword.search_words", user_id=_user_id(client, headers))
 
     response = _invoke(client, headers, tool="lensword.search_words", payload={"query": "gato"})
 
@@ -83,7 +88,7 @@ def test_mcp_get_due_reviews_never_exposes_a_mnemonic(client, auth_headers, db_s
     model.due_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db_session.flush()
 
-    _grant(db_session, tool="lensword.get_due_reviews")
+    _grant(db_session, tool="lensword.get_due_reviews", user_id=_user_id(client, headers))
 
     response = _invoke(client, headers, tool="lensword.get_due_reviews", payload={})
 
@@ -105,7 +110,7 @@ def test_mcp_due_and_active_words_paginate_with_a_real_cursor(client, auth_heade
             json={"term": f"palabra{index}", "target_language": "Spanish", "translations": ["word"]},
             headers=headers,
         )
-    _grant(db_session, tool="lensword.search_words")
+    _grant(db_session, tool="lensword.search_words", user_id=_user_id(client, headers))
 
     first = _invoke(client, headers, tool="lensword.search_words", payload={"query": "palabra", "limit": 2})
     assert first.status_code == 200
