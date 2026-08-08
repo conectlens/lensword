@@ -3,14 +3,19 @@ name: Build desktop installers (reusable)
 # Shared by release.yml (tag-triggered, stable/versioned releases) and
 # release-continuous.yml (push-to-main-triggered, rolling "latest" builds)
 # so the signing/packaging logic — the part that's actually easy to get
-# subtly wrong — exists in exactly one place. Extracted unchanged from
-# release.yml's original single-workflow form; behavior for tag-triggered
-# releases is not intended to change by this refactor.
+# subtly wrong — exists in exactly one place.
+#
+# Two-stage: `build` produces installers per platform as workflow artifacts
+# only (no GitHub Release interaction); `publish` runs once after all three
+# finish and is the single writer that creates the release and attaches
+# every platform's installers together. See the `build` job's comment for
+# why this replaced the earlier single-stage, shared-concurrency-group
+# design.
 on:
   workflow_call:
     inputs:
       tag_name:
-        description: "Git ref/tag tauri-action attaches installers to (must already exist for a real tag release; a synthetic non-pushed value is fine for a rolling release)"
+        description: "Git tag the publish job attaches installers to (must already exist for a real tag release; a synthetic non-pushed value is fine for a rolling release — gh release create will cut it from the build commit)"
         required: true
         type: string
       display_version:
@@ -48,20 +53,17 @@ jobs:
       fail-fast: false
       matrix:
         platform: [macos-latest, ubuntu-latest, windows-latest]
-    # Deliberately serializes the three platforms against each other (the
-    # group name omits matrix.platform on purpose) even though nothing else
-    # about them is order-dependent: all three attach installers to the same
-    # GitHub Release (tag_name), and tauri-action's create-or-update-release
-    # step is not safe against concurrent callers racing that one release
-    # resource. Three simultaneous requests to create/fetch/attach-to one
-    # release produced an intermittent connection reset mid-upload
-    # ("Error: other side closed") after a fully successful Windows build —
-    # observed on a real run of release-continuous.yml (PR #318's merge).
-    # Costs wall-clock time (three sequential builds instead of parallel);
-    # buys a release step that can't lose this race.
-    concurrency:
-      group: desktop-installer-release-${{ inputs.tag_name }}
-      cancel-in-progress: false
+    # Builds only — no release input is passed to tauri-action below, so it
+    # never touches the GitHub Release. That used to be done here directly
+    # (all 3 platforms attaching to the same release, serialized via a
+    # shared concurrency group), which caused two distinct failure modes
+    # observed on real runs: a mid-upload connection reset from concurrent
+    # writers to one release (PR #318's merge), and outright job
+    # cancellation, since a concurrency group only queues one waiting job at
+    # a time — the third matrix leg to arrive gets cancelled by GitHub
+    # before it ever starts (observed on the #333 merge to main). Publishing
+    # is now a separate job below that runs once all three builds finish, so
+    # there's exactly one writer to the release and no race to lose.
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 60
     steps:
@@ -143,10 +145,10 @@ jobs:
           $config | ConvertTo-Json -Depth 20 | Set-Content $configPath
           Write-Host "Windows signing configured."
 
-      - name: Build and attach installers
+      - name: Build installers
+        id: tauri-build
         uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -163,8 +165,40 @@ jobs:
           LENSWORD_RELEASE_API_BASE: ${{ inputs.api_base_url }}
         with:
           projectPath: apps/desktop
-          tagName: ${{ inputs.tag_name }}
-          releaseName: ${{ inputs.release_name }}
-          releaseBody: ${{ inputs.release_body }}
-          releaseDraft: ${{ inputs.release_draft }}
-          prerelease: ${{ inputs.prerelease }}
+          # No tagName/releaseName/releaseId: per tauri-action's docs, that's
+          # what tells it to build only and skip touching any GitHub Release.
+          # Publishing is the `publish` job below, once every platform's
+          # build has finished.
+
+      - name: Upload installers for the publish job
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-installer-${{ matrix.platform }}
+          path: ${{ join(fromJson(steps.tauri-build.outputs.artifactPaths), '\n') }}
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download every platform's installers
+        uses: actions/download-artifact@v8
+        with:
+          pattern: desktop-installer-*
+          path: dist
+          merge-multiple: true
+
+      - name: Create the release and attach every installer
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ inputs.tag_name }}" \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "${{ inputs.release_name }}" \
+            --notes "${{ inputs.release_body }}" \
+            ${{ inputs.release_draft && '--draft' || '' }} \
+            ${{ inputs.prerelease && '--prerelease' || '' }} \
+            dist/*
