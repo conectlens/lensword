@@ -56,10 +56,7 @@ export function ByokCredentialsCard() {
     }
   }
 
-  useEffect(() => {
-    void refresh()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  useEffect(() => { void refresh() }, []) // eslint-disable-line react-hooks/set-state-in-effect
 
   function resetForm() {
     setApiKey('')
