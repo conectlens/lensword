@@ -14,7 +14,18 @@ from app.api.deps import _ai_provider, get_ai_provider
 from app.config import Settings, get_settings
 from app.infrastructure.ai import OllamaProvider, build_ai_provider
 
-_AI_ENV_VARS = ("AI_PROVIDER", "OLLAMA_MODEL", "OLLAMA_BASE_URL")
+_AI_ENV_VARS = (
+    "AI_PROVIDER",
+    "OLLAMA_MODEL",
+    "OLLAMA_BASE_URL",
+    "GEMINI_API_KEY",
+    "GEMINI_MODEL",
+    "VERTEX_PROJECT_ID",
+    "VERTEX_LOCATION",
+    "VERTEX_MODEL",
+    "OPENAI_API_KEY",
+    "OPENAI_MODEL",
+)
 
 
 @pytest.fixture()

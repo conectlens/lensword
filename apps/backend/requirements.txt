@@ -29,6 +29,17 @@ python-docx==1.2.0
 EbookLib==0.19
 beautifulsoup4==4.14.2
 
+# Cloud AI provider adapters (issue #315). google-genai is Google's current
+# unified SDK for both the Gemini Developer API and Vertex AI — one client,
+# `client.aio.models.generate_content(...)`, that differs only in how it is
+# constructed (see app/infrastructure/ai_providers/google.py), so a single
+# dependency covers both GeminiProvider and VertexAIProvider rather than the
+# older, Vertex-only google-cloud-aiplatform package.
+google-genai==2.17.0
+# OpenAI's official SDK, for OpenAIProvider
+# (app/infrastructure/ai_providers/openai_provider.py).
+openai==2.53.0
+
 pytest==9.1.1
 # Test-only: generates the PDF fixtures in test_document_parsers.py rather than
 # committing binaries nobody reviews.

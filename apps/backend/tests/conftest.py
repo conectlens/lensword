@@ -45,7 +45,22 @@ def _discard_the_throwaway_database():
     yield
     shutil.rmtree(_THROWAWAY_DB_DIR, ignore_errors=True)
 
-AI_ENV_VARS = ("AI_PROVIDER", "OLLAMA_MODEL", "OLLAMA_BASE_URL")
+AI_ENV_VARS = (
+    "AI_PROVIDER",
+    "OLLAMA_MODEL",
+    "OLLAMA_BASE_URL",
+    # Issue #315's cloud providers: a developer's own exported
+    # GEMINI_API_KEY/OPENAI_API_KEY (or a checked-out apps/backend/.env
+    # setting one) must not leak into the suite any more than
+    # OLLAMA_BASE_URL already could not — see this fixture's own docstring.
+    "GEMINI_API_KEY",
+    "GEMINI_MODEL",
+    "VERTEX_PROJECT_ID",
+    "VERTEX_LOCATION",
+    "VERTEX_MODEL",
+    "OPENAI_API_KEY",
+    "OPENAI_MODEL",
+)
 
 
 @pytest.fixture(autouse=True)

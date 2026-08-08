@@ -6,7 +6,10 @@ from tempfile import NamedTemporaryFile
 from pydantic import BaseModel, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-SUPPORTED_AI_PROVIDERS = ("none", "ollama")
+# Matches app/infrastructure/ai_providers/factory.py's own tuple, kept in
+# sync by hand rather than imported — see that module's docstring for why
+# the duplication is deliberate (a circular import otherwise).
+SUPPORTED_AI_PROVIDERS = ("none", "ollama", "gemini", "vertex", "openai")
 SUPPORTED_JOB_STORES = ("database", "memory")
 
 
@@ -56,10 +59,50 @@ class Settings(BaseSettings):
 
     # AI provider. "none" (the default) builds no provider at all, so an
     # existing deployment that sets none of these boots and behaves exactly
-    # as it did before. Set AI_PROVIDER=ollama to enable local suggestions.
+    # as it did before. Set AI_PROVIDER=ollama to enable local suggestions,
+    # or one of "gemini"/"vertex"/"openai" (issue #315) for a hosted deploy
+    # that cannot run its own Ollama daemon (e.g. Render — see
+    # docs/internal/render-deployment.md).
     ai_provider: str = "none"
     ollama_model: str = "llama3.2"
     ollama_base_url: str = "http://localhost:11434"
+
+    # Gemini Developer API (issue #315) — a single API key from
+    # https://aistudio.google.com/apikey. None by default: an operator who
+    # never sets AI_PROVIDER=gemini never needs one, and build_ai_provider
+    # raises a clear startup error naming this field if they do without
+    # setting it, rather than a confusing failure on first request.
+    gemini_api_key: str | None = None
+    # gemini-2.5-flash: the fast/economical Gemini tier — a sensible default
+    # for a feature (mnemonic suggestions, vocabulary enrichment) that runs
+    # on every learner action, not the top-of-line reasoning model.
+    gemini_model: str = "gemini-2.5-flash"
+
+    # Google Vertex AI (issue #315) — the same google-genai SDK as Gemini
+    # above, but authenticated via Application Default Credentials rather
+    # than an API key (a GCP service-account key file referenced by
+    # GOOGLE_APPLICATION_CREDENTIALS, or workload identity), which is why
+    # there is no vertex_api_key field here: ADC is the SDK's own concern,
+    # configured in the deploy environment, not read through Settings.
+    vertex_project_id: str | None = None
+    # us-central1: one of Vertex AI's original, widely available regions for
+    # Gemini models — a reasonable default for an operator who has not yet
+    # thought about where their GCP project's data should live.
+    vertex_location: str = "us-central1"
+    vertex_model: str = "gemini-2.5-flash"
+
+    # OpenAI (issue #315) — a single API key from
+    # https://platform.openai.com/api-keys.
+    openai_api_key: str | None = None
+    # gpt-5.6-luna: OpenAI's cost-optimized tier, confirmed via the OpenAI
+    # API documentation (developers.openai.com) while this adapter was
+    # built — matching gemini_model's own reasoning above: this runs on
+    # every learner action, so the default should be the cheap/fast tier
+    # (gpt-5.6-sol/-terra are the more expensive reasoning/balanced tiers a
+    # deployment can opt into via OPENAI_MODEL). Model names churn faster
+    # than most dependencies, so this is worth re-checking against the live
+    # model list before a production deploy rather than trusted indefinitely.
+    openai_model: str = "gpt-5.6-luna"
 
     # Bounds on one generation. Still keeps a steered model from returning an
     # unbounded response body (issue #45), but 200 — sized only for a
@@ -269,7 +312,40 @@ _AI_OVERRIDE_FIELDS = (
     "ollama_base_url",
     "ai_max_output_tokens",
     "ai_context_max_chars",
+    "gemini_api_key",
+    "gemini_model",
+    "vertex_project_id",
+    "vertex_location",
+    "vertex_model",
+    "openai_api_key",
+    "openai_model",
 )
+
+# Secret fields among the above. A blank value submitted for one of these
+# means "leave whatever is currently stored" rather than "clear it" — see
+# save_effective_ai_settings's own comment for why: the GET side
+# (AISettingsResponse in app/api/schemas/ai_settings.py) never echoes a
+# configured secret back as `gemini_api_key_set`/`openai_api_key_set`
+# booleans only, so there is nothing for an admin UI to resend on every
+# save, and a literal blank must not be read as "clear this credential".
+_AI_SECRET_FIELDS = ("gemini_api_key", "openai_api_key")
+
+# Which Settings field(s) each cloud provider cannot run without, checked at
+# admin-save time below so a broken combination (AI_PROVIDER=gemini with no
+# key configured) fails the PUT with a clear 422 instead of surfacing as an
+# unhandled error the next time something needs AI. This duplicates part of
+# build_ai_provider's own check (app/infrastructure/ai_providers/factory.py)
+# rather than importing it — the same deliberate duplication
+# SUPPORTED_AI_PROVIDERS above already carries, and for the same reason:
+# app/config.py cannot import from app/infrastructure/ without a circular
+# import, since infrastructure/ai_providers/factory.py already imports
+# `Settings` from here. Update both by hand when a provider's requirements
+# change.
+_CLOUD_PROVIDER_REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
+    "gemini": ("gemini_api_key",),
+    "vertex": ("vertex_project_id",),
+    "openai": ("openai_api_key",),
+}
 
 
 class AISettingsUpdate(BaseModel):
@@ -278,6 +354,13 @@ class AISettingsUpdate(BaseModel):
     ollama_base_url: str
     ai_max_output_tokens: int
     ai_context_max_chars: int
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.5-flash"
+    vertex_project_id: str | None = None
+    vertex_location: str = "us-central1"
+    vertex_model: str = "gemini-2.5-flash"
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-5.6-luna"
 
 
 def _runtime_override_path(settings: Settings) -> Path:
@@ -301,13 +384,28 @@ def get_effective_ai_settings() -> Settings:
 
 
 def save_effective_ai_settings(update: AISettingsUpdate) -> Settings:
-    """Validate and atomically persist the deployment-wide AI configuration."""
-    base = get_settings()
+    """Validate and atomically persist the deployment-wide AI configuration.
+
+    Based on the *currently effective* settings (get_effective_ai_settings),
+    not just the environment defaults (get_settings) — that is what makes a
+    blank incoming secret field mean "leave it alone" rather than "clear
+    it": the previously persisted key is already present in `base`, and a
+    blank in `values` for that same field is dropped before the merge below
+    so it does not overwrite a real key with nothing.
+    """
+    base = get_effective_ai_settings()
     values = update.model_dump()
     if not values["ollama_model"].strip():
         raise ValueError("ollama_model must not be blank")
     if not values["ollama_base_url"].strip():
         raise ValueError("ollama_base_url must not be blank")
+    for field in _AI_SECRET_FIELDS:
+        if not (values.get(field) or "").strip():
+            values[field] = getattr(base, field)
+    provider = values["ai_provider"].strip().lower()
+    for required_field in _CLOUD_PROVIDER_REQUIRED_FIELDS.get(provider, ()):
+        if not (values.get(required_field) or "").strip():
+            raise ValueError(f"AI_PROVIDER '{provider}' requires {required_field} to be set")
     validated = Settings(**(base.model_dump() | values))
     path = _runtime_override_path(base)
     path.parent.mkdir(parents=True, exist_ok=True)

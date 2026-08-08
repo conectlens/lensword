@@ -11,6 +11,8 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 
 | Date | Commit | Author | Subject | Changelog fragment |
 |---|---|---|---|---|
+| 2026-08-08 | [2d95ddd](https://github.com/conectlens/lensword/commit/2d95dddda1c9b9fe8395e38ca8160e13d89b48ca) | ÖMER FARUK COŞKUN | Merge remote-tracking branch 'origin/development' into development | none (predates this system) |
+| 2026-08-08 | [eb67961](https://github.com/conectlens/lensword/commit/eb679619dcce4020546a966370b559f8cb7eed27) | ÖMER FARUK COŞKUN | Make MCP tools loadable, readable, and correctly permissioned | none (predates this system) |
 | 2026-08-08 | [2bb1e58](https://github.com/conectlens/lensword/commit/2bb1e58085d4bbdf8ecb84849de5417cbef65f5e) | Ömer Faruk Coşkun | Merge pull request #322 from conectlens/feat/split-local-cli-package | none (predates this system) |
 | 2026-08-08 | [8ee5484](https://github.com/conectlens/lensword/commit/8ee5484f44df65a544ba3db3641019940cdb5e30) | Ömer Faruk Coşkun | Merge branch 'development' into feat/split-local-cli-package | none (predates this system) |
 | 2026-08-08 | [dd53c5e](https://github.com/conectlens/lensword/commit/dd53c5eb258ac7ac56ee297b6c74dd2d83ecff4e) | ÖMER FARUK COŞKUN | Fix Local CLI's BackendClient call passing the wrong argument to workspace/timeout | none (predates this system) |
@@ -49,7 +51,5 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 | 2026-08-07 | [8d6ec3f](https://github.com/conectlens/lensword/commit/8d6ec3f2cc4656a2d96a8e272dfd995823228e66) | Lenser | Add production links to README, close the loop on the API-URL bug fix | none (predates this system) |
 | 2026-08-07 | [e6f51af](https://github.com/conectlens/lensword/commit/e6f51af10c9d2bc172eaa5be3790882a423cdcad) | Lenser | Fix render.yaml (real validation error) and a frontend URL-construction bug | none (predates this system) |
 | 2026-08-07 | [8f7e92b](https://github.com/conectlens/lensword/commit/8f7e92bd07e892a7a89773e104c1db19482fe403) | Lenser | Add Render.com as a free deployment path for backend/MCP | none (predates this system) |
-| 2026-08-07 | [a400b2d](https://github.com/conectlens/lensword/commit/a400b2d0574733141d4b82aea378459b05bab352) | Lenser | Add Render.com as a free deployment path for backend/MCP | none (predates this system) |
-| 2026-08-07 | [9e86d26](https://github.com/conectlens/lensword/commit/9e86d26c5df641199ac0374fc0943dcdf018f24c) | Lenser | Auto-create the Cloudflare Pages project before deploying to it | none (predates this system) |
 
 Generated from `git log -40 development` — 40 commits shown.
