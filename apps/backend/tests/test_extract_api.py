@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.api.deps import get_ai_provider
+from app.api.deps import get_ai_provider_for_user as get_ai_provider
 from app.config import get_settings
 from app.domain.exceptions import AIProviderUnavailableError
 from app.domain.services.ai_provider import ExtractedVocabulary

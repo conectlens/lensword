@@ -39,6 +39,14 @@ google-genai==2.17.0
 # OpenAI's official SDK, for OpenAIProvider
 # (app/infrastructure/ai_providers/openai_provider.py).
 openai==2.53.0
+# Bring-Your-Own-Key AI credentials: application-level authenticated
+# encryption (Fernet) for a user's own stored Gemini/OpenAI/Vertex AI key
+# (app/infrastructure/credential_vault.py) — deliberately not a cloud KMS
+# or HashiCorp Vault, matching this project's self-hosted-first posture (no
+# extra service to run). Already an indirect dependency of google-auth; declared
+# directly here because this codebase now uses it on its own terms, not just
+# through google-genai's dependency graph.
+cryptography==50.0.0
 
 pytest==9.1.1
 # Test-only: generates the PDF fixtures in test_document_parsers.py rather than

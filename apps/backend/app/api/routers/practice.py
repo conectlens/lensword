@@ -6,7 +6,7 @@ from app.api.deps import (
     CurrentUser,
     DailySessionPreferenceRepo,
     GroupRepo,
-    OptionalAIProvider,
+    PerUserAIProvider,
     PracticeExerciseRepo,
     WordRepo,
 )
@@ -92,7 +92,7 @@ def pronunciation_feedback(
 
 @router.post("/writing-correction", response_model=WritingCorrectionResponse)
 async def writing_correction(
-    payload: WritingCorrectionRequest, current_user: CurrentUser, words: WordRepo, groups: GroupRepo, provider: OptionalAIProvider,
+    payload: WritingCorrectionRequest, current_user: CurrentUser, words: WordRepo, groups: GroupRepo, provider: PerUserAIProvider,
 ) -> WritingCorrectionResponse:
     try:
         word = _require_word_owner(words, groups, payload.word_id, current_user.id)

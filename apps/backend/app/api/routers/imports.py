@@ -4,7 +4,7 @@ import json
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
-from app.api.deps import CurrentUser, GroupRepo, KnowledgeEdgeRepo, MistakeEventRepo, OptionalAIProvider, RecallSettingsRepo, WordRepo, rate_limit_import_upload, rate_limit_import_url
+from app.api.deps import CurrentUser, GroupRepo, KnowledgeEdgeRepo, MistakeEventRepo, PerUserAIProvider, RecallSettingsRepo, WordRepo, rate_limit_import_upload, rate_limit_import_url
 from app.api.schemas.imports import ImportCommitRequest, ImportParseResponse, ImportPreviewRecord, ImportPreviewRequest, ImportPreviewResponse, ImportRecordRequest, ImportUrlRequest
 from app.application.use_cases.vocabulary import AddWordUseCase, WordInput, _require_group_owner
 from app.domain.exceptions import AIProviderUnavailableError, EntityNotFoundError, PermissionDeniedError
@@ -143,7 +143,7 @@ async def preview(
     payload: ImportPreviewRequest,
     current_user: CurrentUser,
     group_repo: GroupRepo,
-    provider: OptionalAIProvider,
+    provider: PerUserAIProvider,
     settings_repo: RecallSettingsRepo,
     word_repo: WordRepo,
 ) -> ImportPreviewResponse:

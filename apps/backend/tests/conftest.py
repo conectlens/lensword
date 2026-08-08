@@ -60,6 +60,10 @@ AI_ENV_VARS = (
     "VERTEX_MODEL",
     "OPENAI_API_KEY",
     "OPENAI_MODEL",
+    # Bring-Your-Own-Key AI credentials: a developer's own exported
+    # AI_CREDENTIAL_ENCRYPTION_KEY must not leak into the suite either —
+    # same reasoning as every other AI_* var above.
+    "AI_CREDENTIAL_ENCRYPTION_KEY",
 )
 
 
