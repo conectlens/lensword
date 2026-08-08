@@ -5,11 +5,12 @@ Maintainer/ops reference, not part of the published docs site (`srcExclude:
 
 **Nothing described on the PyPI side of this document has been done yet.**
 This is the setup the repo owner needs to do once, by hand, on pypi.org —
-the workflow file (`.github/workflows/publish-cli.yml`) and the package
+the workflow files (`.github/workflows/publish-cli.yml`,
+`.github/workflows/publish-cli-auto-version.yml`) and the package
 (`apps/cli`, `lensword-cli`) exist and were verified to build correctly in
-this pass (see "What was actually verified" below), but no trusted
-publisher has been registered, no tag has been pushed, and `pip install
-lensword-cli` does not work against the real PyPI index yet. See
+this pass (see "What was actually verified" below), but no API token has
+been created, no tag has been pushed, and `pip install lensword-cli` does
+not work against the real PyPI index yet. See
 `docs/internal/product-registry.json`'s `local-cli` entry (`statusNote`)
 and `docs/install/mcp-local-cli.md` for how that's represented publicly.
 
@@ -24,78 +25,77 @@ published by this workflow — it has no PyPI publish workflow of its own yet;
 npm distribution for the CLI is explicitly out of scope here too (see issue
 #311 TODO 2, tracked separately).
 
-## Why Trusted Publishing, not an API token
+## Two workflows, two jobs
 
-The workflow authenticates to PyPI via [Trusted Publishing](https://docs.pypi.org/trusted-publishers/)
-— GitHub Actions' OIDC identity, exchanged for a short-lived PyPI upload
-token at publish time. There is no `PYPI_API_TOKEN` (or any other) secret
-to create or rotate; the trust relationship is configured once, on PyPI's
-own dashboard, and tied to this exact repository, workflow file, and
-environment.
+- `.github/workflows/publish-cli-auto-version.yml` — runs on every push to
+  `main` that touches `apps/cli/**`. Bumps the patch component of
+  `apps/cli/pyproject.toml`'s version, commits that bump (tagged
+  `[auto-version]` in the message so the bump commit doesn't re-trigger
+  itself), and pushes a matching `cli-vX.Y.Z` tag. This is the "correct
+  versioning on every change" half — no one needs to hand-edit the version
+  or remember to tag.
+- `.github/workflows/publish-cli.yml` — runs on `cli-v*` tag push (pushed by
+  the workflow above, or manually) or `workflow_dispatch`. Verifies the
+  tag's version against `apps/cli/pyproject.toml`, builds the sdist/wheel,
+  checks them with `twine check`, and publishes to PyPI.
+
+Because the bump happens on `main` before the tag is cut, the tag always
+points at a commit where `pyproject.toml` already matches — `publish-cli.yml`'s
+guard step never sees a mismatch from this path.
+
+## Why an API token, not Trusted Publishing
+
+The workflow authenticates to PyPI with a `PYPI_API_TOKEN` secret rather
+than [Trusted Publishing](https://docs.pypi.org/trusted-publishers/)'s OIDC
+exchange. This is a deliberate tradeoff, not the default recommendation:
+Trusted Publishing needs no secret to create or rotate, while a token is a
+long-lived credential that must be scoped to the `lensword-cli` project only
+and rotated if it ever leaks. Chosen anyway for this project; revisit if the
+token needs rotating or scoping ever becomes a problem.
 
 ## One-time setup on PyPI (repo owner does this)
 
-PyPI supports registering a trusted publisher for a project **before that
-project exists** — the first successful publish from the matching workflow
-run creates it. Do this once:
-
 1. Sign in to [pypi.org](https://pypi.org) with the account that should own
    the `lensword-cli` project.
-2. Go to **Your account → Publishing** (directly:
-   [pypi.org/manage/account/publishing/](https://pypi.org/manage/account/publishing/)).
-3. Under **Add a new pending publisher**, fill in exactly:
-
-   | Field | Value |
-   |---|---|
-   | PyPI Project Name | `lensword-cli` |
-   | Owner | `conectlens` |
-   | Repository name | `lensword` |
-   | Workflow name | `publish-cli.yml` |
-   | Environment name | `pypi` |
-
-   The **Environment name** field matters — it must match the
-   `environment: pypi` line in `publish-cli.yml`'s `publish` job exactly, or
-   PyPI will reject the OIDC token from a workflow run that doesn't present
-   that environment claim.
-4. Submit. PyPI shows it under "Pending publishers" until the first
-   successful publish, at which point it becomes a normal trusted publisher
-   for the now-existing `lensword-cli` project.
+2. After the first manual `twine upload` or once the project exists,
+   go to **Your account → API tokens**
+   ([pypi.org/manage/account/token/](https://pypi.org/manage/account/token/))
+   and create a token **scoped to the `lensword-cli` project only** (not an
+   account-wide token).
+3. Copy the token (`pypi-...`) — PyPI shows it exactly once.
 
 ## One-time setup on GitHub (repo owner does this)
 
-Create the `pypi` environment so the trusted-publisher claim above has
-something to match, and so protection rules can be added later:
-
 1. **Settings → Environments → New environment**, name it exactly `pypi`.
-2. Optionally add **required reviewers** here — since the workflow already
-   scopes the job to this environment (`environment: pypi` in
-   `publish-cli.yml`), adding a required reviewer later makes every publish
-   (tag push or manual dispatch) pause for approval before it can reach
-   PyPI, with no workflow change needed.
-
-No environment secrets are needed — trusted publishing does not use one.
+2. Add an **environment secret** named `PYPI_API_TOKEN` with the token value
+   from the PyPI step above.
+3. Optionally add **required reviewers** on this environment — since the
+   workflow already scopes the job to it (`environment: pypi` in
+   `publish-cli.yml`), a required reviewer makes every publish (auto-tag or
+   manual) pause for approval before it can reach PyPI, with no workflow
+   change needed.
 
 ## Triggering a release
 
-Once both setup steps above are done:
+Normal path: merge any change under `apps/cli/**` to `main`.
+`publish-cli-auto-version.yml` bumps the patch version, commits, tags, and
+pushes — `publish-cli.yml` then builds and publishes automatically. No
+manual tagging needed.
+
+Manual path (still supported, e.g. for a non-patch bump — edit
+`apps/cli/pyproject.toml`'s version by hand first):
 
 ```bash
-# apps/cli/pyproject.toml's version must already read "0.1.0" (or whatever
-# is being released) before tagging — publish-cli.yml's guard step fails
-# the run otherwise.
+# apps/cli/pyproject.toml's version must already read the version being
+# released before tagging — publish-cli.yml's guard step fails otherwise.
 git tag cli-v0.1.0
 git push origin cli-v0.1.0
 ```
 
-The tag push triggers `publish-cli.yml`, which verifies the tag's version
-against `apps/cli/pyproject.toml`, builds the sdist/wheel with `python -m
-build`, checks them with `twine check`, and publishes via
-`pypa/gh-action-pypi-publish`.
-
-`workflow_dispatch` also triggers this workflow manually (Actions tab →
+`workflow_dispatch` also triggers `publish-cli.yml` manually (Actions tab →
 "Publish Local CLI (PyPI)" → Run workflow) — useful for exercising the
-build/check steps before the first real tag exists, or before the PyPI
-trusted publisher is configured. Run before that configuration is done, it
+build/check steps before the first real tag exists, or before
+`PYPI_API_TOKEN` is configured. Run before that configuration is done, it
 will fail at the final publish step with a PyPI authentication error; that
 failure is expected and confirms the workflow reaches PyPI correctly, not
 that anything else is broken.
