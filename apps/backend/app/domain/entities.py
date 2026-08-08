@@ -572,3 +572,30 @@ class DesktopNotification:
         the first collection is the one that actually happened."""
         if self.delivered_at is None:
             self.delivered_at = at or utcnow()
+
+
+@dataclass(slots=True)
+class UserAICredential:
+    """One user's Bring-Your-Own-Key AI credential for one provider.
+
+    `encrypted_payload` is opaque here by design: this entity does not know
+    or care what "gemini" vs. "vertex" means beyond the string, nor how to
+    decrypt or interpret the bytes it carries — that split (schema
+    validation in app.domain.services.ai_credentials, encryption in
+    app.infrastructure.credential_vault, turning a decrypted payload into a
+    real provider adapter in
+    app.infrastructure.ai_providers.credential_mapping) is what keeps this
+    entity, and the storage/API layers built on it, provider-agnostic. A
+    future provider needs none of them to change.
+
+    One row per (user_id, provider) — a user may store a credential for
+    more than one provider at once, but never two for the same provider;
+    a second PUT for the same provider replaces the first rather than
+    adding a row (see SqlAlchemyUserAICredentialRepository.upsert).
+    """
+
+    user_id: int
+    provider: str
+    encrypted_payload: bytes
+    created_at: datetime
+    updated_at: datetime
