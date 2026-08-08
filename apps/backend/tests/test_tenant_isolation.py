@@ -553,6 +553,18 @@ _EXEMPT_SHAPES = {
     # test_another_accounts_words_are_never_suggested in
     # test_scenario_endpoints.py.
     "GET /api/v1/scenarios/{}/vocabulary",
+    # {provider} is a fixed enum key (gemini/openai/vertex), not a
+    # per-user-owned resource id — every BYOK credential lookup is already
+    # scoped to current_user.id server-side (from the JWT), so a different
+    # {provider} value only selects a different one of the *same* caller's
+    # own rows, never another account's. Cross-tenant isolation for this
+    # endpoint is covered directly by
+    # test_one_users_credentials_are_invisible_to_another and
+    # test_a_user_cannot_delete_another_users_credential in
+    # test_ai_credentials_api.py, which is a closer fit than
+    # CROSS_TENANT_CASES' numeric-id-substitution shape.
+    "PUT /api/v1/me/ai-credentials/{}",
+    "DELETE /api/v1/me/ai-credentials/{}",
 }
 
 
@@ -629,4 +641,8 @@ def test_the_shape_exemption_list_stays_narrow():
     precisely so adding a sibling route cannot inherit one. This test exists to
     make growing the list a visible decision rather than a quiet one.
     """
-    assert _EXEMPT_SHAPES == {"GET /api/v1/scenarios/{}/vocabulary"}
+    assert _EXEMPT_SHAPES == {
+        "GET /api/v1/scenarios/{}/vocabulary",
+        "PUT /api/v1/me/ai-credentials/{}",
+        "DELETE /api/v1/me/ai-credentials/{}",
+    }

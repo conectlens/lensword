@@ -53,7 +53,7 @@ class _use:
         from app.main import app
 
         self.app = app
-        self.key = deps.get_ai_provider
+        self.key = deps.get_ai_provider_for_user
         app.dependency_overrides[self.key] = lambda: self.provider
         return self
 

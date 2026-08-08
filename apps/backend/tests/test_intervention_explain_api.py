@@ -16,7 +16,7 @@ from datetime import datetime
 import httpx
 import pytest
 
-from app.api.deps import get_ai_provider
+from app.api.deps import get_ai_provider_for_user as get_ai_provider
 from app.api.routers.interventions import _coach_cache, _coach_cache_key
 from app.application.use_cases.intervention import ExplainInterventionUseCase
 from app.domain.services.diagnosis_contracts import Diagnosis, DiagnosisEvidence, InterventionPlan
