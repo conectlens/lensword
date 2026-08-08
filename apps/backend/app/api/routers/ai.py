@@ -1,7 +1,7 @@
 """Authenticated Phase-1 AI vocabulary endpoints."""
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api.deps import CurrentUser, OptionalAIProvider, rate_limit_ai
+from app.api.deps import CurrentUser, PerUserAIProvider, rate_limit_ai
 from app.api.schemas.ai import (
     EnrichWordRequest,
     GenerateExamplesRequest,
@@ -92,13 +92,13 @@ async def _enrich(
 
 
 @router.post("/enrich", response_model=WordEnrichmentResponse, dependencies=[Depends(rate_limit_ai)])
-async def enrich_word(payload: EnrichWordRequest, current_user: CurrentUser, provider: OptionalAIProvider) -> WordEnrichmentResponse:
+async def enrich_word(payload: EnrichWordRequest, current_user: CurrentUser, provider: PerUserAIProvider) -> WordEnrichmentResponse:
     return await _enrich(_provider(provider), payload, current_user.id)
 
 
 @router.post("/translate-in-context", response_model=WordEnrichmentResponse)
 async def translate_in_context(
-    payload: TranslateInContextRequest, _user: CurrentUser, provider: OptionalAIProvider
+    payload: TranslateInContextRequest, _user: CurrentUser, provider: PerUserAIProvider
 ) -> WordEnrichmentResponse:
     try:
         return _response(
@@ -112,7 +112,7 @@ async def translate_in_context(
 
 @router.post("/examples", response_model=WordEnrichmentResponse)
 async def generate_examples(
-    payload: GenerateExamplesRequest, _user: CurrentUser, provider: OptionalAIProvider
+    payload: GenerateExamplesRequest, _user: CurrentUser, provider: PerUserAIProvider
 ) -> WordEnrichmentResponse:
     context = "; ".join(value for value in (payload.interests, payload.profession, payload.topic) if value)
     try:
@@ -129,7 +129,7 @@ async def generate_examples(
 
 @router.post("/regenerate-field", response_model=RegeneratedFieldResponse)
 async def regenerate_field(
-    payload: RegenerateFieldRequest, _user: CurrentUser, provider: OptionalAIProvider
+    payload: RegenerateFieldRequest, _user: CurrentUser, provider: PerUserAIProvider
 ) -> RegeneratedFieldResponse:
     try:
         value = await _provider(provider).generate_field(

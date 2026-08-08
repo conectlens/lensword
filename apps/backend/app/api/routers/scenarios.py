@@ -14,7 +14,7 @@ from app.api.deps import (
     ConversationRepo,
     CurrentUser,
     KnowledgeEdgeRepo,
-    OptionalAIProvider,
+    PerUserAIProvider,
     ScenarioAttemptRepo,
     WordRepo,
     rate_limit_ai,
@@ -196,7 +196,7 @@ async def finish_attempt(
     current_user: CurrentUser,
     attempts: ScenarioAttemptRepo,
     conversations: ConversationRepo,
-    provider: OptionalAIProvider,
+    provider: PerUserAIProvider,
 ) -> ScenarioAttemptResponse:
     attempt = _owned(attempts, attempt_id, current_user.id)
     scenario = get_scenario(attempt.scenario_key)

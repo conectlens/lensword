@@ -12,7 +12,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from app.api.deps import get_ai_provider
+from app.api.deps import get_ai_provider_for_user as get_ai_provider
 from app.infrastructure.ai import OllamaProvider
 from app.main import app
 

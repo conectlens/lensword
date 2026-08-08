@@ -1,4 +1,4 @@
-from app.api.deps import get_ai_provider
+from app.api.deps import get_ai_provider_for_user as get_ai_provider
 from app.domain.services.ai_provider import WordEnrichment
 from app.main import app
 

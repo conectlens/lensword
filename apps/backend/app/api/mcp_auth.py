@@ -32,7 +32,8 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
-from app.api.deps import DbSession, UserRepo
+from app.api.deps import DbSession, UserRepo, resolve_ai_provider_for_user
+from app.domain.services.ai_provider import AIProvider
 from app.config import get_settings
 from app.domain.entities import User
 from app.domain.value_objects import utcnow
@@ -104,3 +105,21 @@ def get_mcp_actor(
 
 
 CurrentMCPActor = Annotated[MCPActor, Depends(get_mcp_actor)]
+
+
+def get_ai_provider_for_actor(actor: CurrentMCPActor, db: DbSession) -> AIProvider | None:
+    """The MCP invocation boundary's equivalent of app.api.deps.
+    get_ai_provider_for_user — same Bring-Your-Own-Key resolution and
+    precedence (see resolve_ai_provider_for_user's own docstring), just
+    keyed off MCPActor.user rather than CurrentUser, since mcp.py/
+    mcp_plans.py authenticate callers through this module, not deps.py's
+    login-JWT-only get_current_user (a remote MCP OAuth access token is
+    not a login JWT and get_current_user cannot decode it — see this
+    module's own docstring). Defined here rather than in deps.py because
+    deps.py cannot import CurrentMCPActor without a circular import: this
+    module already imports from deps.py, not the other way around.
+    """
+    return resolve_ai_provider_for_user(actor.user.id, db)
+
+
+PerActorAIProvider = Annotated[AIProvider | None, Depends(get_ai_provider_for_actor)]

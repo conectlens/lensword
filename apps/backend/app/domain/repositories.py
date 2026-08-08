@@ -26,6 +26,7 @@ from app.domain.entities import (
     ReviewSession,
     Room,
     User,
+    UserAICredential,
     Word,
 )
 from app.domain.services.diagnosis_contracts import (
@@ -358,3 +359,25 @@ class KnowledgeEdgeRepository(Protocol):
     # whole account's graph once anyway and looping replace_for_word per
     # word would mean recomputing that same graph once per word.
     def replace_all_for_user(self, user_id: int, edges: list[KnowledgeEdge]) -> None: ...
+
+
+class UserAICredentialRepository(Protocol):
+    """Bring-Your-Own-Key AI credentials — one opaque encrypted blob per
+    (user_id, provider). This Protocol, like every other in this module,
+    never sees a plaintext credential or knows how to decrypt one: it
+    persists and returns `UserAICredential.encrypted_payload` exactly as
+    handed to it. Encryption/decryption is app.infrastructure.
+    credential_vault's job, called from the application/API layer, never
+    from here.
+    """
+
+    def get(self, user_id: int, provider: str) -> UserAICredential | None: ...
+    def list_for_user(self, user_id: int) -> list[UserAICredential]: ...
+    # Replaces any existing row for this exact (user_id, provider) pair —
+    # a user submitting a new key for a provider they already configured
+    # updates it in place rather than accumulating old, unusable rows.
+    def upsert(self, credential: UserAICredential) -> UserAICredential: ...
+    # True if a row existed and was removed; False if there was nothing to
+    # remove — lets the API tell "deleted" from "there was nothing to
+    # delete" without a separate existence check.
+    def delete(self, user_id: int, provider: str) -> bool: ...

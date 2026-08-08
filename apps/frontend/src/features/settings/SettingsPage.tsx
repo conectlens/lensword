@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import { aiSettingsApi, ApiRequestError, groupsApi, mcpOauthApi, practiceApi, settingsApi, syncApi } from '../../lib/api'
 import { QUEUE_CHANGED_EVENT, queueLength } from '../../lib/offlineQueue'
 import { OllamaSetupCheck } from './OllamaSetupCheck'
+import { ByokCredentialsCard } from './ByokCredentialsCard'
 import type { AISettings, DailySession, Group, McpConnection, RecallSettings, SyncConflict } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
@@ -84,6 +85,8 @@ export function SettingsPage() {
           onSave={async (next) => setAiSettings(await aiSettingsApi.update(next))}
         />
       )}
+
+      <ByokCredentialsCard />
 
       <McpServersCard />
       <RemoteCompanionsCard />

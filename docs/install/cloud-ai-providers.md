@@ -140,3 +140,72 @@ instead reports whether the required credential looks configured
 (`live_check_performed: false` on the response marks this explicitly, so a
 caller does not mistake it for a verified live connection the way Ollama's
 own `reachable: true` is).
+
+## Bring Your Own Key (BYOK)
+
+Everything above is deployment-wide: one `AI_PROVIDER` an administrator
+configures, used for every learner's requests. A hosted deployment with no
+billing/credits system cannot pay for everyone's usage that way forever —
+so a signed-in user can instead supply their **own** Gemini, OpenAI, or
+Vertex AI credential, on the Settings page, used automatically for their
+own requests. No admin opt-in is required to enable this per user.
+
+**Precedence.** A user with no stored credential of their own is
+unaffected — every request still goes through the deployment's own
+`AI_PROVIDER` exactly as described above. A user with exactly one stored
+credential has it used regardless of what the deployment is configured
+with. A user who has stored credentials for more than one provider gets
+whichever one matches the deployment's own `AI_PROVIDER`, if any; if none
+matches, there is no principled way to guess which of two personal keys
+they meant, so it falls back to the deployment default rather than
+guessing. See `resolve_ai_provider_for_user` in `app/api/deps.py` for the
+exact policy and its own worked-through reasoning.
+
+**A broken personal credential is reported, not silently absorbed.** If a
+user's own key stops working — revoked at the provider, or the
+deployment's master encryption key was rotated — their requests fail with
+the same "AI provider is not reachable" response any other provider
+failure produces. They deliberately do **not** fall back to the
+deployment's own key: the entire point of BYOK is that a deployment with
+no billing system does not pay for a user's usage, and silently spending
+its budget because a user's own key broke would undermine that.
+
+**Storage and encryption.** Each credential is encrypted at rest with
+application-level authenticated encryption
+(`cryptography.fernet.Fernet`) under one master key,
+`AI_CREDENTIAL_ENCRYPTION_KEY` — not a cloud KMS or HashiCorp Vault, to
+avoid adding a second service to run and back up on top of this project's
+self-hosted-first Docker/Render/SQLite posture. Generate one with:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Leaving it unset does not silently disable BYOK insecurely — every write
+to a credential fails with a clear `503` until it is configured, the same
+"fail loudly, not by degrading to something worse" posture the rest of
+this codebase's AI configuration already has.
+
+**API**: `GET`/`PUT`/`DELETE /api/v1/me/ai-credentials[/{provider}]`,
+user-scoped (any signed-in account, not admin-only). `GET` never returns a
+stored secret — only which providers are configured and each one's
+non-secret fields (Vertex's `project_id`/`location`; nothing for
+Gemini/OpenAI, whose only field is the key itself). `PUT` validates the
+payload against that provider's own schema
+(`app/domain/services/ai_credentials.py` — the extensibility point for a
+future provider: one new schema class, nothing else in this stack
+changes) before encrypting and storing it. Writes are rate-limited
+separately from AI generation itself (`RATE_LIMIT_AI_CREDENTIAL_WRITES`).
+
+**Verification status.** Schema validation, the encrypt/decrypt round
+trip, the API's never-leak-a-secret contract, cross-user isolation, and
+every branch of the precedence/fallback policy above are covered by unit
+tests against a mocked transport — the same offline-only standard the
+deployment-wide adapters above are held to, and for the same reason: no
+real Gemini/OpenAI/Vertex AI credentials were available while building
+this. This is genuinely new territory for this codebase — the first
+reversibly-encrypted secret it has ever stored (every other credential
+here, a password or an OAuth token, is one-way hashed) — and handles real
+financial-risk credentials if it is wrong. Treat it as needing a human
+security review before it is relied on for real users' keys, not as
+self-certified safe by these tests passing.

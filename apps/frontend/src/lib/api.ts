@@ -1,6 +1,6 @@
 import type {
   AdminStats, AcquisitionState, Group, McpAuthorizeDecision, McpAuthorizePreview, McpAuthorizeRequest, McpConnection, MnemonicNote, ProfileOverview, RecallSettings, Room,
-  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile, CefrProgress, Prerequisites, RelatedWord, WordRevision, AiState, OllamaProbe, LearningPath, GeneratePathResult, Conversation, ConversationMessage, SendMessageResult, Difficulty, Scenario, ScenarioAttempt, ScenarioVocabulary, ObservationHistoryResponse, ObservationCorrection, ObservationCorrectionReason, QueuedOperation, SyncOperationResult, SyncConflict, EfficacyEstimate, ModalityPreference,
+  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile, CefrProgress, Prerequisites, RelatedWord, WordRevision, AiState, OllamaProbe, LearningPath, GeneratePathResult, Conversation, ConversationMessage, SendMessageResult, Difficulty, Scenario, ScenarioAttempt, ScenarioVocabulary, ObservationHistoryResponse, ObservationCorrection, ObservationCorrectionReason, QueuedOperation, SyncOperationResult, SyncConflict, EfficacyEstimate, ModalityPreference, ByokProvider, UserAICredentialSummary,
 } from './types'
 import { resolveApiBase } from './runtimeConfig'
 
@@ -399,6 +399,19 @@ export const aiSettingsApi = {
   get: () => request<AISettings>('/api/v1/ai-settings'),
   update: (settings: AISettings) =>
     request<AISettings>('/api/v1/ai-settings', { method: 'PUT', body: JSON.stringify(settings) }),
+}
+
+// Bring-Your-Own-Key AI credentials (per-user, not admin-only — see
+// AISettingsCard/aiSettingsApi above for the deployment-wide equivalent).
+export const aiCredentialsApi = {
+  list: () => request<UserAICredentialSummary[]>('/api/v1/me/ai-credentials'),
+  put: (provider: ByokProvider, payload: Record<string, string>) =>
+    request<UserAICredentialSummary>(`/api/v1/me/ai-credentials/${provider}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+  remove: (provider: ByokProvider) =>
+    request<void>(`/api/v1/me/ai-credentials/${provider}`, { method: 'DELETE' }),
 }
 
 // --- Admin ----------------------------------------------------------------

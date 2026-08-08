@@ -3,7 +3,7 @@ from typing import Callable
 
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.deps import CompanionSessionRepo, CurrentUser, OptionalAIProvider, RecallSettingsRepo
+from app.api.deps import CompanionSessionRepo, CurrentUser, PerUserAIProvider, RecallSettingsRepo
 from app.api.schemas.companion import (
     CompanionActionResponse,
     CompanionExportResponse,
@@ -149,7 +149,7 @@ async def finish_session(
     current_user: CurrentUser,
     settings_repo: RecallSettingsRepo,
     session_repo: CompanionSessionRepo,
-    provider: OptionalAIProvider,
+    provider: PerUserAIProvider,
 ):
     """Finishing is the natural point to summarize (#193 TODO 2) — see
     FinishCompanionSessionUseCase, shared with the MCP `finish_companion_session`
@@ -170,7 +170,7 @@ async def regenerate_summary(
     current_user: CurrentUser,
     settings_repo: RecallSettingsRepo,
     session_repo: CompanionSessionRepo,
-    provider: OptionalAIProvider,
+    provider: PerUserAIProvider,
 ):
     """Regenerate the summary on demand — e.g. a resuming client wants a
     fresh recap mid-session without ending it. Always available even with no

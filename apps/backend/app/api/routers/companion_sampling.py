@@ -27,7 +27,7 @@ from app.api.deps import (
     CompanionSamplingEventRepo,
     CompanionSessionRepo,
     CurrentUser,
-    OptionalAIProvider,
+    PerUserAIProvider,
     RecallSettingsRepo,
 )
 from app.api.schemas.companion import (
@@ -312,7 +312,7 @@ async def generate_reply(
     current_user: CurrentUser,
     settings_repo: RecallSettingsRepo,
     session_repo: CompanionSessionRepo,
-    provider: OptionalAIProvider,
+    provider: PerUserAIProvider,
 ):
     """The fallback path when MCP client sampling is unavailable or its
     result fails validation: a configured local AI provider, else

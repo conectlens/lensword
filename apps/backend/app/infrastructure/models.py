@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, false
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String, Text, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.db import Base
@@ -1233,3 +1233,36 @@ class MCPOAuthTokenModel(Base):
     family_id: Mapped[str] = mapped_column(String(32), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class UserAICredentialModel(Base):
+    """A user's own Bring-Your-Own-Key AI credential — the cloud deployment
+    has no billing/credits system, so a user who wants real AI features on
+    a provider the deployment isn't already paying for supplies their own
+    key instead (see app.api.deps.get_ai_provider_for_user).
+
+    `encrypted_payload` is the only place the actual secret ever lives, and
+    only in encrypted form (app.infrastructure.credential_vault) — this
+    model, like every other genuinely secret value in this codebase
+    (`UserModel.hashed_password`, `MCPOAuthTokenModel.access_token_hash`),
+    never stores or exposes plaintext. Unlike those two, this one is
+    reversible by design: a stored password/token hash only ever needs to
+    be *compared*, but a BYOK credential has to be handed to a real
+    provider SDK to make a call, which needs the plaintext back — genuinely
+    new territory for this codebase, which is why it goes through
+    authenticated symmetric encryption (Fernet) rather than a one-way hash.
+    """
+
+    __tablename__ = "user_ai_credentials"
+    __table_args__ = (UniqueConstraint("user_id", "provider", name="uq_user_ai_credential_provider"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    # Registry key from app.domain.services.ai_credentials.PROVIDER_CREDENTIAL_SCHEMAS
+    # ("gemini", "openai", "vertex", ...) — not validated by a DB-level
+    # enum/check constraint on purpose, so adding a new provider never
+    # needs a migration here, only a new CredentialSchema.
+    provider: Mapped[str] = mapped_column(String(32))
+    encrypted_payload: Mapped[bytes] = mapped_column(LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime)

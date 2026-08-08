@@ -11,6 +11,18 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 
 | Date | Commit | Author | Subject | Changelog fragment |
 |---|---|---|---|---|
+| 2026-08-08 | [1f36e2a](https://github.com/conectlens/lensword/commit/1f36e2a3738e78796a17136ada2e4db38faf897e) | Ömer Faruk Coşkun | Merge pull request #327 from conectlens/fix/mcp-crash-recovery-and-tool-expansion | none (predates this system) |
+| 2026-08-08 | [c8245e6](https://github.com/conectlens/lensword/commit/c8245e69fbe39fe8f5da6c10560c73e763f15682) | Ömer Faruk Coşkun | Merge pull request #326 from conectlens/fix/auth-redirect-and-session-aware-cta | none (predates this system) |
+| 2026-08-08 | [e1c03c6](https://github.com/conectlens/lensword/commit/e1c03c65a2776d676299a6386b79301c6dfd56a4) | Ömer Faruk Coşkun | Merge pull request #324 from conectlens/feat/cloud-ai-provider-adapters | none (predates this system) |
+| 2026-08-08 | [adbf02b](https://github.com/conectlens/lensword/commit/adbf02be4c7ac9890d5f622a374d131a85c0b148) | Ömer Faruk Coşkun | Merge branch 'development' into feat/cloud-ai-provider-adapters | none (predates this system) |
+| 2026-08-08 | [0bc3185](https://github.com/conectlens/lensword/commit/0bc31858582f7ececa4bdd405edc985ef0c21ecf) | ÖMER FARUK COŞKUN | Fix MCP crash chain, unreachable tools, and opaque errors; add vocabulary tools | none (predates this system) |
+| 2026-08-08 | [525f847](https://github.com/conectlens/lensword/commit/525f847b6bc262050599027fe93991cba40ddb20) | ÖMER FARUK COŞKUN | Redirect authenticated users away from login/register and update landing CTAs | none (predates this system) |
+| 2026-08-08 | [9bbe653](https://github.com/conectlens/lensword/commit/9bbe653ea19b27ecaa31eb83cc596db0928b1f18) | ÖMER FARUK COŞKUN | Default OPENAI_MODEL to the cost-optimized gpt-5.6-luna tier | none (predates this system) |
+| 2026-08-08 | [4494804](https://github.com/conectlens/lensword/commit/449480479e9563bc23d4a8b19057742a781c2ea6) | ÖMER FARUK COŞKUN | Regenerate changelog pages for the cloud AI provider adapters fragment | none (predates this system) |
+| 2026-08-08 | [fbd459c](https://github.com/conectlens/lensword/commit/fbd459ce85e6e2d99023d3f200a2091e0215916f) | ÖMER FARUK COŞKUN | Add changelog fragment for the cloud AI provider adapters | none (predates this system) |
+| 2026-08-08 | [4bc0b69](https://github.com/conectlens/lensword/commit/4bc0b69ca94a344113d0c037c44e5aa1f69f08b7) | ÖMER FARUK COŞKUN | Document Gemini, Vertex AI, and OpenAI provider setup | none (predates this system) |
+| 2026-08-08 | [bf58863](https://github.com/conectlens/lensword/commit/bf58863b7ca7b4de865425d45411f2a106b18f7e) | ÖMER FARUK COŞKUN | Add Gemini, Vertex AI, and OpenAI adapters for the AIProvider port | none (predates this system) |
+| 2026-08-08 | [75d14b2](https://github.com/conectlens/lensword/commit/75d14b22a01d528b32dff4cccb145a3a3c3f9701) | ÖMER FARUK COŞKUN | Refactor OllamaProvider onto a shared Template Method base | none (predates this system) |
 | 2026-08-08 | [2d95ddd](https://github.com/conectlens/lensword/commit/2d95dddda1c9b9fe8395e38ca8160e13d89b48ca) | ÖMER FARUK COŞKUN | Merge remote-tracking branch 'origin/development' into development | none (predates this system) |
 | 2026-08-08 | [eb67961](https://github.com/conectlens/lensword/commit/eb679619dcce4020546a966370b559f8cb7eed27) | ÖMER FARUK COŞKUN | Make MCP tools loadable, readable, and correctly permissioned | none (predates this system) |
 | 2026-08-08 | [2bb1e58](https://github.com/conectlens/lensword/commit/2bb1e58085d4bbdf8ecb84849de5417cbef65f5e) | Ömer Faruk Coşkun | Merge pull request #322 from conectlens/feat/split-local-cli-package | none (predates this system) |
@@ -39,17 +51,5 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 | 2026-08-07 | [6d1d20a](https://github.com/conectlens/lensword/commit/6d1d20a48093e1b5de7a85400917cb1dcb34d9e9) | Ömer Faruk Coşkun | Merge pull request #312 from conectlens/development | none (predates this system) |
 | 2026-08-07 | [677b3c2](https://github.com/conectlens/lensword/commit/677b3c2d25aae5d717537768fc59d0205265d90d) | Lenser | Add BRANCH.md: main only changes via a merged PR, never a direct push or cherry-pick | none (predates this system) |
 | 2026-08-07 | [5aad283](https://github.com/conectlens/lensword/commit/5aad283aa25e5cc516c35ac9fa38aeb08726e908) | Lenser | Fix changelog schema violation blocking PR #312 (type: none requires documentation_required: false) | none (predates this system) |
-| 2026-08-07 | [a0c63d6](https://github.com/conectlens/lensword/commit/a0c63d625337883fcbf39a14ea17b4b93b43d0db) | Ömer Faruk Coşkun | Merge branch 'main' into development | none (predates this system) |
-| 2026-08-07 | [99041c0](https://github.com/conectlens/lensword/commit/99041c0ebc3f5be6e5133214298912ff309d9f10) | Lenser | Fix Docs deploy branch mismatch; correct Supabase pooler guidance; label README links with real domains | none (predates this system) |
-| 2026-08-07 | [4dac579](https://github.com/conectlens/lensword/commit/4dac57911fdab493305984d85514a167e20320f5) | Lenser | Fix Docs deploy branch mismatch; correct Supabase pooler guidance; label README links with real domains | none (predates this system) |
-| 2026-08-07 | [2074c3c](https://github.com/conectlens/lensword/commit/2074c3cddda07cdc0f05d48a091e5683262d502f) | Lenser | Add OAuth discovery (RFC 9728) to the remote MCP server | none (predates this system) |
-| 2026-08-07 | [1da32c0](https://github.com/conectlens/lensword/commit/1da32c0cd71ec62799e8a0cc5addd1a85f3e139e) | Lenser | Remove Cloudflare Containers config for backend/MCP; fix a real Postgres driver bug | none (predates this system) |
-| 2026-08-07 | [1a97578](https://github.com/conectlens/lensword/commit/1a975782e6ffe93eb0ac6a2c85e36c77bc657c72) | Lenser | Add OAuth discovery (RFC 9728) to the remote MCP server | none (predates this system) |
-| 2026-08-07 | [2aa0bb5](https://github.com/conectlens/lensword/commit/2aa0bb55a73f8bea31c84b71024d03c8d9612452) | Lenser | Remove Cloudflare Containers config for backend/MCP; fix a real Postgres driver bug | none (predates this system) |
-| 2026-08-07 | [b8a2562](https://github.com/conectlens/lensword/commit/b8a25626ee56f06bb4f4f9b740072b053def724d) | Lenser | Add production links to README, close the loop on the API-URL bug fix | none (predates this system) |
-| 2026-08-07 | [8f1cb29](https://github.com/conectlens/lensword/commit/8f1cb298cba8820631b713b31ae107d1fd01abbf) | Lenser | Fix render.yaml (real validation error) and a frontend URL-construction bug | none (predates this system) |
-| 2026-08-07 | [8d6ec3f](https://github.com/conectlens/lensword/commit/8d6ec3f2cc4656a2d96a8e272dfd995823228e66) | Lenser | Add production links to README, close the loop on the API-URL bug fix | none (predates this system) |
-| 2026-08-07 | [e6f51af](https://github.com/conectlens/lensword/commit/e6f51af10c9d2bc172eaa5be3790882a423cdcad) | Lenser | Fix render.yaml (real validation error) and a frontend URL-construction bug | none (predates this system) |
-| 2026-08-07 | [8f7e92b](https://github.com/conectlens/lensword/commit/8f7e92bd07e892a7a89773e104c1db19482fe403) | Lenser | Add Render.com as a free deployment path for backend/MCP | none (predates this system) |
 
 Generated from `git log -40 development` — 40 commits shown.
