@@ -28,11 +28,15 @@ from app.infrastructure.repositories import (
     SqlAlchemyCompanionTaskRepository,
     SqlAlchemyDiagnosisRepository,
     SqlAlchemyGroupRepository,
+    SqlAlchemyKnowledgeEdgeRepository,
     SqlAlchemyLearningObservationRepository,
+    SqlAlchemyMnemonicRepository,
     SqlAlchemyPracticeExerciseRepository,
     SqlAlchemyRecallSettingsRepository,
     SqlAlchemyReviewSessionRepository,
+    SqlAlchemyRoomRepository,
     SqlAlchemyWordRepository,
+    SqlAlchemyWordRevisionRepository,
 )
 
 
@@ -53,6 +57,10 @@ def _real_handlers(db_session) -> dict:
         SqlAlchemyDiagnosisRepository(db_session),
         SqlAlchemyLearningObservationRepository(db_session),
         SqlAlchemyCompanionActivityRepository(db_session),
+        SqlAlchemyRoomRepository(db_session),
+        SqlAlchemyMnemonicRepository(db_session),
+        SqlAlchemyKnowledgeEdgeRepository(db_session),
+        SqlAlchemyWordRevisionRepository(db_session),
     )
 
 

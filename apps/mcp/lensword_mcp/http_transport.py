@@ -39,6 +39,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import threading
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -46,6 +47,8 @@ from typing import Callable
 from urllib.parse import urlparse
 
 from .server import BackendClient, MCPServer
+
+_LOGGER = logging.getLogger(__name__)
 
 # Bounded request bodies (TODO 0): large enough for any real tool call this
 # server defines (the largest MCP contract payload, extract_vocabulary's
@@ -328,7 +331,46 @@ class _MCPHTTPRequestHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"error": "unknown_session_or_token_mismatch"})
             return
 
-        response = mcp_server.handle(message)
+        try:
+            response = mcp_server.handle(message)
+        except Exception:  # noqa: BLE001 - deliberate last-resort barrier
+            # A single tool raising must never take the connection down with
+            # it. Before this existed, anything escaping `handle` propagated
+            # into socketserver, which logged a traceback and closed the
+            # socket *without writing a response at all* — the client saw a
+            # dead connection ("the server isn't responding"), not an error
+            # it could report, retry, or attribute to a tool. Every
+            # anticipated failure already returns an MCP error result; this
+            # catches the ones nobody anticipated.
+            #
+            # Answered as HTTP 200 carrying a JSON-RPC error, not as a 5xx:
+            # MCP clients parse the JSON-RPC envelope on a 2xx and surface
+            # `error.message` to the model, whereas a non-2xx is treated as a
+            # transport failure and raised before the body is ever read —
+            # which would reproduce the exact opacity this guard removes.
+            # The parse/invalid-request 400s above are different on purpose:
+            # there is no valid envelope to answer with at that point.
+            #
+            # The body carries no exception text. A `BackendError` is the
+            # caller's business and is rendered by `backend_error_text`, but
+            # an unexpected exception is an internal fault whose message can
+            # quote internal paths or request state, and this transport is
+            # reachable over HTTP. The detail goes to the server log; the
+            # client gets an incident id to quote.
+            incident = uuid.uuid4().hex[:12]
+            _LOGGER.exception(
+                "Unhandled MCP error (incident=%s method=%s)", incident, message.get("method")
+            )
+            self._send_json(
+                200,
+                {
+                    "jsonrpc": "2.0",
+                    "id": message.get("id"),
+                    "error": {"code": -32603, "message": f"Internal error (incident {incident})"},
+                },
+                session_id=session_id,
+            )
+            return
         if response is None:
             self.send_response(202)
             self.send_header("Content-Length", "0")

@@ -107,11 +107,21 @@ class CheckKnownTermUseCase:
         self.word_repo = word_repo
         self.group_repo = group_repo
 
-    def execute(self, user_id: int, term: str) -> KnownTermCheck:
+    def execute(self, user_id: int, term: str, target_language: str | None = None) -> KnownTermCheck:
+        """Look a term up across the caller's vocabulary.
+
+        `target_language` is optional and disambiguates a term that exists
+        in more than one of the learner's languages — a bare "no" for a
+        homograph the learner knows in Spanish but not Portuguese is
+        actively misleading once more than one language is tracked. Omitted,
+        the search spans every language, which is the previous behaviour.
+        """
         needle = term.strip().casefold()
         matches: list[KnownTermMatch] = []
         known = active = False
         for group in self.group_repo.list_by_owner(user_id):
+            if target_language and group.target_language.value != target_language:
+                continue
             for word in self.word_repo.list_by_group(group.id or 0):
                 if word.term.strip().casefold() != needle:
                     continue

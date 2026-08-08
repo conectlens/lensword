@@ -14,7 +14,14 @@ def test_contracts_are_versioned_bounded_and_classified():
     # tools (#194 TODO 1): begin_learning_activity/submit_activity_response/
     # get_activity_result/finish_learning_activity/request_hint/
     # explain_evidence.
-    assert CONTRACT_VERSION == "1.0.0" and len(TOOL_CONTRACTS) == 27
+    # Plus 11 tools closing the gaps an audit of the live surface found: 3
+    # group-management/enumeration (create_group/list_groups/
+    # list_group_words — `group_id` was an input every word-writing tool
+    # demanded and none could produce), 2 word-lifecycle (update_word/
+    # delete_word), 3 memory-palace (list_rooms/create_room/
+    # place_word_in_room), 2 MnemoLab (get_mnemonics/generate_mnemonic) and
+    # 1 knowledge-graph (get_word_map).
+    assert CONTRACT_VERSION == "1.0.0" and len(TOOL_CONTRACTS) == 38
     for tool in TOOL_CONTRACTS:
         assert tool.schema_id.endswith(".schema.json")
         assert tool.input_schema["additionalProperties"] is False
@@ -150,6 +157,12 @@ def test_only_genuinely_irreversible_writes_are_marked_destructive():
     assert DESTRUCTIVE_TOOLS == {
         "lensword_cancel_companion_task",
         "lensword_finish_companion_session",
+        # Removes a word *and* the spaced-repetition history attached to it.
+        # The domain has no archive tier to fall back to (DeleteWordUseCase
+        # is a hard delete), so there is nothing to restore from — which is
+        # what makes this irreversible in the sense this set is testing,
+        # rather than merely a write that happens to remove a row.
+        "lensword_delete_word",
     }
     assert DESTRUCTIVE_TOOLS <= {tool.name for tool in TOOL_CONTRACTS}
 
