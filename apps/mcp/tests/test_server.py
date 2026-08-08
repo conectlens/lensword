@@ -1,10 +1,8 @@
 import io
 import json
 
-import pytest
-
-from lensword_mcp.server import BackendClient, BackendError, MCPServer, StdioMCPServer
-from lensword_mcp.context_import import ContextImportPolicy, ContextImportRejected, preview_context
+from lensword_cli.backend_client import BackendError
+from lensword_mcp.server import MCPServer, StdioMCPServer
 from lensword_mcp.companion_workflows import (
     CompanionLoopBudget,
     CompanionLoopState,
@@ -25,7 +23,7 @@ class FakeBackend:
         return {
             "tools": [
                 {
-                    "name": "lensword.search_words",
+                    "name": "lensword_search_words",
                     "input_schema": {"type": "object", "properties": {}},
                 }
             ]
@@ -53,10 +51,10 @@ def test_lifecycle_and_tool_call_are_mcp_json_rpc_messages():
     assert server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-11-25"}})["result"]["protocolVersion"] == "2025-11-25"
     assert server.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}) is None
     listed = server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
-    assert listed["result"]["tools"][0]["name"] == "lensword.search_words"
-    called = server.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "lensword.search_words", "arguments": {"query": "hola"}}})
+    assert listed["result"]["tools"][0]["name"] == "lensword_search_words"
+    called = server.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "lensword_search_words", "arguments": {"query": "hola"}}})
     assert called["result"]["structuredContent"] == {"words": [{"term": "hola"}]}
-    assert backend.calls[0][0] == "lensword.search_words"
+    assert backend.calls[0][0] == "lensword_search_words"
     assert backend.calls[0][1] == {"query": "hola"}
 
 
@@ -177,72 +175,8 @@ def test_resource_read_rejects_unbounded_or_unknown_uris():
     assert too_long["error"]["code"] == -32602
 
 
-def test_context_import_is_bounded_preview_only_and_redacts_secrets():
-    preview = preview_context(
-        "FastAPI FastAPI asyncio password=do-not-store JWT eyJabcdefghijklmnop.qrstuvwxyz.abcdefghijklmnop",
-        source_kind="terminal",
-        source_ref="session-1",
-    )
-    terms = {candidate.term for candidate in preview.candidates}
-    assert "fastapi" in terms and "asyncio" in terms
-    assert "do-not-store" not in terms
-    assert preview.requires_confirmation is True
-    assert preview.writes_performed is False
-
-
-class _RecordingBackendClient(BackendClient):
-    """A BackendClient whose `_request` is captured instead of making a real
-    HTTP call, so the URI-to-path mapping in `resource()` (#193 TODO 1) can
-    be tested without a running backend."""
-
-    def _request(self, path, body=None):
-        self.calls.append(path)
-        return {"path": path}
-
-
-def _client():
-    backend = _RecordingBackendClient(api_url="http://backend", token="t", workspace="/w")
-    object.__setattr__(backend, "calls", [])
-    return backend
-
-
-def test_session_resource_template_forwards_to_the_companion_session_endpoint():
-    backend = _client()
-    result = backend.resource("lensword://session/" + "a" * 32)
-    assert backend.calls == [f"/api/v1/companion/sessions/{'a' * 32}"]
-    assert result == {"path": f"/api/v1/companion/sessions/{'a' * 32}"}
-
-
-@pytest.mark.parametrize(
-    "session_id",
-    [
-        "",
-        "not-hex-not-32-chars",
-        "a" * 31,
-        "a" * 33,
-        "../../etc/passwd",
-        "A" * 32,  # CompanionSession.id is lowercase uuid4().hex only
-    ],
-)
-def test_session_resource_template_rejects_malformed_ids_as_404_not_403(session_id):
-    """Same disclosure shape as the word/group/learning-path templates: a
-    session id that cannot possibly be valid never reaches the backend and
-    never distinguishes "not yours" from "does not exist"."""
-    backend = _client()
-    with pytest.raises(BackendError) as excinfo:
-        backend.resource(f"lensword://session/{session_id}")
-    assert excinfo.value.status == 404
-    assert backend.calls == []
-
-
-def test_context_import_refuses_unbounded_input_and_source():
-    with __import__("pytest").raises(ContextImportRejected):
-        preview_context("x", source_kind="", source_ref="session")
-    preview = preview_context(
-        "term " * 20,
-        source_kind="file",
-        source_ref="README.md",
-        policy=ContextImportPolicy(max_characters=10, max_candidates=2),
-    )
-    assert preview.truncated is True
-    assert len(preview.candidates) <= 2
+# `BackendClient`'s own URI-to-path mapping (including the id-shape
+# validation for lensword://session/{session_id}) and context_import.py's
+# tests moved to apps/cli/tests/test_backend_client.py and
+# apps/cli/tests/test_context_import.py respectively (issue #311) — neither
+# is MCP-protocol-specific, both now live alongside the code they test.

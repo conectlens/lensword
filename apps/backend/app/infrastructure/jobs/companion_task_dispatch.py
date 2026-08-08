@@ -64,7 +64,7 @@ EXTRACTION's per-unit work is deterministic candidate-term processing
 (`companion_task_execution.extract_candidate_terms`, the same tokenizer
 `ExtractVocabularyUseCase`'s fallback path already uses) — proving the
 executor mechanism, not replacing the existing synchronous
-`lensword.extract_vocabulary` MCP tool for AI-backed extraction. Wiring an
+`lensword_extract_vocabulary` MCP tool for AI-backed extraction. Wiring an
 AI provider into this loop is future work, not silently claimed here.
 """
 from __future__ import annotations

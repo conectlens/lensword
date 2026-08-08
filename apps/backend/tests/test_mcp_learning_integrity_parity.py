@@ -76,7 +76,7 @@ def _companion_shaped_history() -> list[LearningObservation]:
 
 def _first_party_shaped_history() -> list[LearningObservation]:
     """Same shape `review.py`'s `RecordAnswerUseCase` (the REST
-    `/review/answer` endpoint and the MCP `lensword.record_answer` tool)
+    `/review/answer` endpoint and the MCP `lensword_record_answer` tool)
     actually produces: no `answer_format`/`context_source` override, plain
     review telemetry."""
     return [

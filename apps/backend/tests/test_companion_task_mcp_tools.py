@@ -78,12 +78,12 @@ def test_start_extraction_task_creates_a_durable_task_the_executor_can_finish(cl
     owner_id = _owner_id(db_session)
     _enable(db_session, owner_id)
     session_id = _start_session(client, headers)
-    _grant(db_session, owner_id=owner_id, tool="lensword.start_extraction_task", access="write")
+    _grant(db_session, owner_id=owner_id, tool="lensword_start_extraction_task", access="write")
 
     response = _invoke(
         client,
         headers,
-        tool="lensword.start_extraction_task",
+        tool="lensword_start_extraction_task",
         payload={
             "companion_session_id": session_id,
             "text": "The cat sat on the mat",
@@ -109,7 +109,7 @@ def test_start_extraction_task_is_idempotent_on_request_id(client, auth_headers,
     owner_id = _owner_id(db_session)
     _enable(db_session, owner_id)
     session_id = _start_session(client, headers)
-    _grant(db_session, owner_id=owner_id, tool="lensword.start_extraction_task", access="write")
+    _grant(db_session, owner_id=owner_id, tool="lensword_start_extraction_task", access="write")
 
     payload = {
         "companion_session_id": session_id,
@@ -117,8 +117,8 @@ def test_start_extraction_task_is_idempotent_on_request_id(client, auth_headers,
         "target_language": "es",
         "request_id": "req-1",
     }
-    first = _invoke(client, headers, tool="lensword.start_extraction_task", payload=payload)
-    second = _invoke(client, headers, tool="lensword.start_extraction_task", payload=payload)
+    first = _invoke(client, headers, tool="lensword_start_extraction_task", payload=payload)
+    second = _invoke(client, headers, tool="lensword_start_extraction_task", payload=payload)
     assert first.status_code == 200 and second.status_code == 200
     assert first.json()["id"] == second.json()["id"]
 
@@ -131,14 +131,14 @@ def test_get_and_cancel_companion_task_tools_wrap_the_same_state(client, auth_he
     owner_id = _owner_id(db_session)
     _enable(db_session, owner_id)
     session_id = _start_session(client, headers)
-    _grant(db_session, owner_id=owner_id, tool="lensword.start_extraction_task", access="write")
-    _grant(db_session, owner_id=owner_id, tool="lensword.get_companion_task", access="read")
-    _grant(db_session, owner_id=owner_id, tool="lensword.cancel_companion_task", access="write")
+    _grant(db_session, owner_id=owner_id, tool="lensword_start_extraction_task", access="write")
+    _grant(db_session, owner_id=owner_id, tool="lensword_get_companion_task", access="read")
+    _grant(db_session, owner_id=owner_id, tool="lensword_cancel_companion_task", access="write")
 
     created = _invoke(
         client,
         headers,
-        tool="lensword.start_extraction_task",
+        tool="lensword_start_extraction_task",
         payload={
             "companion_session_id": session_id,
             "text": "hola mundo amigo",
@@ -151,7 +151,7 @@ def test_get_and_cancel_companion_task_tools_wrap_the_same_state(client, auth_he
     fetched = _invoke(
         client,
         headers,
-        tool="lensword.get_companion_task",
+        tool="lensword_get_companion_task",
         payload={"companion_session_id": session_id, "task_id": created["id"]},
     )
     assert fetched.status_code == 200
@@ -160,7 +160,7 @@ def test_get_and_cancel_companion_task_tools_wrap_the_same_state(client, auth_he
     cancelled = _invoke(
         client,
         headers,
-        tool="lensword.cancel_companion_task",
+        tool="lensword_cancel_companion_task",
         payload={"companion_session_id": session_id, "task_id": created["id"], "request_id": "req-cancel"},
     )
     assert cancelled.status_code == 200
@@ -178,7 +178,7 @@ def test_companion_task_tools_are_refused_without_ai_companion_enabled(client, a
     owner_id = _owner_id(db_session)
     _enable(db_session, owner_id)
     session_id = _start_session(client, headers)
-    _grant(db_session, owner_id=owner_id, tool="lensword.start_extraction_task", access="write")
+    _grant(db_session, owner_id=owner_id, tool="lensword_start_extraction_task", access="write")
 
     # Turned back off after the session already exists: the task tool must
     # re-check the flag itself rather than trust that an active session
@@ -192,7 +192,7 @@ def test_companion_task_tools_are_refused_without_ai_companion_enabled(client, a
     response = _invoke(
         client,
         headers,
-        tool="lensword.start_extraction_task",
+        tool="lensword_start_extraction_task",
         payload={
             "companion_session_id": session_id,
             "text": "hola",

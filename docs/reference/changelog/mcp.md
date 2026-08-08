@@ -1,11 +1,11 @@
 ---
-title: MCP Server / Local CLI Changelog
-description: User-facing changes to MCP Server / Local CLI, with verification evidence per entry.
+title: MCP Server Changelog
+description: User-facing changes to MCP Server, with verification evidence per entry.
 ---
 
-# MCP Server / Local CLI changelog
+# MCP Server changelog
 
-Status — MCP Server: **unreleased**, Local CLI: **unreleased**.
+Status — MCP Server: **unreleased**.
 
 Every entry states exactly what was verified — a passing automated test does not imply a platform was manually checked, and a manual check on one OS does not imply another. See [Verification levels](/reference/trust/verification-levels) for what each status means.
 

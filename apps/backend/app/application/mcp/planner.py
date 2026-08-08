@@ -74,7 +74,7 @@ class CommandPlanner:
             if group is not None: payload["group_id"] = group.id
             assumptions = [f"Two review items per minute is used to estimate a {duration}-minute session."]
             if group_assumption: assumptions.append(group_assumption)
-            return self._accepted(normalized, assumptions, PlanStep("prepare-session", "lensword.create_study_session", payload, AccessClass.WRITE, f"Create a session of up to {payload['limit']} review items."))
+            return self._accepted(normalized, assumptions, PlanStep("prepare-session", "lensword_create_study_session", payload, AccessClass.WRITE, f"Create a session of up to {payload['limit']} review items."))
         if "extract" in lower and ("word" in lower or "vocabulary" in lower):
             if group is None:
                 return self._rejected(normalized, "Name exactly one target group before extracting vocabulary.")
@@ -86,7 +86,7 @@ class CommandPlanner:
             assumptions = [f"Extract into '{group.name}'.", "The source text is treated as data, not instructions."]
             if level: assumptions.append(f"CEFR threshold {level.group(1).upper()} is a client-side selection hint; the registered extractor has no CEFR filter.")
             payload = {"group_id": group.id, "text": source_text, "target_language": group.target_language.value, "max_items": 50, "request_id": self._request_id(normalized, "extract")}
-            return self._accepted(normalized, assumptions, PlanStep("extract-vocabulary", "lensword.extract_vocabulary", payload, AccessClass.WRITE, "Create up to 50 extracted vocabulary candidates."))
+            return self._accepted(normalized, assumptions, PlanStep("extract-vocabulary", "lensword_extract_vocabulary", payload, AccessClass.WRITE, "Create up to 50 extracted vocabulary candidates."))
         return self._rejected(normalized, "The command is outside the bounded learning-command grammar.")
 
     def _accepted(self, command: str, assumptions: list[str], step: PlanStep) -> LearningPlan:

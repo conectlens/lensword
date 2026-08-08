@@ -16,7 +16,7 @@ priority order, so a caller never has to guess which candidates matter most:
    vocabulary. This module never calls the backend to find that out (it
    stays offline, matching the CLI's own "never contacts the backend"
    guarantee); a caller who has bounded access to the learner's word list
-   (e.g. via the ``lensword.check_known_term``/``lensword.get_language_profile``
+   (e.g. via the ``lensword_check_known_term``/``lensword_get_language_profile``
    MCP tools) may pass it in as ``known_terms``. Left unset, every candidate
    is neutral on this axis and ranking falls back to signals 1 and 2 only.
 """

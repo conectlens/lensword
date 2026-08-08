@@ -32,7 +32,7 @@ def _invoke(client, headers, tool, payload, *, workspace="//approved/root"):
     # Mandatory idempotency for writes (issue #196 TODO 4): every write tool
     # contract now requires request_id; the one read tool here does not.
     payload = dict(payload)
-    if tool != "lensword.get_companion_session" and "request_id" not in payload:
+    if tool != "lensword_get_companion_session" and "request_id" not in payload:
         payload["request_id"] = str(uuid.uuid4())
     return client.post(
         "/api/v1/mcp/invoke",
@@ -51,16 +51,16 @@ def test_full_session_lifecycle_is_reachable_over_mcp(client, auth_headers, db_s
     _enable_companion(client, headers)
     user_id = _user_id(client, headers)
     for tool, access in (
-        ("lensword.start_companion_session", "write"),
-        ("lensword.get_companion_session", "read"),
-        ("lensword.resume_companion_session", "write"),
-        ("lensword.pause_companion_session", "write"),
-        ("lensword.finish_companion_session", "write"),
+        ("lensword_start_companion_session", "write"),
+        ("lensword_get_companion_session", "read"),
+        ("lensword_resume_companion_session", "write"),
+        ("lensword_pause_companion_session", "write"),
+        ("lensword_finish_companion_session", "write"),
     ):
         _grant(db_session, tool, access=access, user_id=user_id)
 
     started = _invoke(
-        client, headers, "lensword.start_companion_session",
+        client, headers, "lensword_start_companion_session",
         {"connection_id": "mcp-client-1", "client_id": "agent-host", "goal": "order food"},
     )
     assert started.status_code == 200, started.text
@@ -68,21 +68,21 @@ def test_full_session_lifecycle_is_reachable_over_mcp(client, auth_headers, db_s
     assert started.json()["status"] == "active"
     assert started.json()["revision"] == 1
 
-    fetched = _invoke(client, headers, "lensword.get_companion_session", {"session_id": session_id})
+    fetched = _invoke(client, headers, "lensword_get_companion_session", {"session_id": session_id})
     assert fetched.status_code == 200
     assert fetched.json()["goal"] == "order food"
 
-    paused = _invoke(client, headers, "lensword.pause_companion_session", {"session_id": session_id})
+    paused = _invoke(client, headers, "lensword_pause_companion_session", {"session_id": session_id})
     assert paused.status_code == 200
     assert paused.json()["status"] == "paused"
     assert paused.json()["revision"] == 2
 
-    resumed = _invoke(client, headers, "lensword.resume_companion_session", {"session_id": session_id})
+    resumed = _invoke(client, headers, "lensword_resume_companion_session", {"session_id": session_id})
     assert resumed.status_code == 200
     assert resumed.json()["status"] == "active"
     assert resumed.json()["revision"] == 3
 
-    finished = _invoke(client, headers, "lensword.finish_companion_session", {"session_id": session_id})
+    finished = _invoke(client, headers, "lensword_finish_companion_session", {"session_id": session_id})
     assert finished.status_code == 200
     assert finished.json()["status"] == "finished"
     # #193 TODO 2: finishing generates a real summary, not an empty field.
@@ -90,7 +90,7 @@ def test_full_session_lifecycle_is_reachable_over_mcp(client, auth_headers, db_s
 
     # A second call to resume a finished session is an invalid transition,
     # not a crash — it must fail cleanly, not with an opaque 500.
-    reopened = _invoke(client, headers, "lensword.resume_companion_session", {"session_id": session_id})
+    reopened = _invoke(client, headers, "lensword_resume_companion_session", {"session_id": session_id})
     assert reopened.status_code < 500
 
 
@@ -101,10 +101,10 @@ def test_a_session_started_over_mcp_is_the_same_durable_row_rest_sees(client, au
     headers = auth_headers()
     _enable_companion(client, headers)
     user_id = _user_id(client, headers)
-    _grant(db_session, "lensword.start_companion_session", user_id=user_id)
+    _grant(db_session, "lensword_start_companion_session", user_id=user_id)
 
     started = _invoke(
-        client, headers, "lensword.start_companion_session",
+        client, headers, "lensword_start_companion_session",
         {"connection_id": "mcp-client-1", "client_id": "agent-host"},
     )
     assert started.status_code == 200
@@ -122,8 +122,8 @@ def test_a_session_started_over_mcp_is_the_same_durable_row_rest_sees(client, au
     )
 
     # ...and read it back through MCP: the turn is visible to both surfaces.
-    _grant(db_session, "lensword.get_companion_session", access="read", user_id=user_id)
-    via_mcp = _invoke(client, headers, "lensword.get_companion_session", {"session_id": session_id})
+    _grant(db_session, "lensword_get_companion_session", access="read", user_id=user_id)
+    via_mcp = _invoke(client, headers, "lensword_get_companion_session", {"session_id": session_id})
     assert via_mcp.status_code == 200
     assert via_mcp.json()["revision"] == 1  # adding a turn does not bump session.revision
 
@@ -134,10 +134,10 @@ def test_companion_tools_are_gated_by_the_same_feature_flag_as_rest(client, auth
     ._require_enabled)."""
     headers = auth_headers()
     # Deliberately not calling _enable_companion: the flag defaults off.
-    _grant(db_session, "lensword.start_companion_session", user_id=_user_id(client, headers))
+    _grant(db_session, "lensword_start_companion_session", user_id=_user_id(client, headers))
 
     denied = _invoke(
-        client, headers, "lensword.start_companion_session",
+        client, headers, "lensword_start_companion_session",
         {"connection_id": "mcp-client-1", "client_id": "agent-host"},
     )
     assert denied.status_code == 400, denied.text
@@ -146,8 +146,8 @@ def test_companion_tools_are_gated_by_the_same_feature_flag_as_rest(client, auth
 def test_getting_an_unknown_session_over_mcp_fails_cleanly(client, auth_headers, db_session):
     headers = auth_headers()
     _enable_companion(client, headers)
-    _grant(db_session, "lensword.get_companion_session", access="read", user_id=_user_id(client, headers))
+    _grant(db_session, "lensword_get_companion_session", access="read", user_id=_user_id(client, headers))
 
-    missing = _invoke(client, headers, "lensword.get_companion_session", {"session_id": "no-such-session"})
+    missing = _invoke(client, headers, "lensword_get_companion_session", {"session_id": "no-such-session"})
     assert missing.status_code == 400
     assert "not found" in missing.json()["detail"].lower()

@@ -42,7 +42,7 @@ def _grant(db_session, tool, *, user_id, access="write", workspace="/approved"):
 
 def _invoke(client, headers, tool, payload, *, workspace="/approved"):
     payload = dict(payload)
-    if "request_id" not in payload and tool not in ("lensword.get_companion_session", "lensword.get_companion_task"):
+    if "request_id" not in payload and tool not in ("lensword_get_companion_session", "lensword_get_companion_task"):
         payload["request_id"] = str(uuid.uuid4())
     return client.post("/api/v1/mcp/invoke", headers=headers, json={"workspace": workspace, "tool": tool, "payload": payload})
 
@@ -54,8 +54,8 @@ def test_a_second_account_cannot_read_or_transition_anothers_companion_session_v
     _enable_companion(client, bob)
     alice_id, bob_id = _user_id(client, alice), _user_id(client, bob)
 
-    _grant(db_session, "lensword.start_companion_session", user_id=alice_id)
-    started = _invoke(client, alice, "lensword.start_companion_session", {"connection_id": "alice-conn", "client_id": "alice-host"})
+    _grant(db_session, "lensword_start_companion_session", user_id=alice_id)
+    started = _invoke(client, alice, "lensword_start_companion_session", {"connection_id": "alice-conn", "client_id": "alice-host"})
     assert started.status_code == 200, started.text
     alice_session_id = started.json()["id"]
 
@@ -64,26 +64,26 @@ def test_a_second_account_cannot_read_or_transition_anothers_companion_session_v
     # session id (guessed, or observed some other way — the point is he
     # never started this session himself).
     for tool, access in (
-        ("lensword.get_companion_session", "read"),
-        ("lensword.resume_companion_session", "write"),
-        ("lensword.pause_companion_session", "write"),
-        ("lensword.finish_companion_session", "write"),
+        ("lensword_get_companion_session", "read"),
+        ("lensword_resume_companion_session", "write"),
+        ("lensword_pause_companion_session", "write"),
+        ("lensword_finish_companion_session", "write"),
     ):
         _grant(db_session, tool, access=access, user_id=bob_id)
 
-    get_response = _invoke(client, bob, "lensword.get_companion_session", {"session_id": alice_session_id})
+    get_response = _invoke(client, bob, "lensword_get_companion_session", {"session_id": alice_session_id})
     assert get_response.status_code == 400, get_response.text
     assert "not found" in get_response.json()["detail"].lower()
 
-    for tool in ("lensword.resume_companion_session", "lensword.pause_companion_session", "lensword.finish_companion_session"):
+    for tool in ("lensword_resume_companion_session", "lensword_pause_companion_session", "lensword_finish_companion_session"):
         response = _invoke(client, bob, tool, {"session_id": alice_session_id})
         assert response.status_code == 400, f"{tool}: {response.text}"
         assert "not found" in response.json()["detail"].lower()
 
     # Alice's session is untouched — still readable, and still in the state
     # she left it in, not paused/finished by Bob's denied attempts.
-    _grant(db_session, "lensword.get_companion_session", access="read", user_id=alice_id)
-    still_alices = _invoke(client, alice, "lensword.get_companion_session", {"session_id": alice_session_id})
+    _grant(db_session, "lensword_get_companion_session", access="read", user_id=alice_id)
+    still_alices = _invoke(client, alice, "lensword_get_companion_session", {"session_id": alice_session_id})
     assert still_alices.status_code == 200
     assert still_alices.json()["status"] == "active"
 
@@ -95,14 +95,14 @@ def test_a_second_account_cannot_read_or_cancel_anothers_companion_task_via_mcp(
     _enable_companion(client, bob)
     alice_id, bob_id = _user_id(client, alice), _user_id(client, bob)
 
-    _grant(db_session, "lensword.start_companion_session", user_id=alice_id)
-    session = _invoke(client, alice, "lensword.start_companion_session", {"connection_id": "alice-conn", "client_id": "alice-host"})
+    _grant(db_session, "lensword_start_companion_session", user_id=alice_id)
+    session = _invoke(client, alice, "lensword_start_companion_session", {"connection_id": "alice-conn", "client_id": "alice-host"})
     assert session.status_code == 200, session.text
     alice_session_id = session.json()["id"]
 
-    _grant(db_session, "lensword.start_extraction_task", user_id=alice_id)
+    _grant(db_session, "lensword_start_extraction_task", user_id=alice_id)
     task = _invoke(
-        client, alice, "lensword.start_extraction_task",
+        client, alice, "lensword_start_extraction_task",
         {"companion_session_id": alice_session_id, "text": "hola mundo", "target_language": "es"},
     )
     assert task.status_code == 200, task.text
@@ -111,23 +111,23 @@ def test_a_second_account_cannot_read_or_cancel_anothers_companion_task_via_mcp(
     # Bob has real grants for the read/cancel task tools, and even knows
     # Alice's session id (e.g. leaked through an earlier legitimate
     # interaction) — but never started this task himself.
-    _grant(db_session, "lensword.get_companion_task", access="read", user_id=bob_id)
-    _grant(db_session, "lensword.cancel_companion_task", access="write", user_id=bob_id)
+    _grant(db_session, "lensword_get_companion_task", access="read", user_id=bob_id)
+    _grant(db_session, "lensword_cancel_companion_task", access="write", user_id=bob_id)
 
     get_response = _invoke(
-        client, bob, "lensword.get_companion_task", {"companion_session_id": alice_session_id, "task_id": alice_task_id},
+        client, bob, "lensword_get_companion_task", {"companion_session_id": alice_session_id, "task_id": alice_task_id},
     )
     assert get_response.status_code == 400, get_response.text
 
     cancel_response = _invoke(
-        client, bob, "lensword.cancel_companion_task", {"companion_session_id": alice_session_id, "task_id": alice_task_id},
+        client, bob, "lensword_cancel_companion_task", {"companion_session_id": alice_session_id, "task_id": alice_task_id},
     )
     assert cancel_response.status_code == 400, cancel_response.text
 
     # Alice's task is still there, unaffected by Bob's denied cancel.
-    _grant(db_session, "lensword.get_companion_task", access="read", user_id=alice_id)
+    _grant(db_session, "lensword_get_companion_task", access="read", user_id=alice_id)
     still_alices = _invoke(
-        client, alice, "lensword.get_companion_task", {"companion_session_id": alice_session_id, "task_id": alice_task_id},
+        client, alice, "lensword_get_companion_task", {"companion_session_id": alice_session_id, "task_id": alice_task_id},
     )
     assert still_alices.status_code == 200
     assert still_alices.json()["status"] != "cancelled"

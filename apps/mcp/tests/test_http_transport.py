@@ -12,7 +12,7 @@ from lensword_mcp.http_transport import MAX_HTTP_BODY_BYTES, SESSION_ID_HEADER, 
 
 class FakeBackend:
     def capabilities(self):
-        return {"tools": [{"name": "lensword.search_words", "input_schema": {"type": "object", "properties": {}}}]}
+        return {"tools": [{"name": "lensword_search_words", "input_schema": {"type": "object", "properties": {}}}]}
 
     def invoke(self, name, arguments):
         return {"ok": True}
@@ -76,7 +76,7 @@ def test_initialize_issues_a_session_id_and_tools_list_requires_it(running_serve
         headers={"Authorization": "Bearer user-token", "Content-Type": "application/json", SESSION_ID_HEADER: session_id},
     )
     assert status == 200
-    assert json.loads(body)["result"]["tools"][0]["name"] == "lensword.search_words"
+    assert json.loads(body)["result"]["tools"][0]["name"] == "lensword_search_words"
 
 
 def test_missing_or_unknown_session_id_is_rejected(running_server):

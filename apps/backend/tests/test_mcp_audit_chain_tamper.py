@@ -25,14 +25,14 @@ def _user_id(client, headers) -> int:
     return client.get("/api/v1/auth/me", headers=headers).json()["id"]
 
 
-def _grant(db_session, *, requester, tool="lensword.search_words"):
+def _grant(db_session, *, requester, tool="lensword_search_words"):
     item = MCPGrantModel(requester=requester, server="lensword", tool=tool, access="read", workspace="/approved", mode="always")
     db_session.add(item)
     db_session.flush()
     return item
 
 
-def _invoke(client, headers, *, tool="lensword.search_words", payload=None):
+def _invoke(client, headers, *, tool="lensword_search_words", payload=None):
     body = {"query": "hola"} if payload is None else payload
     return client.post("/api/v1/mcp/invoke", headers=headers, json={"workspace": "/approved", "tool": tool, "payload": body})
 
