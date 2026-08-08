@@ -151,6 +151,35 @@ def test_vertex_rejects_a_service_account_json_with_the_wrong_type_field():
         VertexCredentialSchema().validate(payload)
 
 
+@pytest.mark.parametrize(
+    "malicious_token_uri",
+    [
+        "http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token",
+        "http://localhost:8000/internal",
+        "http://10.0.0.5/admin",
+        "https://attacker.example.com/steal",
+    ],
+)
+def test_vertex_rejects_a_service_account_json_with_a_non_google_token_uri(malicious_token_uri):
+    """Regression test for an SSRF: google-auth's Credentials.
+    from_service_account_info trusts token_uri verbatim as the destination
+    for its own server-side OAuth token-refresh request, made on this
+    credential's first real use — not by the submitting user's browser, by
+    this backend. A self-signed service-account JSON with token_uri pointed
+    at an internal address (a cloud metadata endpoint, localhost, an
+    internal IP) would otherwise make the server issue that request on the
+    submitting user's behalf. A genuine Google-issued key always has
+    exactly one token_uri value; anything else is rejected outright."""
+    import json
+
+    payload = _valid_vertex_payload()
+    tampered = json.loads(payload["service_account_json"])
+    tampered["token_uri"] = malicious_token_uri
+    payload["service_account_json"] = json.dumps(tampered)
+    with pytest.raises(CredentialValidationError, match="token_uri"):
+        VertexCredentialSchema().validate(payload)
+
+
 def test_vertex_public_view_reveals_project_and_location_but_never_the_key():
     payload = _valid_vertex_payload()
     view = VertexCredentialSchema().public_view(payload)

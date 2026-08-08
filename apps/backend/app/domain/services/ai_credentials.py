@@ -133,6 +133,24 @@ class OpenAICredentialSchema(CredentialSchema):
 # see the module docstring's "not a full GCP IAM validator" framing.
 _SERVICE_ACCOUNT_REQUIRED_KEYS = ("type", "project_id", "private_key", "client_email", "token_uri")
 
+# google-auth's Credentials.from_service_account_info trusts token_uri
+# verbatim as the destination for its own OAuth token-refresh HTTP request —
+# made by *this server*, not the submitting user's browser, the first time
+# the credential is used. Without this check, a user could submit a
+# self-signed service-account JSON (their own key, not a real Google one)
+# with token_uri pointed at an internal address — a cloud metadata endpoint
+# (169.254.169.254) or any other host this server can reach but a user
+# never could directly — and the server would make that request on the
+# credential's first real use. A genuine Google-issued service-account key
+# always has exactly this token_uri; there is no legitimate reason for a
+# real credential to name anything else, so this is a strict allowlist
+# rather than a denylist of known-bad addresses (the same "must be known
+# to be right" posture app.domain.services.url_safety takes for outbound
+# URL fetches, applied here instead of that module's DNS-resolution machinery
+# because this field has exactly one correct value, not an open set of
+# legitimate ones).
+_GOOGLE_OAUTH_TOKEN_URI = "https://oauth2.googleapis.com/token"
+
 
 class VertexCredentialSchema(CredentialSchema):
     """`{"service_account_json": str, "project_id": str, "location": str}`
@@ -169,6 +187,15 @@ class VertexCredentialSchema(CredentialSchema):
         if parsed.get("type") != "service_account":
             raise CredentialValidationError(
                 "service_account_json must be a service-account key (type must be 'service_account')"
+            )
+        if parsed.get("token_uri") != _GOOGLE_OAUTH_TOKEN_URI:
+            # Never echoes the submitted value back — that would just be a
+            # more polite way of confirming to an attacker exactly what got
+            # rejected and why, with no benefit to a legitimate submitter
+            # (whose real key's token_uri always matches).
+            raise CredentialValidationError(
+                f"service_account_json's token_uri must be '{_GOOGLE_OAUTH_TOKEN_URI}' "
+                "(a genuine Google-issued key always has this value)"
             )
 
 
