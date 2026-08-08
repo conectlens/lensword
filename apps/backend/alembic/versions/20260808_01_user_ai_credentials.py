@@ -1,7 +1,16 @@
 """Add user_ai_credentials (Bring-Your-Own-Key AI credentials).
 
 Revision ID: 20260808_01_user_ai_credentials
-Revises: 20260807_41_notif_deep_link
+Revises: 20260808_42_tool_underscores
+
+Re-chained after 20260808_42_tool_underscores (issue #196-adjacent MCP tool
+rename, merged into development independently while this branch was in
+progress) rather than the original 20260807_41_notif_deep_link parent —
+both migrations were authored against the same base, which left two
+Alembic heads after merging development in. Re-pointing this one forward
+is arbitrary (either order is equally correct data-wise, these two tables
+are unrelated) but avoids an actual merge-migration file for two
+independent, non-conflicting schema changes.
 
 One row per (user_id, provider) — a user's own encrypted Gemini/OpenAI/
 Vertex AI credential, used for their own AI requests since the cloud
@@ -14,7 +23,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "20260808_01_user_ai_credentials"
-down_revision = "20260807_41_notif_deep_link"
+down_revision = "20260808_42_tool_underscores"
 branch_labels = None
 depends_on = None
 
