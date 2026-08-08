@@ -20,7 +20,7 @@ from app.api.deps import (
     DbSession,
     DiagnosisRepo,
     InterventionRepo,
-    OptionalAIProvider,
+    PerUserAIProvider,
     WordRepo,
     rate_limit_ai,
 )
@@ -144,7 +144,7 @@ async def explain_intervention(
     word_repo: WordRepo,
     intervention_repo: InterventionRepo,
     diagnosis_repo: DiagnosisRepo,
-    ai_provider: OptionalAIProvider,
+    ai_provider: PerUserAIProvider,
     db: DbSession,
 ) -> InterventionExplanationResponse:
     """Issue #187 TODO 2: evidence-grounded, AI-generated content for an

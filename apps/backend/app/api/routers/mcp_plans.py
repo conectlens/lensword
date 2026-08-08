@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import (
     CompanionActivityRepo, CompanionSessionRepo, CompanionTaskRepo, CurrentUser, DbSession, DiagnosisRepo, GroupRepo,
-    LearningObservationRepo, OptionalAIProvider, PracticeExerciseRepo, RecallSettingsRepo, ReviewSessionRepo,
+    LearningObservationRepo, PerUserAIProvider, PracticeExerciseRepo, RecallSettingsRepo, ReviewSessionRepo,
     WordRepo,
 )
 from app.api.mcp_auth import MCPActor
@@ -62,7 +62,7 @@ def preview(payload: PlanPreviewRequest, current_user: CurrentUser, groups: Grou
 @router.post("/{plan_id}/execute")
 async def execute(
     plan_id: str, payload: PlanExecuteRequest, current_user: CurrentUser, db: DbSession, groups: GroupRepo,
-    words: WordRepo, sessions: ReviewSessionRepo, exercises: PracticeExerciseRepo, provider: OptionalAIProvider,
+    words: WordRepo, sessions: ReviewSessionRepo, exercises: PracticeExerciseRepo, provider: PerUserAIProvider,
     companion_sessions: CompanionSessionRepo, companion_tasks: CompanionTaskRepo, recall_settings: RecallSettingsRepo,
     diagnoses: DiagnosisRepo, observations: LearningObservationRepo, companion_activities: CompanionActivityRepo,
 ) -> dict:

@@ -27,10 +27,10 @@ from app.application.mcp.bindings import (
 )
 from app.api.deps import (
     CompanionActivityRepo, CompanionSessionRepo, CompanionTaskRepo, DbSession, DiagnosisRepo, GroupRepo,
-    LearningObservationRepo, OptionalAIProvider, PracticeExerciseRepo, RecallSettingsRepo, ReviewSessionRepo,
+    LearningObservationRepo, PracticeExerciseRepo, RecallSettingsRepo, ReviewSessionRepo,
     WordRepo,
 )
-from app.api.mcp_auth import CurrentMCPActor, MCPActor
+from app.api.mcp_auth import CurrentMCPActor, MCPActor, PerActorAIProvider
 from app.config import get_settings
 from app.domain.services.mcp_policy import AccessClass, GrantMode, MCPGrant, MCPPolicyGate, redact_and_chain
 from app.domain.services.mcp_scopes import SCOPE_RESOURCES
@@ -125,7 +125,7 @@ def _handlers(groups, words, sessions, exercises, provider, companion_sessions, 
 @router.post("/invoke")
 async def invoke(
     request: InvokeRequest, actor: CurrentMCPActor, db: DbSession, groups: GroupRepo, words: WordRepo,
-    sessions: ReviewSessionRepo, exercises: PracticeExerciseRepo, provider: OptionalAIProvider,
+    sessions: ReviewSessionRepo, exercises: PracticeExerciseRepo, provider: PerActorAIProvider,
     companion_sessions: CompanionSessionRepo, companion_tasks: CompanionTaskRepo, recall_settings: RecallSettingsRepo,
     diagnoses: DiagnosisRepo, observations: LearningObservationRepo, companion_activities: CompanionActivityRepo,
 ) -> dict:
@@ -177,7 +177,7 @@ async def invoke(
 @router.get("/resource")
 async def read_resource(
     uri: str, workspace: str, actor: CurrentMCPActor, db: DbSession, groups: GroupRepo, words: WordRepo,
-    sessions: ReviewSessionRepo, exercises: PracticeExerciseRepo, provider: OptionalAIProvider,
+    sessions: ReviewSessionRepo, exercises: PracticeExerciseRepo, provider: PerActorAIProvider,
     companion_sessions: CompanionSessionRepo, companion_tasks: CompanionTaskRepo, recall_settings: RecallSettingsRepo,
     diagnoses: DiagnosisRepo, observations: LearningObservationRepo, companion_activities: CompanionActivityRepo,
 ) -> dict:

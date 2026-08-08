@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 import json
-from app.api.deps import CurrentUser, OptionalAIProvider, ReviewSessionRepo, WeeklyLearningReportRepo, WordRepo
+from app.api.deps import CurrentUser, PerUserAIProvider, ReviewSessionRepo, WeeklyLearningReportRepo, WordRepo
 from app.api.schemas.reports import WeeklyLearningReportResponse
 from app.application.use_cases.reports import BuildWeeklyLearningReportUseCase, GetWeeklyLearningReportUseCase
 from app.domain.exceptions import EntityNotFoundError, PermissionDeniedError
@@ -26,7 +26,7 @@ def get_weekly_report(report_id: int, current_user: CurrentUser, reports: Weekly
     except PermissionDeniedError as exc: raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
 @router.post("/weekly/{report_id}/narration", response_model=WeeklyLearningReportResponse)
-async def generate_narration(report_id: int, current_user: CurrentUser, reports: WeeklyLearningReportRepo, provider: OptionalAIProvider) -> WeeklyLearningReportResponse:
+async def generate_narration(report_id: int, current_user: CurrentUser, reports: WeeklyLearningReportRepo, provider: PerUserAIProvider) -> WeeklyLearningReportResponse:
     try: report = GetWeeklyLearningReportUseCase(reports).execute(current_user.id, report_id)
     except EntityNotFoundError as exc: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except PermissionDeniedError as exc: raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc

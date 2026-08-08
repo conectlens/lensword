@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.deps import CurrentUser, GroupRepo, OptionalAIProvider
+from app.api.deps import CurrentUser, GroupRepo, PerUserAIProvider
 from app.api.schemas.extract import (
     ExtractedVocabularyResponse,
     ExtractVocabularyDisabled,
@@ -21,7 +21,7 @@ async def extract_vocabulary(
     payload: ExtractVocabularyRequest,
     current_user: CurrentUser,
     group_repo: GroupRepo,
-    provider: OptionalAIProvider,
+    provider: PerUserAIProvider,
 ) -> ExtractVocabularyResponse:
     use_case = ExtractVocabularyUseCase(
         group_repo,
