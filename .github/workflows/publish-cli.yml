@@ -1,14 +1,21 @@
 name: Publish Local CLI (PyPI)
 
 # Publishes apps/cli (the `lensword-cli` package, `lensword` entry point —
-# issue #311's split from apps/mcp) to PyPI using a long-lived PYPI_API_TOKEN
-# secret (repo owner: create it at pypi.org/manage/account/token/ scoped to
-# the `lensword-cli` project once it exists, and add it as a secret named
-# PYPI_API_TOKEN on the `pypi` environment below — see
-# docs/internal/pypi-publishing.md). Triggered automatically by
-# publish-cli-auto-version.yml pushing a `cli-v*` tag on every apps/cli
-# change that reaches main; a manual `cli-v*` tag push or workflow_dispatch
-# also works.
+# issue #311's split from apps/mcp) to PyPI using Trusted Publishing (OIDC),
+# not a long-lived PYPI_API_TOKEN secret. This workflow exists and is
+# correct, but is unverified end to end until both of these have happened:
+#
+#   1. the repo owner adds a *pending* trusted publisher on PyPI for a
+#      not-yet-existing `lensword-cli` project, naming this exact workflow
+#      file and the `pypi` environment below (see
+#      docs/internal/pypi-publishing.md for the copy-pasteable steps), and
+#   2. a `cli-v*` tag is actually pushed.
+#
+# Until then, `workflow_dispatch` runs exercise every step up through the
+# build/check, and will fail at the publish step with a PyPI authentication
+# error — that failure is expected and informative (it proves the workflow
+# reaches PyPI and is rejected only because no trusted publisher exists
+# yet), not a sign the workflow itself is broken.
 on:
   push:
     tags:
@@ -24,10 +31,15 @@ jobs:
     runs-on: ubuntu-latest
     # A GitHub Environment, not just a job name — lets the repo owner attach
     # required-reviewer protection to `pypi` later (Settings -> Environments)
-    # so a tag push pauses for approval before anything reaches PyPI, and is
-    # where the PYPI_API_TOKEN secret below must be added.
+    # so a tag push pauses for approval before anything reaches PyPI. No
+    # environment secrets are needed for the publish step itself; trusted
+    # publishing authenticates via the OIDC token below instead.
     environment: pypi
     permissions:
+      # Required by pypa/gh-action-pypi-publish's OIDC exchange with PyPI —
+      # without this the action has no token to trade for a short-lived
+      # PyPI credential, and trusted publishing cannot work at all.
+      id-token: write
       contents: read
     steps:
       - uses: actions/checkout@v7
@@ -66,4 +78,3 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
-          password: ${{ secrets.PYPI_API_TOKEN }}

@@ -103,7 +103,7 @@
       "versionSource": "apps/cli/pyproject.toml#version",
       "currentVersion": "0.1.0",
       "status": "public-source-install-only",
-      "statusNote": "import-context is read-only/offline by design (never writes, never contacts the backend, redacts secrets, 50,000-char default cap). Other subcommands need the same backend env vars as the MCP server. A PyPI publish workflow now exists (.github/workflows/publish-cli.yml), auto-triggered by .github/workflows/publish-cli-auto-version.yml on every apps/cli change merged to main, but has not been triggered end to end yet — no PYPI_API_TOKEN secret has been configured on PyPI's/GitHub's side yet, so 'pip install lensword-cli' from the real index does not work.",
+      "statusNote": "import-context is read-only/offline by design (never writes, never contacts the backend, redacts secrets, 50,000-char default cap). Other subcommands need the same backend env vars as the MCP server. A PyPI publish workflow now exists (.github/workflows/publish-cli.yml) but has not been triggered — no tag has been pushed and no trusted publisher has been configured on PyPI's side yet, so 'pip install lensword-cli' from the real index does not work.",
       "ciCoverage": [],
       "releaseChannel": null,
       "changelogRoute": "/reference/changelog/local-cli",

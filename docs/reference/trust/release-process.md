@@ -69,28 +69,19 @@ authoring time.
 Each product versions independently, with its own tag prefix, rather than
 one ambiguous `v*` tag standing in for the whole ecosystem:
 
-| Product | Tag prefix | Version source | Publish workflow |
-|---|---|---|---|
-| Web Application | `web-v` | `apps/frontend/package.json` | none yet |
-| Desktop Application | `desktop-v` | `apps/desktop/src-tauri/tauri.conf.json` | `.github/workflows/release.yml` |
-| Browser Extension | `browser-v` | `apps/browser/manifest.json` | none yet |
-| MCP Server | `mcp-v` | `apps/mcp/pyproject.toml` | none yet — not published to PyPI |
-| Local CLI | `cli-v` | `apps/cli/pyproject.toml` | `.github/workflows/publish-cli.yml` |
-
-Since [#311](https://github.com/conectlens/lensword/issues/311) split the
-Local CLI (`apps/cli`, `lensword-cli`) out of the MCP server (`apps/mcp`,
-`lensword-mcp`), the two version independently under their own tag
-prefixes and package sources — they are no longer "both entry points ship
-in one package." `docs/internal/product-registry.json`'s `mcp-server` and
-`local-cli` entries are the source of truth for this split.
+| Product | Tag prefix | Version source |
+|---|---|---|
+| Web Application | `web-v` | `apps/frontend/package.json` |
+| Desktop Application | `desktop-v` | `apps/desktop/src-tauri/tauri.conf.json` |
+| Browser Extension | `browser-v` | `apps/browser/manifest.json` |
+| MCP Server / Local CLI | `mcp-v` | `apps/mcp/pyproject.toml` (both entry points ship in one package) |
 
 `.github/workflows/release.yml` triggers on the namespaced `desktop-v*`
 convention above (`v*` still works too, as a legacy alias — see that
-workflow's own comment). `.github/workflows/publish-cli.yml` triggers on
-`cli-v*` (see `docs/internal/pypi-publishing.md` for the one-time PyPI/GitHub
-setup it still needs). No tag of any kind had been pushed against this
-repository until `desktop-v0.1.0`; see [Releases](/reference/releases/) for
-the current record.
+workflow's own comment). No tag of any kind has ever actually been pushed
+against this repository (`git tag -l` is empty) — the workflow accepting
+the right pattern is not the same claim as a release having happened; see
+[Releases](/reference/releases/) for what has (still nothing).
 
 ## Release channels (desktop)
 
