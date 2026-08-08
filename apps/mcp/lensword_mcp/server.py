@@ -7,6 +7,7 @@ tenant scoping, audit chaining and write idempotency.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 import time
@@ -86,7 +87,16 @@ _COMPANION_REPLY_TOOL: dict[str, Any] = {
         "additionally requires explicit confirmation."
     ),
     "inputSchema": {
+        # `$schema` and `additionalProperties` are stated here for the same
+        # reason contracts.py's `_schema` states them on every backend tool:
+        # without the former a client cannot know which dialect to validate
+        # against, and without the latter an unrecognised field is silently
+        # accepted instead of rejected. These two tools are defined in this
+        # process rather than by the backend registry, so they had been
+        # missing the hardening every other tool receives for free.
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
+        "additionalProperties": False,
         "properties": {
             "session_id": {"type": "string"},
             "task": {"type": "string", "maxLength": 500},
@@ -108,7 +118,18 @@ _COMPANION_REPLY_TOOL: dict[str, Any] = {
             "persist": {"type": "boolean", "description": "Save the reply as a session turn."},
             "confirmed": {"type": "boolean", "description": "Required to actually persist (#195 TODO 3)."},
             "activity_id": {"type": "string"},
-            "operation_id": {"type": "string"},
+            # This is the idempotency key for the only write this tool can
+            # make. Composing text is generative and deliberately not
+            # idempotent (see `annotations` below), so there is no
+            # registry-style `request_id` covering the whole call — but the
+            # persist branch appends a session turn, and repeating that on a
+            # retry would double-post the reply. Forwarded to `add_turn`, so
+            # a caller that retries with the same `operation_id` after a
+            # timeout gets one turn rather than two.
+            "operation_id": {
+                "type": "string",
+                "description": "Idempotency key for the persist write; reuse it when retrying.",
+            },
         },
         "required": ["session_id", "task", "intervention_type", "target_language", "evidence"],
     },
@@ -136,7 +157,9 @@ _COMPANION_ELICIT_TOOL: dict[str, Any] = {
         "asking for them in prose. Requires a host that supports elicitation."
     ),
     "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
+        "additionalProperties": False,
         "properties": {
             "fields": {
                 "type": "array",
@@ -204,6 +227,33 @@ _DIFFICULTIES = ("beginner", "intermediate", "advanced")
 # apps/mcp now depends on lensword-cli for it rather than defining its own
 # copy; everything below (`MCPServer`, `StdioMCPServer`, `main`) is the
 # genuinely MCP-transport-specific code that stays here.
+
+
+def backend_error_text(prefix: str | None, exc: BackendError) -> str:
+    """Render a `BackendError` as text a calling agent can act on.
+
+    An authentication failure is called out by name rather than folded into
+    the generic detail. This is not an information leak: the caller is the
+    party holding the rejected credential, and telling a token's own bearer
+    that the token is invalid is what RFC 6750 prescribes. It is also the
+    difference between an agent retrying a doomed call and an agent
+    reporting "re-authenticate" — the failure mode a 401 storm produced
+    before, where 20+ tools surfaced only as an unexplained outage.
+
+    An ordinary 4xx keeps the backend's own wording untouched when `prefix`
+    is None, because that wording is already the good case: 'Word "1" was
+    not found' needs no help from this function.
+    """
+    if exc.status in (401, 403):
+        head = f"{prefix}: " if prefix else ""
+        return (
+            f"{head}LensWord rejected this connection's credential ({exc.status}: {exc.detail}). "
+            "Re-authenticate the MCP connection — retrying with the same token cannot succeed."
+        )
+    if exc.status >= 500:
+        head = f"{prefix}: " if prefix else ""
+        return f"{head}LensWord is unavailable ({exc.status}: {exc.detail})."
+    return exc.detail if prefix is None else f"{prefix}: {exc.detail}"
 
 
 def _fallback_title(tool_name: str) -> str:
@@ -419,11 +469,7 @@ class MCPServer:
         try:
             result = self.backend.invoke(name, arguments)
         except BackendError as exc:
-            return {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "result": {"isError": True, "content": [{"type": "text", "text": exc.detail}]},
-            }
+            return self._tool_error(request_id, backend_error_text(None, exc))
         return {
             "jsonrpc": "2.0",
             "id": request_id,
@@ -455,10 +501,24 @@ class MCPServer:
     def _ensure_loop(self, session_id: str) -> None:
         """Best-effort: start a loop budget for the session if none exists
         yet. A workflow that never calls `lensword_companion_reply` still
-        gets a durable budget the first time it does, rather than 404ing."""
+        gets a durable budget the first time it does, rather than 404ing.
+
+        Only a 404 means "no budget yet" — that is the literal status
+        `companion_sampling.get_loop` raises with "Companion loop has not
+        been started". Every other status describes a condition retrying
+        cannot fix: an expired or wrong-environment token (401), a revoked
+        grant (403), a backend outage (5xx). Those must propagate, because
+        re-issuing the identical credential against `start_loop` only
+        raises the same error a second time — and it used to do so from
+        outside any `except`, which killed the whole HTTP connection
+        instead of answering the caller. `_reserve_or_error` is the one
+        place that decides what the caller sees.
+        """
         try:
             self.backend.get_loop(session_id)
-        except BackendError:
+        except BackendError as exc:
+            if exc.status != 404:
+                raise
             self.backend.start_loop(session_id)
 
     def _reserve_or_error(self, request_id: Any, session_id: str, kind: str, amount: int = 1) -> dict[str, Any] | None:
@@ -467,14 +527,20 @@ class MCPServer:
         budget - this is the enforcement point #195 TODO 5's red-team test
         exercises: a malicious sampled reply cannot ever cause more calls
         than the budget allows, because every external call reserves here
-        first, and a stopped loop refuses every further reservation."""
-        self._ensure_loop(session_id)
+        first, and a stopped loop refuses every further reservation.
+
+        "Never raises" is load-bearing and now actually true: `_ensure_loop`
+        is inside the `try`, not before it. Reserving is the first thing
+        every companion tool does, so an exception escaping here escapes the
+        whole `tools/call`.
+        """
         try:
+            self._ensure_loop(session_id)
             self.backend.reserve_loop(session_id, kind, amount)
         except BackendError as exc:
             if exc.status == 409:
                 return self._tool_error(request_id, f"Companion loop budget exhausted: {exc.detail}")
-            return self._tool_error(request_id, f"Companion loop budget check failed: {exc.detail}")
+            return self._tool_error(request_id, backend_error_text("Companion loop budget check failed", exc))
         return None
 
     def _record_failure(self, session_id: str) -> None:
@@ -644,7 +710,7 @@ class MCPServer:
                     activity_id=arguments.get("activity_id"), operation_id=arguments.get("operation_id"),
                 )
             except BackendError as exc:
-                return self._tool_error(request_id, exc.detail)
+                return self._tool_error(request_id, backend_error_text("Could not save the reply", exc))
             structured["persisted"] = True
             structured["turnId"] = turn.get("id")
 
@@ -670,8 +736,24 @@ class MCPServer:
                 "jsonrpc": "2.0", "id": request_id,
                 "result": {
                     "isError": False,
-                    "structuredContent": {"available": False, "action": "unavailable", "answers": {}},
-                    "content": [{"type": "text", "text": "Elicitation is not available on this connection."}],
+                    # `reason` names *why* elicitation is unavailable rather
+                    # than only that it is: the host never declared the
+                    # capability during `initialize`, so this is a fixed
+                    # property of the connection, not a transient failure to
+                    # retry. Without it a caller can only see `available:
+                    # false` and has no basis to decide between retrying,
+                    # asking in prose instead, or giving up.
+                    "structuredContent": {
+                        "available": False,
+                        "action": "unavailable",
+                        "answers": {},
+                        "reason": "client_capability_not_declared",
+                        "requested_fields": requested,
+                    },
+                    "content": [{"type": "text", "text": (
+                        "Elicitation is not available on this connection — the host did not declare "
+                        "the elicitation capability. Ask the learner for these details in conversation instead."
+                    )}],
                 },
             }
 
@@ -977,11 +1059,30 @@ class StdioMCPServer:
         for line in self.input_stream:
             if not line.strip():
                 continue
+            message: Any = None
             try:
                 message = json.loads(line)
                 response = self.server.handle(message)
             except (json.JSONDecodeError, TypeError):
                 response = self.server._error(None, -32700, "Parse error")
+            except Exception:  # noqa: BLE001 - deliberate last-resort barrier
+                # Same barrier as the HTTP transport's `do_POST`, and more
+                # load-bearing here: this loop *is* the process. An escaping
+                # exception used to end `run()` and terminate the server, so
+                # one failing tool call took down every subsequent call on a
+                # local desktop install until the host restarted it. Answer
+                # the one message and keep serving.
+                incident = uuid.uuid4().hex[:12]
+                _LOGGER.exception(
+                    "Unhandled MCP error (incident=%s method=%s)",
+                    incident,
+                    message.get("method") if isinstance(message, dict) else None,
+                )
+                response = self.server._error(
+                    message.get("id") if isinstance(message, dict) else None,
+                    -32603,
+                    f"Internal error (incident {incident})",
+                )
             if response is not None:
                 self.output_stream.write(json.dumps(response, separators=(",", ":")) + "\n")
                 self.output_stream.flush()

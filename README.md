@@ -32,7 +32,7 @@ No release has shipped yet (see [Current status and known limitations](#current-
 - **Review with spaced repetition and forced recall** — an SM-2-based scheduler prompts you right before you'd forget a word, and you type the answer instead of just recognizing it.
 - **Organize words spatially in the Mind Palace** — drag words onto a 2D room canvas as spatial memory anchors (the method of loci).
 - **Practice conversation, scenarios, writing, and pronunciation feedback** — the Practice Lab covers guided conversations, scenario prompts, writing exercises, and pronunciation/transcript feedback beyond flashcard review.
-- **Use local, Ollama-powered mnemonic suggestions** — MnemoLab can ask a locally hosted model for a mnemonic; off by default, nothing leaves your machine when it's on.
+- **Use AI-powered mnemonic suggestions** — MnemoLab can ask a model for a mnemonic; off by default. Local via Ollama (nothing leaves your machine), or a hosted deploy can point at Gemini, Vertex AI, or OpenAI instead.
 - **Capture words while browsing** — the browser extension saves selected text on a page straight into a LensWord group.
 - **Use LensWord from a desktop shell** — a Tauri app that talks to a LensWord server over the network.
 - **Connect an MCP-capable AI client, or use the bounded local CLI** — give Claude, Codex, Cursor, or another MCP client scoped access to your vocabulary, or preview/import developer context locally without ever contacting the server.
@@ -78,7 +78,7 @@ walking through registration, onboarding, adding words, and a review session
 (see the screenshots below).
 
 For everything past this — [local development without Docker](docs/reference/local-development.md), [hosted
-deployment for other people](docs/install/self-hosting.md), [desktop builds](docs/install/desktop-app.md), [browser extension loading](apps/browser/README.md), [MCP configuration](apps/mcp/README.md), and [local AI](docs/install/local-ai-ollama.md) — see [Documentation](#documentation) below.
+deployment for other people](docs/install/self-hosting.md), [desktop builds](docs/install/desktop-app.md), [browser extension loading](apps/browser/README.md), [MCP configuration](apps/mcp/README.md), [local AI](docs/install/local-ai-ollama.md), and [cloud AI providers](docs/install/cloud-ai-providers.md) — see [Documentation](#documentation) below.
 
 ## See it in action
 
@@ -129,9 +129,12 @@ evidence-based breakdown per surface.
   release scope is narrow — hardcoded to Spanish, no translations.
 - **MCP server and local CLI** are not published to PyPI; install is
   source-only. No CI job builds or tests either.
-- **AI mnemonic suggestions** (MnemoLab, via Ollama) are real and verified
-  against a live model, but off by default and require a local Ollama
-  install — see [Documentation](#documentation).
+- **AI mnemonic suggestions** (MnemoLab) are off by default. The Ollama
+  provider is real and verified against a live model, but requires a local
+  Ollama install. The Gemini, Vertex AI, and OpenAI providers implement the
+  same interface and are covered by mocked unit tests only — no live-model
+  verification pass has been run against a real account for any of the
+  three yet. See [Documentation](#documentation).
 - No refresh-token rotation — a single 7-day access token. Fine for
   personal use, not for a production launch.
 - Backend: 96/96 tests passing, boot-tested with a real `uvicorn` process.
@@ -152,7 +155,7 @@ The same Markdown files are linked directly below, so they're just as
 readable straight from GitHub.
 
 - **Setup:** [docs/setup/index.md](docs/setup/index.md) — the same verified quick start as above, plus where to go next.
-- **Install:** [web app](docs/install/web-app.md) · [desktop](docs/install/desktop-app.md) · [browser extension](docs/install/browser-extension.md) ([apps/browser/README.md](apps/browser/README.md)) · [MCP server & local CLI](docs/install/mcp-local-cli.md) ([apps/mcp/README.md](apps/mcp/README.md)) · [self-hosting](docs/install/self-hosting.md) · [local AI / Ollama](docs/install/local-ai-ollama.md) · [troubleshooting](docs/install/troubleshooting.md)
+- **Install:** [web app](docs/install/web-app.md) · [desktop](docs/install/desktop-app.md) · [browser extension](docs/install/browser-extension.md) ([apps/browser/README.md](apps/browser/README.md)) · [MCP server & local CLI](docs/install/mcp-local-cli.md) ([apps/mcp/README.md](apps/mcp/README.md)) · [self-hosting](docs/install/self-hosting.md) · [local AI / Ollama](docs/install/local-ai-ollama.md) · [cloud AI providers](docs/install/cloud-ai-providers.md) · [troubleshooting](docs/install/troubleshooting.md)
 - **Learn:** [architecture & design decisions](docs/learn/architecture.md) · [choose your surface](docs/learn/choose-a-surface.md) · [brand assets](docs/learn/brand.md)
 - **Reference:** [verification & known gaps](docs/reference/verification.md) · [AI model verification log](docs/reference/ai-model-verification.md) · [changelog](docs/reference/changelog/index.md) · [releasing & compatibility](docs/reference/releasing.md) · [MCP remote transport](docs/reference/mcp-remote-transport.md) · [local development](docs/reference/local-development.md) · [ADRs](docs/reference/adr/)
 - **Evidence base:** [docs/internal/repo-audit.md](docs/internal/repo-audit.md), [product-registry.json](docs/internal/product-registry.json), [docs-migration-map.md](docs/internal/docs-migration-map.md), [evidence-gaps.md](docs/internal/evidence-gaps.md) — not part of the published site (internal, excluded from the VitePress build), but this README and the whole documentation rewrite are built on them.

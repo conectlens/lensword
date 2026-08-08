@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { ProtectedRoute } from './components/layout/ProtectedRoute'
+import { GuestOnlyRoute } from './components/layout/GuestOnlyRoute'
 import { LoginPage } from './features/auth/LoginPage'
 import { RegisterPage } from './features/auth/RegisterPage'
 import { DashboardPage } from './features/dashboard/DashboardPage'
@@ -44,8 +45,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
+      <Route path="/login" element={<GuestOnlyRoute><LoginPage /></GuestOnlyRoute>} />
+      <Route path="/register" element={<GuestOnlyRoute><RegisterPage /></GuestOnlyRoute>} />
       <Route path="/onboarding" element={<OnboardingPage />} />
       {/* Not wrapped in ProtectedRoute: an external OAuth client (Claude.ai)
           opens this URL directly, and ProtectedRoute always wraps its

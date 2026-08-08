@@ -15,7 +15,20 @@ MAX_PAGE_SIZE = 100
 # (issue #188 TODOs 2/4). Kept here, beside the contract that names it in a
 # tool schema, so the schema and the use case that enforces it again
 # (app.application.use_cases.mcp_dev_workflow) can never quietly diverge.
+# The first eight are developer-workflow surfaces and are intentional, not
+# copied from a sibling product: issue #188's whole premise is a learner who
+# meets vocabulary while working, so "I saw this word in a commit message"
+# is the sighting it was built to record.
+#
+# They were, however, the *only* vocabulary available, which made the tool
+# unusable for a learner who met a word in a subtitle or a conversation —
+# every ordinary language-learning context had to be forced into
+# "explanation" or dropped. The learner-facing kinds below are added rather
+# than substituted: these strings are persisted on existing
+# LearningObservation rows, so removing one would orphan the history that
+# already references it.
 CONTEXT_KINDS = (
+    # Developer-workflow sightings (issue #188).
     "commit_message",
     "pull_request",
     "readme",
@@ -24,6 +37,14 @@ CONTEXT_KINDS = (
     "prompt",
     "explanation",
     "stack_trace",
+    # Everyday language-learning sightings.
+    "conversation",
+    "reading",
+    "subtitle",
+    "song_lyrics",
+    "chat_message",
+    "video",
+    "podcast",
 )
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +126,12 @@ DESTRUCTIVE_TOOLS = frozenset({
     # Irreversible by design — a finished session cannot be resumed, so an
     # accidental call costs the learner their whole session context.
     "lensword_finish_companion_session",
+    # Removes a word and, with it, the spaced-repetition history that word
+    # accumulated. There is no archive tier in the domain today (see
+    # DeleteWordUseCase), so this is a hard delete and the host should
+    # always confirm it — the tool additionally refuses to act without an
+    # explicit `confirmed: true`.
+    "lensword_delete_word",
 })
 
 # Human-facing tool documentation: `name -> (title, description)`.
@@ -296,6 +323,86 @@ TOOL_DOCS: dict[str, tuple[str, str]] = {
         "assessed and why it was judged that way. Use to justify a result to the "
         "learner instead of inventing a rationale.",
     ),
+    # --- Group management ------------------------------------------------
+    # Every word-writing tool takes a `group_id` it cannot obtain, which
+    # left a caller to guess integers or send the learner to the web app.
+    # These two close that loop.
+    "lensword_create_group": (
+        "Create Vocabulary Group",
+        "Create a new vocabulary group (a deck) for one target language and return "
+        "its group_id. Use before adding words when the learner has no suitable "
+        "group yet. Check List Vocabulary Groups first — a group with the same "
+        "name is not rejected, so calling this twice creates two decks.",
+    ),
+    "lensword_list_groups": (
+        "List Vocabulary Groups",
+        "List the learner's vocabulary groups with their identifiers, target "
+        "language, and word counts. Use this first whenever another tool needs a "
+        "group_id, rather than guessing one.",
+    ),
+    "lensword_list_group_words": (
+        "List Words In Group",
+        "List every word saved in one group, without a search term. Use for 'show "
+        "me my X deck' questions. Search Vocabulary is for finding a word by its "
+        "text across all groups; this is for enumerating one group.",
+    ),
+    # --- Word lifecycle ---------------------------------------------------
+    "lensword_update_word": (
+        "Update Vocabulary Word",
+        "Correct a saved word's translations, example sentence, or mnemonic, or "
+        "move it to another group, keeping its review history intact. Use this "
+        "rather than deleting and re-adding, which would reset the word's "
+        "spaced-repetition schedule to new.",
+    ),
+    "lensword_delete_word": (
+        "Delete Vocabulary Word",
+        "Permanently remove a word and its review history. This cannot be undone "
+        "and there is no archive to restore from, so use it only on an explicit "
+        "request from the learner; requires confirmed=true. To fix a mistake in a "
+        "word, use Update Vocabulary Word instead so its history survives.",
+    ),
+    # --- Memory palace (method of loci) ----------------------------------
+    "lensword_list_rooms": (
+        "List Memory Palace Rooms",
+        "List the learner's memory-palace rooms with their identifiers and the "
+        "group each one visualises. Use this to obtain a room_id before placing a "
+        "word.",
+    ),
+    "lensword_create_room": (
+        "Create Memory Palace Room",
+        "Create a memory-palace room for one vocabulary group and return its "
+        "room_id. A room is a spatial canvas the learner places that group's words "
+        "onto, so the group must exist first.",
+    ),
+    "lensword_place_word_in_room": (
+        "Place Word In Room",
+        "Place a word at a position on its group's memory-palace room canvas, as a "
+        "method-of-loci anchor. Coordinates are percentages of the canvas, 0 to "
+        "100. The word must belong to the room's own group. Placing an "
+        "already-placed word moves it rather than duplicating it.",
+    ),
+    # --- MnemoLab ---------------------------------------------------------
+    "lensword_get_mnemonics": (
+        "Get Word Mnemonics",
+        "Return the mnemonics saved for one word, strongest-scoring first. Use to "
+        "remind a learner of a memory hook they already have before inventing a "
+        "new one.",
+    ),
+    "lensword_generate_mnemonic": (
+        "Generate Word Mnemonic",
+        "Generate a new memory hook for one saved word in a chosen style. Returns "
+        "the suggestion without saving it unless persist=true. This answers 'how "
+        "do I remember this'; Explain Word For Learner answers 'what does this "
+        "mean'.",
+    ),
+    # --- Knowledge graph --------------------------------------------------
+    "lensword_get_word_map": (
+        "Get Word Relationship Map",
+        "Return the map of relationships (synonym, antonym, topic, collocation, "
+        "confused-with) around one word, out to a chosen number of hops. Use to "
+        "ground statements about which of the learner's words relate to each "
+        "other, instead of inferring connections that were never recorded.",
+    ),
 }
 
 TOOL_CONTRACTS = tuple(ToolContract(name, f"https://lensword.app/mcp/{CONTRACT_VERSION}/{name}.schema.json", access, schema) for name, access, schema in (
@@ -305,7 +412,7 @@ TOOL_CONTRACTS = tuple(ToolContract(name, f"https://lensword.app/mcp/{CONTRACT_V
     ("lensword_get_due_reviews", AccessClass.READ, _schema({"group_id":{"type":"integer","minimum":1}, "limit":{"type":"integer","minimum":1,"maximum":100}, "cursor":{"type":"string","maxLength":256}})),
     ("lensword_create_study_session", AccessClass.WRITE, _schema({"group_id":{"type":"integer","minimum":1}, "limit":{"type":"integer","minimum":1,"maximum":100}}, write=True)),
     ("lensword_generate_exercises", AccessClass.WRITE, _schema({"word_id":{"type":"integer","minimum":1}, "kind":{"enum":["translation","definition","cloze"]}}, ["word_id"], write=True)),
-    ("lensword_get_learning_progress", AccessClass.READ, _schema({"week":{"type":"string","maxLength":32}})),
+    ("lensword_get_learning_progress", AccessClass.READ, _schema({"week":{"type":"string","maxLength":32, "description":"ISO-8601 week, e.g. '2026-W32'. Omit for the current week."}})),
     ("lensword_record_answer", AccessClass.WRITE, _schema({"session_id":{"type":"integer","minimum":1}, "word_id":{"type":"integer","minimum":1}, "outcome":{"enum":["correct","incorrect","skipped"]}}, ["session_id","word_id","outcome"], write=True)),
     # Companion task tools (#197 TODO 2): genuinely long-running work only.
     # `start_extraction_task` wraps the existing companion_tasks.py state
@@ -347,7 +454,7 @@ TOOL_CONTRACTS = tuple(ToolContract(name, f"https://lensword.app/mcp/{CONTRACT_V
     # (never a Word/ReviewState mutation) — see
     # app.application.use_cases.mcp_dev_workflow for why that boundary holds.
     ("lensword_get_language_profile", AccessClass.READ, _schema({})),
-    ("lensword_check_known_term", AccessClass.READ, _schema({"term":{"type":"string","minLength":1,"maxLength":255}}, ["term"])),
+    ("lensword_check_known_term", AccessClass.READ, _schema({"term":{"type":"string","minLength":1,"maxLength":255}, "target_language":{"type":"string","maxLength":64}}, ["term"])),
     ("lensword_explain_for_user", AccessClass.READ, _schema({"word_id":{"type":"integer","minimum":1}}, ["word_id"])),
     ("lensword_suggest_stretch_vocabulary", AccessClass.READ, _schema({"group_id":{"type":"integer","minimum":1}, "limit":{"type":"integer","minimum":1,"maximum":50}})),
     ("lensword_record_context_occurrence", AccessClass.WRITE, _schema({"word_id":{"type":"integer","minimum":1}, "context_kind":{"enum":list(CONTEXT_KINDS)}, "outcome":{"enum":["correct","incorrect"]}, "confirmed":{"type":"boolean"}}, ["word_id","context_kind","outcome","confirmed"], write=True)),
@@ -385,6 +492,85 @@ TOOL_CONTRACTS = tuple(ToolContract(name, f"https://lensword.app/mcp/{CONTRACT_V
         "session_id": {"type":"string","minLength":1,"maxLength":64},
         "activity_id": {"type":"string","minLength":1,"maxLength":64},
     }, ["session_id","activity_id"])),
+    # Group management. Until these existed, `group_id` was an input every
+    # word-writing tool demanded and no tool could supply — a caller had to
+    # guess an integer or abandon the MCP surface for the web app. `limit`/
+    # `cursor` mirror the pagination shape `search_words` established.
+    ("lensword_create_group", AccessClass.WRITE, _schema({
+        "name": {"type":"string","minLength":1,"maxLength":128},
+        "target_language": {"type":"string","minLength":1,"maxLength":64},
+    }, ["name","target_language"], write=True)),
+    ("lensword_list_groups", AccessClass.READ, _schema({
+        "limit": {"type":"integer","minimum":1,"maximum":100},
+        "cursor": {"type":"string","maxLength":256},
+    })),
+    ("lensword_list_group_words", AccessClass.READ, _schema({
+        "group_id": {"type":"integer","minimum":1},
+        "limit": {"type":"integer","minimum":1,"maximum":100},
+        "cursor": {"type":"string","maxLength":256},
+        "sort_by": {"enum":["added_at","term","next_review_at"]},
+    }, ["group_id"])),
+    # Word lifecycle. `update_word` is a partial update on purpose: every
+    # field left out keeps its stored value, so correcting a translation
+    # cannot silently erase an example sentence. Supplying `group_id` moves
+    # the word between groups without disturbing its review state.
+    ("lensword_update_word", AccessClass.WRITE, _schema({
+        "word_id": {"type":"integer","minimum":1},
+        "translations": {"type":"array","maxItems":20,"items":{"type":"string","maxLength":255}},
+        "example_sentence": {"type":"string","maxLength":1000},
+        "mnemonic": {"type":"string","maxLength":1000},
+        "category": {"type":"string","maxLength":128},
+        "group_id": {"type":"integer","minimum":1},
+    }, ["word_id"], write=True)),
+    # `confirmed` is a required boolean rather than an optional flag, so the
+    # payload cannot be shortened into an accidental deletion. There is no
+    # `mode: archive` here because the domain has no archive tier to route
+    # to — see this tool's entry in DESTRUCTIVE_TOOLS.
+    ("lensword_delete_word", AccessClass.WRITE, _schema({
+        "word_id": {"type":"integer","minimum":1},
+        "confirmed": {"type":"boolean"},
+    }, ["word_id","confirmed"], write=True)),
+    # Memory palace. `list_rooms`/`create_room` exist for the same reason
+    # the group tools do: `place_word_in_room` needs a `room_id` that would
+    # otherwise be unobtainable. Coordinates are percentages of the canvas,
+    # matching RoomPlacement's own units rather than pixels, so a placement
+    # survives the canvas being displayed at any size.
+    ("lensword_list_rooms", AccessClass.READ, _schema({
+        "limit": {"type":"integer","minimum":1,"maximum":100},
+        "cursor": {"type":"string","maxLength":256},
+    })),
+    ("lensword_create_room", AccessClass.WRITE, _schema({
+        "group_id": {"type":"integer","minimum":1},
+        "name": {"type":"string","minLength":1,"maxLength":128},
+        "icon": {"type":"string","maxLength":64},
+    }, ["group_id","name"], write=True)),
+    ("lensword_place_word_in_room", AccessClass.WRITE, _schema({
+        "room_id": {"type":"integer","minimum":1},
+        "word_id": {"type":"integer","minimum":1},
+        "x_percent": {"type":"number","minimum":0,"maximum":100},
+        "y_percent": {"type":"number","minimum":0,"maximum":100},
+    }, ["room_id","word_id","x_percent","y_percent"], write=True)),
+    # MnemoLab. Reading mnemonics is the one place a `mnemonic` string is
+    # the point of the call rather than an incidental leak, so these two are
+    # the deliberate exception to the redaction rule bindings.py documents.
+    ("lensword_get_mnemonics", AccessClass.READ, _schema({
+        "word_id": {"type":"integer","minimum":1},
+        "limit": {"type":"integer","minimum":1,"maximum":20},
+    }, ["word_id"])),
+    ("lensword_generate_mnemonic", AccessClass.WRITE, _schema({
+        "word_id": {"type":"integer","minimum":1},
+        "style": {"enum":["visual","phonetic","story","association"]},
+        "persist": {"type":"boolean"},
+    }, ["word_id"], write=True)),
+    # Knowledge graph. `depth` is capped at 3 because the traversal is a
+    # breadth-first walk over an in-memory graph of the learner's whole
+    # vocabulary; beyond three hops the result stops being a useful "related
+    # words" answer and starts being most of the collection.
+    ("lensword_get_word_map", AccessClass.READ, _schema({
+        "word_id": {"type":"integer","minimum":1},
+        "depth": {"type":"integer","minimum":1,"maximum":3},
+        "limit": {"type":"integer","minimum":1,"maximum":50},
+    }, ["word_id"])),
 ))
 
 def capabilities() -> dict:
@@ -434,6 +620,17 @@ def validate_payload(contract: ToolContract, payload: dict) -> str | None:
             return f"{name} must be an integer"
         elif expected == "integer" and not rules.get("minimum", float("-inf")) <= value <= rules.get("maximum", float("inf")):
             return f"{name} is out of range"
+        elif expected == "number":
+            # Room placement coordinates are the first fractional inputs in
+            # the registry. Without this branch a "number" property matched
+            # no case at all and passed through entirely unvalidated, which
+            # would have made this validator quietly weaker than the schema
+            # it publishes. `bool` is excluded for the same reason as above:
+            # it is an `int` subclass in Python and is never a coordinate.
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return f"{name} must be a number"
+            if not rules.get("minimum", float("-inf")) <= value <= rules.get("maximum", float("inf")):
+                return f"{name} is out of range"
         elif expected == "array":
             if not isinstance(value, list): return f"{name} must be an array"
             if len(value) > rules.get("maxItems", float("inf")): return f"{name} has too many items"

@@ -23,7 +23,27 @@ from app.application.use_cases.mcp_dev_workflow import (
     SuggestStretchVocabularyUseCase,
 )
 from app.application.use_cases.vocabulary import AddWordUseCase, SearchWordsUseCase, WordInput
-from app.application.use_cases.review import GetWeeklyProgressUseCase, StartReviewSessionUseCase, SubmitAnswerUseCase
+from app.application.use_cases.vocabulary import (
+    CreateGroupUseCase,
+    CreateRoomUseCase,
+    DeleteWordUseCase,
+    GetGroupDetailUseCase,
+    GetRoomDetailUseCase,
+    ListGroupsUseCase,
+    ListRoomsUseCase,
+    PlaceWordUseCase,
+    UpdateWordUseCase,
+    _require_group_owner,
+)
+from app.application.use_cases.knowledge_graph import graph_for_user
+from app.application.use_cases.review import (
+    AddMnemonicUseCase,
+    GetWeeklyProgressUseCase,
+    ListMnemonicsUseCase,
+    StartReviewSessionUseCase,
+    SubmitAnswerUseCase,
+    SuggestMnemonicUseCase,
+)
 from app.application.use_cases.practice import GenerateExerciseUseCase
 from app.application.use_cases.extract import ExtractVocabularyUseCase
 from app.application.use_cases.companion_tasks import (
@@ -44,16 +64,19 @@ from app.application.use_cases.companion_sessions import (
     StartCompanionSessionUseCase,
     TransitionCompanionSessionUseCase,
 )
-from app.domain.exceptions import EntityNotFoundError, PermissionDeniedError, ValidationError
+from app.domain.exceptions import EntityNotFoundError, NoWordsDueError, PermissionDeniedError, ValidationError
 from app.domain.repositories import (
     CompanionActivityRepository,
     CompanionSessionRepository,
     CompanionTaskRepository,
     DiagnosisRepository,
     GroupRepository,
+    KnowledgeEdgeRepository,
     LearningObservationRepository,
+    MnemonicRepository,
     PracticeExerciseRepository,
     RecallSettingsRepository,
+    RoomRepository,
     WordRepository,
 )
 from app.domain.repositories import ReviewSessionRepository
@@ -103,13 +126,36 @@ def _paginate(items: list, limit: int, offset: int) -> tuple[list, str | None]:
     return page, next_cursor
 
 
+def _language(value: Any) -> SupportedLanguage:
+    """Coerce a caller-supplied language code, failing as a *domain* error.
+
+    `SupportedLanguage(value)` raises a bare `ValueError` for an unrecognised
+    code, and `ValueError` is not a `DomainError` — so it slipped straight
+    past main.py's `handle_domain_error` and became an unhandled 500, whose
+    body Starlette renders as **plain text**, not JSON. The MCP client
+    parses error bodies for a `detail` field, found none, and fell back to
+    the literal "LensWord request failed" — identical for every cause, which
+    is exactly the opaque failure an audit of this surface flagged as its
+    worst error experience. Raising `ValidationError` here routes the same
+    condition through the 400 handler with a message naming the accepted
+    values, so the caller can fix the call instead of guessing.
+    """
+    try:
+        return SupportedLanguage(value)
+    except ValueError as exc:
+        supported = ", ".join(sorted(item.value for item in SupportedLanguage))
+        raise ValidationError(
+            f"target_language {value!r} is not supported (expected one of: {supported})"
+        ) from exc
+
+
 def add_word_handler(words: WordRepository, groups: GroupRepository):
     def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         word = AddWordUseCase(words, groups).execute(
             user_id,
             int(payload["group_id"]),
             WordInput(
-                term=str(payload["term"]), target_language=SupportedLanguage(payload["target_language"]),
+                term=str(payload["term"]), target_language=_language(payload["target_language"]),
                 translations=[str(value) for value in payload.get("translations", [])],
             ),
         )
@@ -161,8 +207,18 @@ def generate_exercises_handler(exercises: PracticeExerciseRepository, words: Wor
 
 def create_study_session_handler(sessions, words: WordRepository):
     def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
-        session, due_words = StartReviewSessionUseCase(sessions, words).execute(user_id, SessionMode.STANDARD, payload.get("group_id"), min(int(payload.get("limit", 20)), 100))
-        return {"session_id": session.id, "words": [word_to_response(word).model_dump(mode="json") for word in due_words]}
+        try:
+            session, due_words = StartReviewSessionUseCase(sessions, words).execute(user_id, SessionMode.STANDARD, payload.get("group_id"), min(int(payload.get("limit", 20)), 100))
+        except NoWordsDueError:
+            # "Nothing is due" is a normal, expected state of a healthy
+            # schedule, not a failure of the call. Raising here made the
+            # caller parse an error string to distinguish "you are caught
+            # up" from "something went wrong"; returning the same shape with
+            # an empty list lets it branch on `words` being empty and read
+            # `reason` if it wants to say why. The REST route keeps raising,
+            # since its client renders that message directly.
+            return {"session_id": None, "words": [], "reason": "no_words_due"}
+        return {"session_id": session.id, "words": [word_to_response(word).model_dump(mode="json") for word in due_words], "reason": None}
     return handle
 
 
@@ -347,7 +403,10 @@ def language_profile_handler(groups: GroupRepository, words: WordRepository):
 
 def check_known_term_handler(words: WordRepository, groups: GroupRepository):
     def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
-        result = CheckKnownTermUseCase(words, groups).execute(user_id, str(payload["term"]))
+        target_language = payload.get("target_language")
+        result = CheckKnownTermUseCase(words, groups).execute(
+            user_id, str(payload["term"]), str(target_language) if target_language else None
+        )
         return {
             "term": result.term,
             "known": result.known,
@@ -590,4 +649,308 @@ def explain_evidence_handler(
         _require_companion_session(sessions, user_id, session_id)
         activity = _require_companion_activity(activities, user_id, session_id, str(payload["activity_id"]))
         return ExplainActivityEvidenceUseCase(words, groups, diagnoses).execute(user_id, activity)
+    return handle
+
+
+# --- Group management (Creator responsibility) ---------------------------
+# `add_word` and `extract_vocabulary` both demand a `group_id` that nothing
+# on this surface could produce or enumerate, so an agent had to guess an
+# integer or send the learner to the web app. These two close that loop.
+
+
+def create_group_handler(groups: GroupRepository):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        group = CreateGroupUseCase(groups).execute(
+            user_id, str(payload["name"]), _language(payload["target_language"])
+        )
+        return {
+            "group_id": group.id,
+            "name": group.name,
+            "target_language": group.target_language.value,
+            "created_at": group.created_at.isoformat(),
+        }
+    return handle
+
+
+def list_groups_handler(groups: GroupRepository, words: WordRepository):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        limit = min(int(payload.get("limit", 20)), 100)
+        offset = _decode_cursor(payload.get("cursor"))
+        # ListGroupsUseCase returns every summary in one pass (it aggregates
+        # per-group counts), so paging is applied here rather than pushed
+        # into the repository. Slice one row oversized to keep `_paginate`'s
+        # "is there more" contract honest.
+        summaries = ListGroupsUseCase(groups, words).execute(user_id)
+        page, next_cursor = _paginate(summaries[offset : offset + limit + 1], limit, offset)
+        return {
+            "items": [
+                {
+                    "group_id": item.group.id,
+                    "name": item.group.name,
+                    "target_language": item.group.target_language.value,
+                    "word_count": item.word_count,
+                    "mastered_count": item.mastered_count,
+                    "due_count": item.due_count,
+                    "last_reviewed_at": item.last_reviewed_at.isoformat() if item.last_reviewed_at else None,
+                }
+                for item in page
+            ],
+            "next_cursor": next_cursor,
+        }
+    return handle
+
+
+def list_group_words_handler(groups: GroupRepository, words: WordRepository):
+    _SORTS = {
+        "term": lambda word: word.term.lower(),
+        "added_at": lambda word: word.created_at,
+        "next_review_at": lambda word: word.review_state.due_at,
+    }
+
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        limit = min(int(payload.get("limit", 20)), 100)
+        offset = _decode_cursor(payload.get("cursor"))
+        # GetGroupDetailUseCase authorizes the group and returns its words;
+        # going through it rather than `words.list_by_group` is what keeps a
+        # caller from reading another account's deck by id.
+        _group, group_words = GetGroupDetailUseCase(groups, words).execute(user_id, int(payload["group_id"]))
+        group_words = sorted(group_words, key=_SORTS[str(payload.get("sort_by", "added_at"))])
+        page, next_cursor = _paginate(group_words[offset : offset + limit + 1], limit, offset)
+        # Redacted for the same reason as `due_reviews_handler`: this is an
+        # AI-facing enumeration of the learner's vocabulary.
+        return {
+            "items": [word_to_companion_view(word).model_dump(mode="json") for word in page],
+            "next_cursor": next_cursor,
+        }
+    return handle
+
+
+# --- Word lifecycle -------------------------------------------------------
+
+
+def update_word_handler(words: WordRepository, groups: GroupRepository, revisions=None):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        word_id = int(payload["word_id"])
+        existing = _require_word_owner(words, groups, word_id, user_id)
+        # UpdateWordUseCase *replaces* term/translations/example_sentence/
+        # mnemonic/category outright, so every field the caller omitted has
+        # to be re-sent with its current value. Sending only what changed
+        # would clear the rest — the opposite of this tool's promise that an
+        # edit preserves the word.
+        updated = UpdateWordUseCase(words, groups, revisions).execute(
+            user_id,
+            word_id,
+            WordInput(
+                term=existing.term,
+                target_language=existing.target_language,
+                translations=[str(value) for value in payload["translations"]]
+                if "translations" in payload
+                else list(existing.translations),
+                example_sentence=payload.get("example_sentence", existing.example_sentence),
+                mnemonic=payload.get("mnemonic", existing.mnemonic),
+                category=payload.get("category", existing.category),
+            ),
+        )
+        # Moving between groups is a separate concern from editing fields:
+        # UpdateWordUseCase has no notion of it, so the target group is
+        # authorized explicitly here before the word is re-parented. Doing
+        # it after the field update means a rejected move cannot leave the
+        # edit half-applied to a group the caller does not own.
+        target_group_id = payload.get("group_id")
+        if target_group_id is not None and int(target_group_id) != updated.group_id:
+            _require_group_owner(groups, int(target_group_id), user_id)
+            updated.group_id = int(target_group_id)
+            updated = words.update(updated)
+        return word_to_companion_view(updated).model_dump(mode="json")
+    return handle
+
+
+def delete_word_handler(words: WordRepository, groups: GroupRepository):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        # The schema already makes `confirmed` a required boolean, so this
+        # re-check is about its *value*, not its presence: a caller that
+        # sends `false` is explicitly declining, and the deletion must not
+        # proceed. Checked before ownership resolution so a refusal reveals
+        # nothing about whether the id exists.
+        if not bool(payload["confirmed"]):
+            raise ValidationError(
+                "Refusing to delete: confirmed must be true. Deletion is permanent and "
+                "removes the word's review history; use lensword_update_word to correct a word instead."
+            )
+        word_id = int(payload["word_id"])
+        word = _require_word_owner(words, groups, word_id, user_id)
+        term = word.term
+        DeleteWordUseCase(words, groups).execute(user_id, word_id)
+        return {"word_id": word_id, "term": term, "deleted": True}
+    return handle
+
+
+# --- Memory palace (method of loci) --------------------------------------
+
+
+def list_rooms_handler(rooms: RoomRepository, words: WordRepository):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        limit = min(int(payload.get("limit", 20)), 100)
+        offset = _decode_cursor(payload.get("cursor"))
+        summaries = ListRoomsUseCase(rooms, words).execute(user_id)
+        page, next_cursor = _paginate(summaries[offset : offset + limit + 1], limit, offset)
+        return {
+            "items": [
+                {
+                    "room_id": item.room.id,
+                    "name": item.room.name,
+                    "group_id": item.room.group_id,
+                    "icon": item.room.icon,
+                    "placed_count": len(item.room.placements),
+                    "group_word_count": item.group_word_count,
+                }
+                for item in page
+            ],
+            "next_cursor": next_cursor,
+        }
+    return handle
+
+
+def create_room_handler(rooms: RoomRepository, groups: GroupRepository):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        room = CreateRoomUseCase(rooms, groups).execute(
+            user_id,
+            int(payload["group_id"]),
+            str(payload["name"]),
+            str(payload.get("icon", "meeting_room")),
+        )
+        return {"room_id": room.id, "name": room.name, "group_id": room.group_id, "icon": room.icon}
+    return handle
+
+
+def place_word_in_room_handler(rooms: RoomRepository, words: WordRepository):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        # PlaceWordUseCase enforces the invariants that matter here — the
+        # word must belong to the room's own group, and coordinates are
+        # percentages in 0..100 — inside the Room aggregate, raising
+        # InvalidPlacementError rather than storing a nonsensical placement.
+        room = PlaceWordUseCase(rooms, words).execute(
+            user_id,
+            int(payload["room_id"]),
+            int(payload["word_id"]),
+            float(payload["x_percent"]),
+            float(payload["y_percent"]),
+        )
+        placement = next((item for item in room.placements if item.word_id == int(payload["word_id"])), None)
+        return {
+            "room_id": room.id,
+            "word_id": int(payload["word_id"]),
+            "x_percent": placement.x_percent if placement else None,
+            "y_percent": placement.y_percent if placement else None,
+            "placed_count": len(room.placements),
+        }
+    return handle
+
+
+# --- MnemoLab -------------------------------------------------------------
+# The one surface where a mnemonic string is the point of the call rather
+# than an incidental leak, so these two deliberately do not use
+# `word_to_companion_view`'s redaction — see this module's docstring.
+
+
+def get_mnemonics_handler(mnemonics: MnemonicRepository, words: WordRepository, groups: GroupRepository):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        limit = min(int(payload.get("limit", 10)), 20)
+        notes = ListMnemonicsUseCase(mnemonics, words, groups).execute(user_id, int(payload["word_id"]))
+        # `MnemonicRepository.list_by_word` promises no ordering, so the
+        # "strongest first" the tool description advertises is established
+        # here rather than assumed from the repository.
+        notes = sorted(notes, key=lambda note: (note.score, note.created_at), reverse=True)
+        return {
+            "items": [
+                {
+                    "mnemonic_id": note.id,
+                    "text": note.text,
+                    "score": note.score,
+                    "upvotes": note.upvotes,
+                    "downvotes": note.downvotes,
+                    "is_ai_generated": note.is_ai_generated,
+                }
+                for note in notes[:limit]
+            ]
+        }
+    return handle
+
+
+def generate_mnemonic_handler(
+    mnemonics: MnemonicRepository, words: WordRepository, groups: GroupRepository, provider: AIProvider | None
+):
+    async def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        use_case = SuggestMnemonicUseCase(words, groups, provider)
+        word = use_case.resolve_word(user_id, int(payload["word_id"]))
+        text = await use_case.generate(word, payload.get("style"))
+        persisted = bool(payload.get("persist", False))
+        mnemonic_id = None
+        if persisted:
+            # Flagged as AI-authored so the gallery does not attribute a
+            # generated hook to the learner.
+            note = AddMnemonicUseCase(mnemonics, words, groups).execute(
+                user_id, int(payload["word_id"]), text, is_ai_generated=True
+            )
+            mnemonic_id = note.id
+        return {
+            "word_id": word.id,
+            "term": word.term,
+            "style": payload.get("style"),
+            "text": text,
+            "persisted": persisted,
+            "mnemonic_id": mnemonic_id,
+        }
+    return handle
+
+
+# --- Knowledge graph ------------------------------------------------------
+
+
+def get_word_map_handler(words: WordRepository, groups: GroupRepository, edges: KnowledgeEdgeRepository):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        origin = _require_word_owner(words, groups, int(payload["word_id"]), user_id)
+        depth = min(int(payload.get("depth", 1)), 3)
+        limit = min(int(payload.get("limit", 20)), 50)
+        # `list_all_for_user` is on the concrete repository but missing from
+        # the WordRepository Protocol; graph.py's own read path calls it the
+        # same way. Scoping to the caller's words is what keeps the walk
+        # from ever crossing into another account's graph.
+        owned = words.list_all_for_user(user_id)
+        graph = graph_for_user(owned, edges, user_id)
+        terms = {word.id: word.term for word in owned}
+
+        seen = {origin.id}
+        frontier = [origin.id]
+        nodes: list[dict[str, Any]] = []
+        links: list[dict[str, Any]] = []
+        for hop in range(1, depth + 1):
+            next_frontier: list[int] = []
+            for source_id in frontier:
+                for edge in graph.related(source_id, limit=limit):
+                    other_id = edge.target_id if edge.source_id == source_id else edge.source_id
+                    links.append({
+                        "from_word_id": source_id,
+                        "to_word_id": other_id,
+                        "relation": edge.relation.value,
+                        "strength": round(edge.strength, 3),
+                        "evidence": edge.evidence,
+                    })
+                    if other_id in seen:
+                        continue
+                    seen.add(other_id)
+                    next_frontier.append(other_id)
+                    nodes.append({"word_id": other_id, "term": terms.get(other_id), "hop": hop})
+            if len(nodes) >= limit:
+                break
+            frontier = next_frontier
+            if not frontier:
+                break
+        return {
+            "word_id": origin.id,
+            "term": origin.term,
+            "depth": depth,
+            "nodes": nodes[:limit],
+            "links": links[: limit * 2],
+        }
     return handle

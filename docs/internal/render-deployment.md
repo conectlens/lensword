@@ -43,7 +43,11 @@ to `wrangler deploy --dry-run` available here). The safer first attempt:
    - `SECRET_KEY` — generate with `openssl rand -hex 32`, or let Render's
      "Generate" button do it.
    - `CORS_ORIGINS=["https://lensword.conectlens.com","https://lensword-frontend.pages.dev"]`
-   - `AI_PROVIDER=none` (or `ollama` if actually configuring that)
+   - `AI_PROVIDER=none` (a Render web service cannot run its own Ollama
+     daemon, so `ollama` doesn't work here — `gemini`, `vertex`, or
+     `openai` do; see
+     [docs/install/cloud-ai-providers.md](../install/cloud-ai-providers.md)
+     for the field each one needs)
    - `REMOTE_MCP_ENABLED=false`
 5. Deploy. Render auto-builds `apps/backend/Dockerfile` and redeploys on
    every push to `main` by default (no separate GitHub Actions workflow

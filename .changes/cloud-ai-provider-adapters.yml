@@ -1,0 +1,94 @@
+id: cloud-ai-provider-adapters
+products:
+  - web
+  - desktop
+  - browser-extension
+  - mcp-server
+  - local-cli
+type: added
+summary: >-
+  AI_PROVIDER now accepts gemini, vertex, or openai alongside the existing
+  none/ollama, so a hosted deployment that cannot run its own Ollama daemon
+  can still enable real AI features (mnemonic suggestions, vocabulary
+  extraction/enrichment, the conversation tutor, learning paths, and the
+  companion coach).
+technical_summary: >-
+  Refactored OllamaProvider onto a new _TextGeneratingProvider Template
+  Method base (app/infrastructure/ai_providers/base.py) — request
+  construction, JSON/candidate parsing, and the companion-coach
+  evidence/forbidden-claim contract (validate_generated_content) moved up
+  from OllamaProvider into the shared base, behind two abstract hooks
+  (_generate_text/_generate_json) every concrete adapter implements.
+  Added GeminiProvider and VertexAIProvider (google-genai SDK, sharing one
+  _GoogleGenAIProvider base since both call
+  client.aio.models.generate_content identically and differ only in how the
+  client is constructed — API key vs. Application Default Credentials) and
+  OpenAIProvider (openai SDK). Registered in both SUPPORTED_AI_PROVIDERS
+  tuples and build_ai_provider, which fails fast at startup with a clear
+  ValueError if a cloud provider is selected without its one required field
+  (GEMINI_API_KEY / VERTEX_PROJECT_ID / OPENAI_API_KEY).
+  Generalized the admin ai-settings API: AISettingsResponse now reports
+  gemini_api_key_set/openai_api_key_set booleans rather than ever echoing a
+  configured key back, and PUT treats a blank key as "leave the stored one
+  alone." /probe stays a real reachability+model-list check for Ollama but
+  does not fire a billed generation call for a cloud provider on every
+  admin page load — it reports whether the required credential looks
+  configured instead (live_check_performed on the response marks the
+  difference explicitly).
+user_impact: >-
+  Self-hosters and the LensWord Cloud deployment can enable AI features on
+  a platform that cannot run Ollama (e.g. Render) by setting
+  AI_PROVIDER=gemini/vertex/openai and the corresponding API key/project
+  ID, instead of being limited to a local-only Ollama install or no AI at
+  all. No change for an existing AI_PROVIDER=none or AI_PROVIDER=ollama
+  deployment.
+release_status: unreleased
+breaking: false
+migration: none
+known_limitations:
+  - Gemini, Vertex AI, and OpenAI adapter code is covered by unit tests
+    against a mocked transport only. No live-model verification pass has
+    been run against a real Gemini, Vertex AI, or OpenAI account — no
+    credentials were available in the environment this was built in. See
+    docs/install/cloud-ai-providers.md's "Verification status" section.
+  - Vertex AI's Application Default Credentials resolution has not been
+    verified end-to-end in an actual Docker/Render deployment — only that
+    the google-genai SDK's own credential-loading path is reached correctly
+    in a mocked-transport test.
+compatibility:
+  requires:
+    server_api: null
+verification:
+  automated_tests:
+    status: passed
+    commands:
+      - cd apps/backend && .venv/bin/pytest tests/test_ollama_provider.py -v
+      - cd apps/backend && .venv/bin/pytest tests/test_ai_provider_config.py -v
+      - cd apps/backend && .venv/bin/pytest tests/test_google_ai_providers.py -v
+      - cd apps/backend && .venv/bin/pytest tests/test_openai_provider.py -v
+      - cd apps/backend && .venv/bin/pytest tests/test_ai_settings_api.py tests/test_ai_probe_and_cache_endpoints.py -v
+      - cd apps/backend && .venv/bin/pytest -q -k "not real_ollama" (1938 passed, 8 deselected — the deselected tests require a live local Ollama daemon)
+    workflow_url: null
+  artifact_build:
+    status: not_run
+    artifacts: []
+  manual_platform_checks:
+    macos: not_run
+    windows: not_applicable
+    linux: not_applicable
+  production_observation:
+    status: not_observed
+security_impact: >-
+  Adds three new credential fields (GEMINI_API_KEY, OPENAI_API_KEY, plus
+  Vertex AI's externally-configured Application Default Credentials). The
+  admin ai-settings API never returns a configured key's value — GET
+  reports only gemini_api_key_set/openai_api_key_set booleans — and
+  apps/backend/.env.example flags all three as secrets that must never be
+  committed, matching this repo's existing SECRET_KEY convention.
+documentation_required: true
+date: '2026-08-08'
+references:
+  issues:
+    - 315
+  pull_requests: []
+  commits: []

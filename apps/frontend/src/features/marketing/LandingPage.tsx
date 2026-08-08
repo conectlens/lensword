@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Icon } from '../../components/ui/Icon'
 import { Button } from '../../components/ui/Button'
+import { useAuth } from '../../context/AuthContext'
 
 const STEPS = [
   { icon: 'add_circle', title: 'Add or import words', body: 'Easily add new vocabulary you encounter, organized into groups.' },
@@ -16,6 +17,8 @@ const FEATURES = [
 ]
 
 export function LandingPage() {
+  const { user } = useAuth()
+
   return (
     <div className="min-h-screen bg-canvas-dark text-white">
       <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
@@ -24,12 +27,20 @@ export function LandingPage() {
           <span className="font-display text-lg font-bold text-white">LensWord</span>
         </div>
         <div className="flex items-center gap-3">
-          <Link to="/login" className="text-sm font-medium text-white/70 hover:text-white">
-            Log in
-          </Link>
-          <Link to="/register">
-            <Button size="sm">Get started</Button>
-          </Link>
+          {user ? (
+            <Link to="/dashboard">
+              <Button size="sm">Enter Dashboard</Button>
+            </Link>
+          ) : (
+            <>
+              <Link to="/login" className="text-sm font-medium text-white/70 hover:text-white">
+                Log in
+              </Link>
+              <Link to="/register">
+                <Button size="sm">Get started</Button>
+              </Link>
+            </>
+          )}
         </div>
       </header>
 
@@ -39,12 +50,20 @@ export function LandingPage() {
           LensWord forces your brain to recall vocabulary at the right time, every day — using spaced repetition and memory-palace visualization.
         </p>
         <div className="flex gap-4">
-          <Link to="/register">
-            <Button size="lg">Get started</Button>
-          </Link>
-          <Link to="/login">
-            <Button size="lg" variant="secondary">Log in</Button>
-          </Link>
+          {user ? (
+            <Link to="/dashboard">
+              <Button size="lg">Enter Dashboard</Button>
+            </Link>
+          ) : (
+            <>
+              <Link to="/register">
+                <Button size="lg">Get started</Button>
+              </Link>
+              <Link to="/login">
+                <Button size="lg" variant="secondary">Log in</Button>
+              </Link>
+            </>
+          )}
         </div>
       </section>
 
