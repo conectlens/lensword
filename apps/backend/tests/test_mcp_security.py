@@ -12,21 +12,21 @@ def _user_id(client, headers) -> int:
     return client.get("/api/v1/auth/me", headers=headers).json()["id"]
 
 
-def grant(db_session, *, requester, mode="always", tool="lensword.search_words", workspace="/approved"):
+def grant(db_session, *, requester, mode="always", tool="lensword_search_words", workspace="/approved"):
     item = MCPGrantModel(requester=requester, server="lensword", tool=tool, access="read", workspace=workspace, mode=mode)
     db_session.add(item)
     db_session.flush()
     return item
 
 
-def invoke(client, headers, *, payload=None, workspace="/approved", tool="lensword.search_words"):
+def invoke(client, headers, *, payload=None, workspace="/approved", tool="lensword_search_words"):
     return client.post("/api/v1/mcp/invoke", headers=headers, json={"workspace": workspace, "tool": tool, "payload": {"query": "hello"} if payload is None else payload})
 
 
 def test_contract_conformance_rejects_unknown_fields_bad_pages_and_version_mismatch(client):
     assert client.get("/api/v1/mcp/capabilities", params={"version": CONTRACT_VERSION}).status_code == 200
     assert client.get("/api/v1/mcp/capabilities", params={"version": "2.0.0"}).status_code == 409
-    search = next(contract for contract in TOOL_CONTRACTS if contract.name == "lensword.search_words")
+    search = next(contract for contract in TOOL_CONTRACTS if contract.name == "lensword_search_words")
     assert validate_payload(search, {"query": "x", "cursor": "x" * 257}) == "cursor has an invalid length"
     assert validate_payload(search, {"query": "x", "admin": True}).startswith("unsupported")
 
@@ -48,7 +48,7 @@ def test_path_traversal_and_ungranted_tools_fail_closed_with_audit(client, auth_
     grant(db_session, requester=f"user:{_user_id(client, headers)}")
     traversal = invoke(client, headers, workspace="/approved/../private")
     assert traversal.status_code == 403 and traversal.json()["detail"] == "invalid_workspace"
-    deputy = invoke(client, headers, tool="lensword.get_due_reviews", payload={})
+    deputy = invoke(client, headers, tool="lensword_get_due_reviews", payload={})
     assert deputy.status_code == 403 and deputy.json()["detail"] == "no_grant"
     assert [audit.decision for audit in db_session.query(MCPAuditEventModel).order_by(MCPAuditEventModel.id)] == ["invalid_workspace", "no_grant"]
 
@@ -79,10 +79,10 @@ def test_rate_flood_payload_cap_and_nested_secrets_fail_closed():
 def test_idempotency_replay_cannot_be_reused_as_a_confused_deputy_request(db_session):
     store = IdempotencyStore(db_session)
     now = datetime(2026, 1, 1)
-    assert store.record("client", "same-request", "lensword.add_word", {"ok": True}, now) == {"ok": True}
-    assert store.replay("client", "same-request", "lensword.add_word") == {"ok": True}
+    assert store.record("client", "same-request", "lensword_add_word", {"ok": True}, now) == {"ok": True}
+    assert store.replay("client", "same-request", "lensword_add_word") == {"ok": True}
     with pytest.raises(ValueError, match="another MCP tool"):
-        store.replay("client", "same-request", "lensword.record_answer")
+        store.replay("client", "same-request", "lensword_record_answer")
 
 
 # --- issue #196 TODO 2: requester identity must come from the authenticated
@@ -107,7 +107,7 @@ def test_a_caller_supplied_requester_in_the_body_is_ignored_not_trusted(client, 
         headers=headers,
         # An extra, unrecognised "requester" field: pydantic silently drops
         # it, and even if it did not, the server must never read it.
-        json={"workspace": "/approved", "tool": "lensword.search_words", "requester": "attacker-chosen-label", "payload": {"query": "hola"}},
+        json={"workspace": "/approved", "tool": "lensword_search_words", "requester": "attacker-chosen-label", "payload": {"query": "hola"}},
     )
     assert response.status_code == 403 and response.json()["detail"] == "no_grant"
 
@@ -137,7 +137,7 @@ def test_two_accounts_cannot_use_each_others_mcp_grants(client, auth_headers, db
 
 
 def test_invoke_requires_authentication_at_all(client):
-    response = client.post("/api/v1/mcp/invoke", json={"workspace": "/approved", "tool": "lensword.search_words", "payload": {}})
+    response = client.post("/api/v1/mcp/invoke", json={"workspace": "/approved", "tool": "lensword_search_words", "payload": {}})
     assert response.status_code == 401
 
 

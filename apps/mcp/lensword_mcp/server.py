@@ -7,16 +7,15 @@ tenant scoping, audit chaining and write idempotency.
 from __future__ import annotations
 
 import json
+import logging
 import os
-import re
 import sys
 import time
-import urllib.error
-import urllib.request
 import uuid
-from dataclasses import dataclass
 from hashlib import sha256
 from typing import Any, Callable, TextIO
+
+from lensword_cli.backend_client import BackendClient, BackendError
 
 from .companion_workflows import (
     ElicitationField,
@@ -35,9 +34,9 @@ SUPPORTED_PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18")
 # should not be offered a tool whose whole point is a task it cannot track.
 _TASK_TOOL_NAMES = frozenset(
     {
-        "lensword.start_extraction_task",
-        "lensword.get_companion_task",
-        "lensword.cancel_companion_task",
+        "lensword_start_extraction_task",
+        "lensword_get_companion_task",
+        "lensword_cancel_companion_task",
     }
 )
 
@@ -78,14 +77,26 @@ class MCPTransportError(RuntimeError):
 
 
 _COMPANION_REPLY_TOOL: dict[str, Any] = {
-    "name": "lensword.companion_reply",
+    "name": "lensword_companion_reply",
+    "title": "Compose Companion Reply",
     "description": (
-        "Generate one bounded, evidence-cited companion reply. Prefers client "
-        "sampling when the host advertises it, falls back to a configured "
-        "local AI provider or deterministic content otherwise (#195)."
+        "Compose one coaching reply to the learner that cites only the evidence "
+        "you supply, so it cannot assert progress or mastery the record does not "
+        "support. Use when responding to a learner inside a companion session. "
+        "Set persist only to save the reply as part of the session; persisting "
+        "additionally requires explicit confirmation."
     ),
     "inputSchema": {
+        # `$schema` and `additionalProperties` are stated here for the same
+        # reason contracts.py's `_schema` states them on every backend tool:
+        # without the former a client cannot know which dialect to validate
+        # against, and without the latter an unrecognised field is silently
+        # accepted instead of rejected. These two tools are defined in this
+        # process rather than by the backend registry, so they had been
+        # missing the hardening every other tool receives for free.
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
+        "additionalProperties": False,
         "properties": {
             "session_id": {"type": "string"},
             "task": {"type": "string", "maxLength": 500},
@@ -107,27 +118,63 @@ _COMPANION_REPLY_TOOL: dict[str, Any] = {
             "persist": {"type": "boolean", "description": "Save the reply as a session turn."},
             "confirmed": {"type": "boolean", "description": "Required to actually persist (#195 TODO 3)."},
             "activity_id": {"type": "string"},
-            "operation_id": {"type": "string"},
+            # This is the idempotency key for the only write this tool can
+            # make. Composing text is generative and deliberately not
+            # idempotent (see `annotations` below), so there is no
+            # registry-style `request_id` covering the whole call — but the
+            # persist branch appends a session turn, and repeating that on a
+            # retry would double-post the reply. Forwarded to `add_turn`, so
+            # a caller that retries with the same `operation_id` after a
+            # timeout gets one turn rather than two.
+            "operation_id": {
+                "type": "string",
+                "description": "Idempotency key for the persist write; reuse it when retrying.",
+            },
         },
         "required": ["session_id", "task", "intervention_type", "target_language", "evidence"],
+    },
+    # Not idempotent: composing a reply is generative, so an identical repeat
+    # call legitimately produces different text. Not destructive — it only
+    # ever appends a turn, and only when `persist` and `confirmed` are both
+    # set. See contracts.py's `annotations` property for why every field is
+    # stated rather than left to the schema defaults.
+    "annotations": {
+        "title": "Compose Companion Reply",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
     },
 }
 
 _COMPANION_ELICIT_TOOL: dict[str, Any] = {
-    "name": "lensword.companion_elicit",
+    "name": "lensword_companion_elicit",
+    "title": "Ask Learner for Details",
     "description": (
-        "Ask the learner for bounded structured input (goal, target language, "
-        "session duration, scenario, confidence, correction confirmation) via "
-        "client elicitation when the host advertises it (#195)."
+        "Ask the learner directly for a small set of structured details — their "
+        "goal, target language, session length, scenario, confidence, or "
+        "confirmation of a correction. Use instead of guessing these values or "
+        "asking for them in prose. Requires a host that supports elicitation."
     ),
     "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
+        "additionalProperties": False,
         "properties": {
             "fields": {
                 "type": "array",
                 "items": {"type": "string", "enum": list(_ELICITATION_CATALOG)},
             },
         },
+    },
+    # Read-only: this asks the learner a question through the host's own
+    # elicitation UI and returns what they answer. It changes nothing on the
+    # server, and the human is already in the loop by construction — a
+    # confirmation prompt in front of "ask the user something" is pure noise.
+    "annotations": {
+        "title": "Ask Learner for Details",
+        "readOnlyHint": True,
+        "openWorldHint": False,
     },
 }
 
@@ -153,18 +200,10 @@ _RESOURCE_TEMPLATES = (
     # second client reading this resource is how it learns where the first
     # one left off before it calls resume_companion_session. Session ids
     # are opaque `uuid4().hex` tokens, not integers like the other
-    # templates, so `BackendClient.resource` validates this one
-    # differently below.
+    # templates, so `BackendClient.resource` (in the lensword-cli package —
+    # see issue #311) validates this one differently.
     ("lensword://session/{session_id}", "One learner-owned durable companion session"),
 )
-
-# CompanionSession.id is `uuid4().hex` (see StartCompanionSessionUseCase) —
-# always exactly 32 lowercase hex characters. Checking the shape here, before
-# a request ever reaches the backend, keeps a malformed id a 404 rather than
-# whatever the backend's own routing does with a run of URL-unsafe or
-# oversized text, and matches the words/groups/learning-paths templates
-# above, which validate their own id shape the same way.
-_SESSION_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 
 _PROMPTS = (
     ("daily_check_in", "Review today's due facts and choose a bounded next step."),
@@ -181,197 +220,50 @@ _DURATIONS = ("5", "10", "15", "25", "45")
 _DIFFICULTIES = ("beginner", "intermediate", "advanced")
 
 
-class BackendError(RuntimeError):
-    def __init__(self, status: int, detail: str):
-        super().__init__(detail)
-        self.status = status
-        self.detail = detail
+# `BackendClient`/`BackendError` moved to the `lensword-cli` package (issue
+# #311): neither was ever MCP-protocol-specific — `BackendClient` is the
+# same authenticated HTTP client the Local CLI's `add`/`explain`/`diagnose`/
+# `review` subcommands use, through the identical policy-gated boundary.
+# apps/mcp now depends on lensword-cli for it rather than defining its own
+# copy; everything below (`MCPServer`, `StdioMCPServer`, `main`) is the
+# genuinely MCP-transport-specific code that stays here.
 
 
-@dataclass(frozen=True)
-class BackendClient:
-    """Talks to LensWord's `/api/v1/mcp/*` boundary over plain HTTPS/HTTP.
+def backend_error_text(prefix: str | None, exc: BackendError) -> str:
+    """Render a `BackendError` as text a calling agent can act on.
 
-    `token` is a bearer credential the backend authenticates: either the
-    caller's normal login JWT (the local/stdio path, unchanged) or, for a
-    remote companion, an OAuth access token issued by the backend's
-    `/api/v1/mcp/oauth/token` endpoint (issue #196) — never both, and never
-    the login JWT for the remote case. Either way, caller identity is
-    derived by the backend from this token; this client has no `requester`
-    field to set because the backend stopped trusting one in the request
-    body (see app/api/mcp_auth.py in the backend for why).
+    An authentication failure is called out by name rather than folded into
+    the generic detail. This is not an information leak: the caller is the
+    party holding the rejected credential, and telling a token's own bearer
+    that the token is invalid is what RFC 6750 prescribes. It is also the
+    difference between an agent retrying a doomed call and an agent
+    reporting "re-authenticate" — the failure mode a 401 storm produced
+    before, where 20+ tools surfaced only as an unexplained outage.
+
+    An ordinary 4xx keeps the backend's own wording untouched when `prefix`
+    is None, because that wording is already the good case: 'Word "1" was
+    not found' needs no help from this function.
     """
-
-    api_url: str
-    token: str
-    workspace: str
-    timeout: float = 30.0
-
-    def _request(self, path: str, body: dict[str, Any] | None = None) -> Any:
-        data = None if body is None else json.dumps(body, separators=(",", ":")).encode()
-        request = urllib.request.Request(
-            f"{self.api_url.rstrip('/')}{path}",
-            data=data,
-            method="POST" if body is not None else "GET",
-            headers={
-                "Accept": "application/json",
-                "Authorization": f"Bearer {self.token}",
-                "Content-Type": "application/json",
-            },
+    if exc.status in (401, 403):
+        head = f"{prefix}: " if prefix else ""
+        return (
+            f"{head}LensWord rejected this connection's credential ({exc.status}: {exc.detail}). "
+            "Re-authenticate the MCP connection — retrying with the same token cannot succeed."
         )
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                return json.loads(response.read())
-        except urllib.error.HTTPError as exc:
-            try:
-                detail = json.loads(exc.read()).get("detail", "LensWord request failed")
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                detail = "LensWord request failed"
-            raise BackendError(exc.code, str(detail)) from exc
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-            raise BackendError(503, "LensWord API unavailable") from exc
+    if exc.status >= 500:
+        head = f"{prefix}: " if prefix else ""
+        return f"{head}LensWord is unavailable ({exc.status}: {exc.detail})."
+    return exc.detail if prefix is None else f"{prefix}: {exc.detail}"
 
-    def capabilities(self) -> dict[str, Any]:
-        return self._request("/api/v1/mcp/capabilities")
 
-    def invoke(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        payload = dict(arguments)
-        if "request_id" not in payload:
-            payload["request_id"] = str(uuid.uuid4())
-        return self._request(
-            "/api/v1/mcp/invoke",
-            {
-                "tool": name,
-                "workspace": self.workspace,
-                "payload": payload,
-            },
-        )
+def _fallback_title(tool_name: str) -> str:
+    """Derive a readable label from a tool's machine name.
 
-    # --- Bounded companion loop budgets (#195 TODO 2) ----------------------
-    # apps/mcp has no database of its own; these are the durable equivalent
-    # of companion_workflows.CompanionLoopState, kept on the backend so a
-    # workflow's budget survives this process restarting.
-
-    def start_loop(self, session_id: str, **budget: Any) -> dict[str, Any]:
-        return self._request(f"/api/v1/companion/sessions/{session_id}/loop/start", budget)
-
-    def get_loop(self, session_id: str) -> dict[str, Any]:
-        return self._request(f"/api/v1/companion/sessions/{session_id}/loop")
-
-    def reserve_loop(self, session_id: str, kind: str, amount: int = 1) -> dict[str, Any]:
-        return self._request(f"/api/v1/companion/sessions/{session_id}/loop/reserve", {"kind": kind, "amount": amount})
-
-    def fail_loop(self, session_id: str) -> dict[str, Any]:
-        return self._request(f"/api/v1/companion/sessions/{session_id}/loop/fail", {})
-
-    def stop_loop(self, session_id: str, reason: str) -> dict[str, Any]:
-        return self._request(f"/api/v1/companion/sessions/{session_id}/loop/stop", {"reason": reason})
-
-    # --- Sampling provenance/audit (#195 TODO 4) ----------------------------
-
-    def record_sampling_event(self, session_id: str, **fields: Any) -> dict[str, Any]:
-        return self._request(f"/api/v1/companion/sessions/{session_id}/sampling-events", fields)
-
-    # --- Local-AI/deterministic fallback + persistence (#195 TODO 0/3) -----
-
-    def generate_reply(self, session_id: str, **payload: Any) -> dict[str, Any]:
-        return self._request(f"/api/v1/companion/sessions/{session_id}/reply", payload)
-
-    def add_turn(
-        self, session_id: str, *, role: str, content: str, activity_id: str | None = None, operation_id: str | None = None
-    ) -> dict[str, Any]:
-        body: dict[str, Any] = {"role": role, "content": content}
-        if activity_id is not None:
-            body["activity_id"] = activity_id
-        if operation_id is not None:
-            body["operation_id"] = operation_id
-        return self._request(f"/api/v1/companion/sessions/{session_id}/turns", body)
-
-    def resource(self, uri: str) -> Any:
-        """Read a bounded learner resource through the authenticated API.
-
-        Resources deliberately use existing read endpoints and the existing
-        policy-gated due/search tools. No resource path accepts an account id;
-        the bearer token remains the sole tenant boundary.
-        """
-        exact_paths = {
-            "lensword://me/profile": "/api/v1/auth/me",
-            "lensword://me/goals": "/api/v1/learning-paths",
-            "lensword://me/weaknesses": "/api/v1/me/weaknesses",
-            "lensword://me/progress": "/api/v1/review/weekly-progress",
-            # Account-wide diagnosis/intervention listings, added once the
-            # backend exposed a bounded endpoint for them — previously these
-            # two URIs were a permanent `{"items": [], "available": False}`
-            # stub, since only per-word endpoints existed.
-            "lensword://me/diagnoses": "/api/v1/me/diagnoses",
-            "lensword://me/interventions": "/api/v1/me/interventions",
-        }
-        if uri in ("lensword://me/today", "lensword://me/due"):
-            return self.invoke("lensword.get_due_reviews", {"limit": 100})
-        if uri == "lensword://me/active-words":
-            return self.invoke("lensword.search_words", {"query": "", "limit": 100})
-        if uri in exact_paths:
-            return self._request(exact_paths[uri])
-
-        if uri.startswith("lensword://groups/") and uri.endswith("/words"):
-            group_id = uri.removeprefix("lensword://groups/").removesuffix("/words")
-            if not group_id.isdigit() or int(group_id) < 1:
-                raise BackendError(404, "Resource not found")
-            return self._request(f"/api/v1/groups/{group_id}/words")
-        if uri.startswith("lensword://words/"):
-            value = uri.removeprefix("lensword://words/")
-            suffix = ""
-            if value.endswith("/diagnosis"):
-                value, suffix = value.removesuffix("/diagnosis"), "/diagnosis"
-            if not value.isdigit() or int(value) < 1:
-                raise BackendError(404, "Resource not found")
-            return self._request(f"/api/v1/words/{value}{suffix}")
-        if uri.startswith("lensword://learning-paths/"):
-            path_id = uri.removeprefix("lensword://learning-paths/")
-            if not path_id.isdigit() or int(path_id) < 1:
-                raise BackendError(404, "Resource not found")
-            return self._request(f"/api/v1/learning-paths/{path_id}")
-        if uri.startswith("lensword://session/"):
-            session_id = uri.removeprefix("lensword://session/")
-            # Same 404-not-403 shape as every id-taking template above: an
-            # id that cannot possibly be this account's (malformed, or
-            # someone else's session — which the bearer token alone would
-            # otherwise distinguish from "no such session" if this returned
-            # anything else) is indistinguishable from "not found" here,
-            # never disclosed as "exists but you can't see it". The backend's
-            # own ownership check (404, not 403 — `companion.py`'s `_owned`)
-            # is what actually decides once past this shape check.
-            if not _SESSION_ID_RE.fullmatch(session_id):
-                raise BackendError(404, "Resource not found")
-            return self._request(f"/api/v1/companion/sessions/{session_id}")
-        raise BackendError(404, "Resource not found")
-
-    def groups(self) -> list[str]:
-        """This account's group names, for prompt-argument completion
-        (issue #192 TODO 3's `group` argument). Best-effort: a completion
-        candidate list failing closed to empty is a worse experience than
-        no completion at all, but never worse than the backend itself
-        already fails for every other resource read here.
-        """
-        try:
-            groups = self._request("/api/v1/groups")
-        except BackendError:
-            return []
-        return [group["name"] for group in groups if isinstance(group, dict) and "name" in group]
-
-    def scenarios(self) -> list[str]:
-        """The fixed, unauthenticated scenario catalog's keys, for
-        prompt-argument completion (issue #192 TODO 3's `scenario`
-        argument). Not account-scoped because the catalog itself isn't —
-        every account sees the same product-defined scenarios, the same
-        way `_LANGUAGES`/`_DURATIONS`/`_DIFFICULTIES` are shared constants
-        rather than per-account data.
-        """
-        try:
-            scenarios = self._request("/api/v1/scenarios")
-        except BackendError:
-            return []
-        return [scenario["key"] for scenario in scenarios if isinstance(scenario, dict) and "key" in scenario]
+    Only reached when the backend predates TOOL_DOCS (this process deploys
+    separately from it), so a version-skewed pair still lists usable tools:
+    `lensword_add_word` -> `Add Word`, never the bare dotted identifier.
+    """
+    return tool_name.split(".", 1)[-1].replace("_", " ").title()
 
 
 class MCPServer:
@@ -521,13 +413,29 @@ class MCPServer:
         for descriptor in capabilities.get("tools", []):
             if descriptor["name"] in _TASK_TOOL_NAMES and not self._client_supports_tasks():
                 continue
-            tools.append(
-                {
-                    "name": descriptor["name"],
-                    "description": f"LensWord {descriptor['name']}",
-                    "inputSchema": descriptor["input_schema"],
-                }
-            )
+            # `title`/`description` come from the backend's own contract
+            # registry (app/application/mcp/contracts.py's TOOL_DOCS), which
+            # is the single source of truth for them. `.get` with a derived
+            # fallback rather than `[...]` because this process is deployed
+            # separately from the backend: a newer MCP server talking to a
+            # backend that predates TOOL_DOCS must still list its tools
+            # rather than KeyError the whole tools/list response.
+            tool: dict[str, Any] = {
+                "name": descriptor["name"],
+                "title": descriptor.get("title") or _fallback_title(descriptor["name"]),
+                "description": descriptor.get("description") or _fallback_title(descriptor["name"]),
+                "inputSchema": descriptor["input_schema"],
+            }
+            # Omitted rather than synthesised when the backend doesn't send
+            # them: the MCP defaults for a missing `annotations` block are
+            # the maximally cautious ones (not read-only, possibly
+            # destructive, open world), so a version-skewed pair degrades to
+            # "confirm everything" instead of this process guessing a
+            # permissive hint the backend never actually asserted.
+            annotations = descriptor.get("annotations")
+            if annotations:
+                tool["annotations"] = annotations
+            tools.append(tool)
         # These two are handled locally rather than by the backend
         # dispatcher (#195): they orchestrate client sampling/elicitation,
         # which only this process can do, before ever touching the backend.
@@ -540,9 +448,9 @@ class MCPServer:
         arguments = params.get("arguments", {})
         if not isinstance(name, str) or not isinstance(arguments, dict):
             return self._error(request_id, -32602, "tools/call requires name and object arguments")
-        if name == "lensword.companion_reply":
+        if name == "lensword_companion_reply":
             return self._companion_reply(request_id, arguments)
-        if name == "lensword.companion_elicit":
+        if name == "lensword_companion_elicit":
             return self._companion_elicit(request_id, arguments)
         if name in _TASK_TOOL_NAMES and not self._client_supports_tasks():
             return {
@@ -561,11 +469,7 @@ class MCPServer:
         try:
             result = self.backend.invoke(name, arguments)
         except BackendError as exc:
-            return {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "result": {"isError": True, "content": [{"type": "text", "text": exc.detail}]},
-            }
+            return self._tool_error(request_id, backend_error_text(None, exc))
         return {
             "jsonrpc": "2.0",
             "id": request_id,
@@ -596,11 +500,25 @@ class MCPServer:
 
     def _ensure_loop(self, session_id: str) -> None:
         """Best-effort: start a loop budget for the session if none exists
-        yet. A workflow that never calls `lensword.companion_reply` still
-        gets a durable budget the first time it does, rather than 404ing."""
+        yet. A workflow that never calls `lensword_companion_reply` still
+        gets a durable budget the first time it does, rather than 404ing.
+
+        Only a 404 means "no budget yet" — that is the literal status
+        `companion_sampling.get_loop` raises with "Companion loop has not
+        been started". Every other status describes a condition retrying
+        cannot fix: an expired or wrong-environment token (401), a revoked
+        grant (403), a backend outage (5xx). Those must propagate, because
+        re-issuing the identical credential against `start_loop` only
+        raises the same error a second time — and it used to do so from
+        outside any `except`, which killed the whole HTTP connection
+        instead of answering the caller. `_reserve_or_error` is the one
+        place that decides what the caller sees.
+        """
         try:
             self.backend.get_loop(session_id)
-        except BackendError:
+        except BackendError as exc:
+            if exc.status != 404:
+                raise
             self.backend.start_loop(session_id)
 
     def _reserve_or_error(self, request_id: Any, session_id: str, kind: str, amount: int = 1) -> dict[str, Any] | None:
@@ -609,14 +527,20 @@ class MCPServer:
         budget - this is the enforcement point #195 TODO 5's red-team test
         exercises: a malicious sampled reply cannot ever cause more calls
         than the budget allows, because every external call reserves here
-        first, and a stopped loop refuses every further reservation."""
-        self._ensure_loop(session_id)
+        first, and a stopped loop refuses every further reservation.
+
+        "Never raises" is load-bearing and now actually true: `_ensure_loop`
+        is inside the `try`, not before it. Reserving is the first thing
+        every companion tool does, so an exception escaping here escapes the
+        whole `tools/call`.
+        """
         try:
+            self._ensure_loop(session_id)
             self.backend.reserve_loop(session_id, kind, amount)
         except BackendError as exc:
             if exc.status == 409:
                 return self._tool_error(request_id, f"Companion loop budget exhausted: {exc.detail}")
-            return self._tool_error(request_id, f"Companion loop budget check failed: {exc.detail}")
+            return self._tool_error(request_id, backend_error_text("Companion loop budget check failed", exc))
         return None
 
     def _record_failure(self, session_id: str) -> None:
@@ -786,7 +710,7 @@ class MCPServer:
                     activity_id=arguments.get("activity_id"), operation_id=arguments.get("operation_id"),
                 )
             except BackendError as exc:
-                return self._tool_error(request_id, exc.detail)
+                return self._tool_error(request_id, backend_error_text("Could not save the reply", exc))
             structured["persisted"] = True
             structured["turnId"] = turn.get("id")
 
@@ -812,8 +736,24 @@ class MCPServer:
                 "jsonrpc": "2.0", "id": request_id,
                 "result": {
                     "isError": False,
-                    "structuredContent": {"available": False, "action": "unavailable", "answers": {}},
-                    "content": [{"type": "text", "text": "Elicitation is not available on this connection."}],
+                    # `reason` names *why* elicitation is unavailable rather
+                    # than only that it is: the host never declared the
+                    # capability during `initialize`, so this is a fixed
+                    # property of the connection, not a transient failure to
+                    # retry. Without it a caller can only see `available:
+                    # false` and has no basis to decide between retrying,
+                    # asking in prose instead, or giving up.
+                    "structuredContent": {
+                        "available": False,
+                        "action": "unavailable",
+                        "answers": {},
+                        "reason": "client_capability_not_declared",
+                        "requested_fields": requested,
+                    },
+                    "content": [{"type": "text", "text": (
+                        "Elicitation is not available on this connection — the host did not declare "
+                        "the elicitation capability. Ask the learner for these details in conversation instead."
+                    )}],
                 },
             }
 
@@ -1119,11 +1059,30 @@ class StdioMCPServer:
         for line in self.input_stream:
             if not line.strip():
                 continue
+            message: Any = None
             try:
                 message = json.loads(line)
                 response = self.server.handle(message)
             except (json.JSONDecodeError, TypeError):
                 response = self.server._error(None, -32700, "Parse error")
+            except Exception:  # noqa: BLE001 - deliberate last-resort barrier
+                # Same barrier as the HTTP transport's `do_POST`, and more
+                # load-bearing here: this loop *is* the process. An escaping
+                # exception used to end `run()` and terminate the server, so
+                # one failing tool call took down every subsequent call on a
+                # local desktop install until the host restarted it. Answer
+                # the one message and keep serving.
+                incident = uuid.uuid4().hex[:12]
+                _LOGGER.exception(
+                    "Unhandled MCP error (incident=%s method=%s)",
+                    incident,
+                    message.get("method") if isinstance(message, dict) else None,
+                )
+                response = self.server._error(
+                    message.get("id") if isinstance(message, dict) else None,
+                    -32603,
+                    f"Internal error (incident {incident})",
+                )
             if response is not None:
                 self.output_stream.write(json.dumps(response, separators=(",", ":")) + "\n")
                 self.output_stream.flush()

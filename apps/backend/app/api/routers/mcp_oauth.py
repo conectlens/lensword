@@ -25,6 +25,7 @@ unless an operator opts in.
 """
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 from typing import Annotated
 
@@ -55,6 +56,8 @@ def _require_remote_mcp_enabled() -> None:
     if not get_settings().remote_mcp_enabled:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Remote MCP is not enabled on this server")
 
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/mcp/oauth", tags=["mcp-oauth"], dependencies=[Depends(_require_remote_mcp_enabled)])
 metadata_router = APIRouter(tags=["mcp-oauth"], dependencies=[Depends(_require_remote_mcp_enabled)])
@@ -155,6 +158,7 @@ def register_client(payload: ClientRegistrationRequest, db: DbSession) -> Client
 def _load_client(db, client_id: str) -> MCPOAuthClientModel:
     client = db.query(MCPOAuthClientModel).filter_by(client_id=client_id).one_or_none()
     if client is None:
+        logger.warning("mcp oauth: unrecognized client_id=%r", client_id)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_client")
     return client
 
@@ -329,18 +333,59 @@ def token(
 
 
 def _exchange_authorization_code(db, client_id, client_secret, code, redirect_uri, code_verifier) -> dict:
+    # Diagnostic logging only (issue: real Claude.ai connections failing at
+    # this exact endpoint with a bare 400, no way to tell which check from
+    # Render's access log alone). Deliberately never logs `code` or
+    # `code_verifier` themselves — both are live credentials at this point
+    # in the flow, code single-use and about to be consumed, verifier the
+    # PKCE proof-of-possession — only whether they were present/matched.
     if not (client_id and code and redirect_uri and code_verifier):
+        logger.warning(
+            "mcp oauth token exchange: invalid_request (missing %s)",
+            ", ".join(
+                name
+                for name, value in (
+                    ("client_id", client_id),
+                    ("code", code),
+                    ("redirect_uri", redirect_uri),
+                    ("code_verifier", code_verifier),
+                )
+                if not value
+            ),
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_request")
     client = _load_client(db, client_id)
     if not _client_secret_ok(client, client_secret):
+        logger.warning("mcp oauth token exchange: client_secret mismatch for client_id=%r", client_id)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_client")
     row = db.query(MCPOAuthAuthorizationCodeModel).filter_by(code_hash=hash_token(code)).one_or_none()
     now = utcnow()
-    if row is None or row.client_id != client_id or row.consumed_at is not None or row.expires_at <= now:
+    if row is None:
+        logger.warning("mcp oauth token exchange: no authorization_code row matches the presented code")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_grant")
+    if row.client_id != client_id:
+        logger.warning(
+            "mcp oauth token exchange: code was issued to client_id=%r, presented by client_id=%r",
+            row.client_id, client_id,
+        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_grant")
+    if row.consumed_at is not None:
+        logger.warning("mcp oauth token exchange: code already consumed at %s", row.consumed_at)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_grant")
+    if row.expires_at <= now:
+        logger.warning("mcp oauth token exchange: code expired at %s (now %s)", row.expires_at, now)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_grant")
     if row.redirect_uri != redirect_uri:
+        logger.warning(
+            "mcp oauth token exchange: redirect_uri mismatch — authorized with %r, presented %r",
+            row.redirect_uri, redirect_uri,
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_grant")
     if not verify_pkce(code_verifier, row.code_challenge, row.code_challenge_method):
+        logger.warning(
+            "mcp oauth token exchange: PKCE verification failed (method=%r, verifier_len=%d, challenge_len=%d)",
+            row.code_challenge_method, len(code_verifier), len(row.code_challenge),
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_grant")
     # Single-use (issue #196 TODO 4 replay protection): consumed immediately,
     # inside the same request that validated it, so a raced double-exchange

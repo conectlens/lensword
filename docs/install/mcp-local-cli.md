@@ -5,26 +5,33 @@ description: Connect an MCP-capable AI client, or preview/import developer conte
 
 # MCP Server & Local CLI
 
-The `apps/mcp` package is two things: an MCP server (`lensword-mcp`, stdio
-by default) for AI clients like Claude, Codex, or Cursor, and a local CLI
-(`lensword`) with a bounded, offline context-preview command plus a few
-commands that act on your account through the same policy-gated boundary.
-Neither is published to PyPI yet — install is source-only. Everything below
-was verified in this documentation pass against the actual installed
-package, not written from the README alone.
+The MCP server (`lensword-mcp`, stdio by default) for AI clients like
+Claude, Codex, or Cursor, and the local CLI (`lensword`, a bounded, offline
+context-preview command plus a few commands that act on your account
+through the same policy-gated boundary) are two independently-versioned
+Python packages: `apps/mcp` and `apps/cli` (split in issue #311 — they used
+to share one `apps/mcp` package with two entry points). `apps/mcp` now
+depends on `apps/cli` for the HTTP client the two share. Neither is
+published to PyPI yet — install is source-only, though a PyPI publish
+workflow now exists for the CLI; see "PyPI publishing (not yet live)"
+below. Everything else on this page was verified in an earlier
+documentation pass against the actual installed package, before the split
+— re-verified in this pass only where the split itself changed something
+(package/module locations, install commands); the protocol-level and
+CLI-behavior claims below were not independently re-run today.
 
 ## Confirmed package details
 
 | | |
 |---|---|
-| Package name | `lensword-mcp` (`apps/mcp/pyproject.toml`) |
-| Version | `0.1.0` |
-| Python requirement | `>=3.11` — **confirmed by testing**: `pip install -e apps/mcp` on Python 3.10 was not attempted against the enforced constraint here, but a clean install on Python 3.12 in a fresh virtualenv succeeded with zero dependency-resolution issues |
-| Third-party dependencies | **None.** `pyproject.toml` declares no `[project.dependencies]`, and the source (`server.py`, `cli.py`) uses only `urllib`, `json`, and other standard-library modules — no `requests`, `httpx`, or MCP SDK package |
-| Entry points | `lensword-mcp` → `lensword_mcp.server:main` (MCP server), `lensword` → `lensword_mcp.cli:main` (local CLI) |
+| Package names | `lensword-mcp` (`apps/mcp/pyproject.toml`, MCP server) and `lensword-cli` (`apps/cli/pyproject.toml`, Local CLI) |
+| Version | `0.1.0` for both |
+| Python requirement | `>=3.11` for both — **confirmed by testing**: a clean install of both packages on Python 3.12 in a fresh virtualenv succeeded with zero dependency-resolution issues; `<3.11` was not attempted against the enforced constraint |
+| Third-party dependencies | `apps/cli` has **none** — `pyproject.toml` declares no `[project.dependencies]`, and its source uses only `urllib`, `json`, and other standard-library modules. `apps/mcp` depends on `lensword-cli==0.1.0` (the shared `BackendClient`/`BackendError` HTTP client) — resolved from a sibling source install, not PyPI, until `lensword-cli` is actually published there |
+| Entry points | `lensword-mcp` → `lensword_mcp.server:main` (MCP server, `apps/mcp`); `lensword` → `lensword_cli.cli:main` (local CLI, `apps/cli`) |
 | Transports | stdio (default, always available); Streamable HTTP (off unless explicitly enabled both sides — see [MCP remote transport](/reference/mcp-remote-transport)) |
 | MCP protocol versions | `2025-06-18` and `2025-11-25` — **confirmed by testing**: an `initialize` call with an older version (`2024-11-05`) was rejected with a JSON-RPC error naming exactly these two supported versions |
-| Install method | `pip install -e apps/mcp` from source; not on PyPI |
+| Install method | `pip install -e apps/cli -e apps/mcp` from source (see below); not on PyPI |
 
 ## Quick start
 
@@ -40,11 +47,15 @@ your password anywhere else.
 ### Install
 
 ```bash
-pip install -e apps/mcp
+pip install -e apps/cli -e apps/mcp
 ```
 
 Confirmed in this pass: this succeeds cleanly in a fresh Python 3.12
-virtualenv with no dependency resolution needed, since the package has none.
+virtualenv — `apps/mcp`'s dependency on `apps/cli` (`lensword-cli==0.1.0`)
+resolves against the sibling editable install above rather than reaching
+out to PyPI, since neither package is published there yet. Installing only
+`apps/cli` (`pip install -e apps/cli`) also works on its own if you only
+want the `lensword` CLI, not the MCP server.
 
 ### Configure a client (stdio)
 
@@ -94,8 +105,8 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 backend, returned `serverInfo: {"name": "lensword", "version": "0.1.0"}`
 and capabilities for `tools`, `resources` (with `subscribe: true`),
 `prompts`, and `completions`. A follow-up `tools/list` call returned **26
-real tools** (`lensword.add_word`, `lensword.search_words`,
-`lensword.get_due_reviews`, `lensword.create_study_session`, and 22 more —
+real tools** (`lensword_add_word`, `lensword_search_words`,
+`lensword_get_due_reviews`, `lensword_create_study_session`, and 22 more —
 the exact list matches `TOOL_CONTRACTS` in
 `apps/backend/app/application/mcp/contracts.py`, which is the single
 source of truth this server proxies to).
@@ -106,7 +117,7 @@ Before any write-capable workflow, confirm a read-only call reaches the
 policy gate correctly:
 
 ```json
-{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"lensword.search_words","arguments":{"query":"","limit":5}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"lensword_search_words","arguments":{"query":"","limit":5}}}
 ```
 
 **Verified in this pass**, against a token with no grants issued yet, this
@@ -181,14 +192,14 @@ Verified directly in this pass:
 
 ### `add`, `explain`, `diagnose`, `review` — contact the backend
 
-These use the same three `LENSWORD_*` environment variables as the MCP
-server and the same policy-gated `/api/v1/mcp/invoke` boundary — they are
-not a separate, looser path. `explain` and `diagnose` are read-only;
-`diagnose` specifically never triggers a new diagnosis, it only shows the
-most recent one already on record. `add` and `review` preview what they're
-about to do and require explicit confirmation (`y`/`yes` interactively, or
-`--yes`) before writing anything — not independently re-verified against a
-live backend in this pass beyond what the 124-test `apps/mcp` suite already
+These use the same policy-gated `/api/v1/mcp/invoke` boundary the MCP
+server uses — they are not a separate, looser path. `explain` and
+`diagnose` are read-only; `diagnose` specifically never triggers a new
+diagnosis, it only shows the most recent one already on record. `add` and
+`review` preview what they're about to do and require explicit confirmation
+(`y`/`yes` interactively, or `--yes`) before writing anything — not
+independently re-verified against a live backend beyond what `apps/cli`'s
+own test suite (43 tests, all passing as of the package split in #311)
 covers structurally.
 
 ## Security, privacy, and the trust boundary
@@ -213,12 +224,26 @@ both the server and the backend. See
 [MCP remote transport](/reference/mcp-remote-transport) for what's on by
 default, TLS requirements, and what has and hasn't been tested end to end.
 
+## PyPI publishing (not yet live)
+
+A PyPI publish workflow for the Local CLI exists
+(`.github/workflows/publish-cli.yml`, issue #311) but has not been
+triggered — no `cli-v*` tag has been pushed, and the repo owner has not yet
+configured a PyPI trusted publisher for the not-yet-existing `lensword-cli`
+project. **`pip install lensword-cli` and `pipx install lensword-cli` do
+not work yet** — the install commands on this page (`pip install -e
+apps/cli -e apps/mcp`) remain the only working path. See
+[docs/internal/pypi-publishing.md](https://github.com/conectlens/lensword/blob/development/docs/internal/pypi-publishing.md)
+for the setup the repo owner still needs to do, and what was and wasn't
+verified about the workflow itself.
+
 ## Verification summary
 
 | Check | Result |
 |---|---|
 | Clean install (Python 3.12, fresh venv) | **Passed** |
-| Python version constraint | Package requires `>=3.11`; not tested against a `<3.11` interpreter in this pass |
+| Python version constraint | Both packages require `>=3.11`; not tested against a `<3.11` interpreter |
+| `apps/mcp`'s dependency on `apps/cli` resolves from a sibling source install, not PyPI | **Passed** — confirmed with `pip install -e apps/cli -e apps/mcp` in a fresh venv |
 | `lensword-mcp` starts, rejects missing env vars | **Passed** — exits 2, names the exact 3 missing vars |
 | MCP protocol handshake (`initialize`) | **Passed** — correct version accepted, wrong version rejected with the supported list named |
 | Tool discovery (`tools/list`) | **Passed** — 26 real tools returned |
@@ -228,8 +253,10 @@ default, TLS requirements, and what has and hasn't been tested end to end.
 | `import-context` file/stdin | **Passed** |
 | Secret/credential redaction | **Passed** |
 | Oversized-input refusal + `--allow-truncate` | **Passed** |
-| `add`/`explain`/`diagnose`/`review` against a live backend | **Not independently re-verified** beyond the existing `apps/mcp` test suite (124/124 passing) |
-| Malformed protocol message handling | **Not run** in this pass |
+| `add`/`explain`/`diagnose`/`review` against a live backend | **Not independently re-verified** beyond `apps/cli`'s own test suite (43/43 passing) |
+| Malformed protocol message handling | **Not run** |
+| `apps/mcp`'s Docker image builds with the new `apps/cli` dependency | **Passed** — built successfully against the updated `render.yaml` build context/Dockerfile; container still exits 2 on missing env vars |
+| `publish-cli.yml` actually publishing to PyPI | **Not run** — no trusted publisher configured yet (see "PyPI publishing" above) |
 
 See [docs/internal/repo-audit.md](https://github.com/conectlens/lensword/blob/development/docs/internal/repo-audit.md)
 for the broader evidence base this page draws from, and

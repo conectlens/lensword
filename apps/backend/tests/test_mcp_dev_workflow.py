@@ -66,7 +66,7 @@ def _grant(db_session, *, tool: str, user_id: int, workspace: str = _WORKSPACE, 
 
 
 def _access_for(tool: str) -> str:
-    return "write" if tool == "lensword.record_context_occurrence" else "read"
+    return "write" if tool == "lensword_record_context_occurrence" else "read"
 
 
 def _invoke(client, headers, *, tool: str, payload: dict, workspace: str = _WORKSPACE):
@@ -99,13 +99,13 @@ def _no_private_fields(value) -> bool:
 
 def test_get_language_profile_reports_bounded_aggregate_counts_only(client, auth_headers, db_session):
     headers = auth_headers()
-    _grant(db_session, tool="lensword.get_language_profile", user_id=_user_id(client, headers))
+    _grant(db_session, tool="lensword_get_language_profile", user_id=_user_id(client, headers))
     _g, w1 = _group_and_word(client, headers, "correr", mnemonic="run like the wind, TOP SECRET")
     _g2, w2 = _group_and_word(client, headers, "saltar", target_language="Spanish")
     _mark_mastered(db_session, w1["id"])
     _mark_started(db_session, w2["id"])
 
-    response = _invoke(client, headers, tool="lensword.get_language_profile", payload={})
+    response = _invoke(client, headers, tool="lensword_get_language_profile", payload={})
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["known_word_count"] == 1
@@ -119,9 +119,9 @@ def test_get_language_profile_is_scoped_to_the_caller_account(client, auth_heade
     owner_headers = auth_headers()
     _group_and_word(client, owner_headers, "correr")
     intruder_headers = auth_headers(username="mallory", email="mallory@example.com")
-    _grant(db_session, tool="lensword.get_language_profile", user_id=_user_id(client, intruder_headers))
+    _grant(db_session, tool="lensword_get_language_profile", user_id=_user_id(client, intruder_headers))
 
-    response = _invoke(client, intruder_headers, tool="lensword.get_language_profile", payload={})
+    response = _invoke(client, intruder_headers, tool="lensword_get_language_profile", payload={})
     assert response.status_code == 200
     assert response.json()["total_word_count"] == 0
 
@@ -131,20 +131,20 @@ def test_get_language_profile_is_scoped_to_the_caller_account(client, auth_heade
 
 def test_check_known_term_distinguishes_known_active_and_unknown(client, auth_headers, db_session):
     headers = auth_headers()
-    _grant(db_session, tool="lensword.check_known_term", user_id=_user_id(client, headers))
+    _grant(db_session, tool="lensword_check_known_term", user_id=_user_id(client, headers))
     _g, mastered_word = _group_and_word(client, headers, "asyncio", mnemonic="private note")
     _mark_mastered(db_session, mastered_word["id"])
     _group_and_word(client, headers, "fixture")
 
-    known = _invoke(client, headers, tool="lensword.check_known_term", payload={"term": "asyncio"}).json()
+    known = _invoke(client, headers, tool="lensword_check_known_term", payload={"term": "asyncio"}).json()
     assert known["known"] is True and known["active"] is True
     assert known["matches"][0]["word_id"] == mastered_word["id"]
     assert _no_private_fields(known)
 
-    unstarted = _invoke(client, headers, tool="lensword.check_known_term", payload={"term": "fixture"}).json()
+    unstarted = _invoke(client, headers, tool="lensword_check_known_term", payload={"term": "fixture"}).json()
     assert unstarted["known"] is False and unstarted["active"] is False
 
-    unknown = _invoke(client, headers, tool="lensword.check_known_term", payload={"term": "nonexistent-term"}).json()
+    unknown = _invoke(client, headers, tool="lensword_check_known_term", payload={"term": "nonexistent-term"}).json()
     assert unknown["known"] is False and unknown["matches"] == []
 
 
@@ -153,11 +153,11 @@ def test_check_known_term_distinguishes_known_active_and_unknown(client, auth_he
 
 def test_explain_for_user_is_deterministic_with_no_diagnosis_yet(client, auth_headers, db_session):
     headers = auth_headers()
-    _grant(db_session, tool="lensword.explain_for_user", user_id=_user_id(client, headers))
+    _grant(db_session, tool="lensword_explain_for_user", user_id=_user_id(client, headers))
     _g, word = _group_and_word(client, headers, "hogar", mnemonic="secret mnemonic")
 
-    first = _invoke(client, headers, tool="lensword.explain_for_user", payload={"word_id": word["id"]}).json()
-    second = _invoke(client, headers, tool="lensword.explain_for_user", payload={"word_id": word["id"]}).json()
+    first = _invoke(client, headers, tool="lensword_explain_for_user", payload={"word_id": word["id"]}).json()
+    second = _invoke(client, headers, tool="lensword_explain_for_user", payload={"word_id": word["id"]}).json()
     assert first == second
     assert first["has_diagnosis"] is False
     assert "hogar" in first["explanation"]
@@ -168,10 +168,10 @@ def test_explain_for_user_404s_for_a_word_owned_by_another_account(client, auth_
     owner_headers = auth_headers()
     _g, word = _group_and_word(client, owner_headers, "hogar")
     intruder_headers = auth_headers(username="mallory2", email="mallory2@example.com")
-    _grant(db_session, tool="lensword.explain_for_user", user_id=_user_id(client, intruder_headers))
+    _grant(db_session, tool="lensword_explain_for_user", user_id=_user_id(client, intruder_headers))
 
     response = _invoke(
-        client, intruder_headers, tool="lensword.explain_for_user", payload={"word_id": word["id"]},
+        client, intruder_headers, tool="lensword_explain_for_user", payload={"word_id": word["id"]},
     )
     assert response.status_code in (400, 404)
 
@@ -181,14 +181,14 @@ def test_explain_for_user_404s_for_a_word_owned_by_another_account(client, auth_
 
 def test_suggest_stretch_vocabulary_excludes_mastered_words_and_is_ordered(client, auth_headers, db_session):
     headers = auth_headers()
-    _grant(db_session, tool="lensword.suggest_stretch_vocabulary", user_id=_user_id(client, headers))
+    _grant(db_session, tool="lensword_suggest_stretch_vocabulary", user_id=_user_id(client, headers))
     _g, mastered = _group_and_word(client, headers, "mastered-word")
     _mark_mastered(db_session, mastered["id"])
     _g2, started = _group_and_word(client, headers, "started-word")
     _mark_started(db_session, started["id"])
     _g3, fresh = _group_and_word(client, headers, "fresh-word")
 
-    response = _invoke(client, headers, tool="lensword.suggest_stretch_vocabulary", payload={"limit": 10})
+    response = _invoke(client, headers, tool="lensword_suggest_stretch_vocabulary", payload={"limit": 10})
     assert response.status_code == 200, response.text
     items = response.json()["items"]
     word_ids = [item["word_id"] for item in items]
@@ -201,10 +201,10 @@ def test_suggest_stretch_vocabulary_excludes_mastered_words_and_is_ordered(clien
 
 def test_suggest_stretch_vocabulary_never_writes_anything(client, auth_headers, db_session):
     headers = auth_headers()
-    _grant(db_session, tool="lensword.suggest_stretch_vocabulary", user_id=_user_id(client, headers))
+    _grant(db_session, tool="lensword_suggest_stretch_vocabulary", user_id=_user_id(client, headers))
     _g, word = _group_and_word(client, headers, "unchanged-word")
 
-    _invoke(client, headers, tool="lensword.suggest_stretch_vocabulary", payload={})
+    _invoke(client, headers, tool="lensword_suggest_stretch_vocabulary", payload={})
 
     unchanged = SqlAlchemyWordRepository(db_session).get_by_id(word["id"])
     assert unchanged.review_state.repetitions == 0
@@ -216,11 +216,11 @@ def test_suggest_stretch_vocabulary_never_writes_anything(client, auth_headers, 
 
 def test_record_context_occurrence_requires_explicit_confirmation(client, auth_headers, db_session):
     headers = auth_headers()
-    _grant(db_session, tool="lensword.record_context_occurrence", user_id=_user_id(client, headers))
+    _grant(db_session, tool="lensword_record_context_occurrence", user_id=_user_id(client, headers))
     _g, word = _group_and_word(client, headers, "asyncio")
 
     response = _invoke(
-        client, headers, tool="lensword.record_context_occurrence",
+        client, headers, tool="lensword_record_context_occurrence",
         payload={"word_id": word["id"], "context_kind": "commit_message", "outcome": "correct", "confirmed": False},
     )
     assert response.status_code == 400
@@ -231,12 +231,12 @@ def test_record_context_occurrence_requires_explicit_confirmation(client, auth_h
 
 def test_record_context_occurrence_writes_a_low_trust_observation_not_a_mastery_mutation(client, auth_headers, db_session):
     headers = auth_headers()
-    _grant(db_session, tool="lensword.record_context_occurrence", user_id=_user_id(client, headers))
+    _grant(db_session, tool="lensword_record_context_occurrence", user_id=_user_id(client, headers))
     _g, word = _group_and_word(client, headers, "asyncio")
     before = SqlAlchemyWordRepository(db_session).get_by_id(word["id"])
 
     response = _invoke(
-        client, headers, tool="lensword.record_context_occurrence",
+        client, headers, tool="lensword_record_context_occurrence",
         payload={"word_id": word["id"], "context_kind": "commit_message", "outcome": "correct", "confirmed": True},
     )
     assert response.status_code == 200, response.text
@@ -254,11 +254,11 @@ def test_record_context_occurrence_writes_a_low_trust_observation_not_a_mastery_
 
 def test_record_context_occurrence_rejects_a_context_kind_outside_the_closed_set(client, auth_headers, db_session):
     headers = auth_headers()
-    _grant(db_session, tool="lensword.record_context_occurrence", user_id=_user_id(client, headers))
+    _grant(db_session, tool="lensword_record_context_occurrence", user_id=_user_id(client, headers))
     _g, word = _group_and_word(client, headers, "asyncio")
 
     response = _invoke(
-        client, headers, tool="lensword.record_context_occurrence",
+        client, headers, tool="lensword_record_context_occurrence",
         payload={"word_id": word["id"], "context_kind": "carrier-pigeon", "outcome": "correct", "confirmed": True},
     )
     assert response.status_code == 422
@@ -268,10 +268,10 @@ def test_record_context_occurrence_cannot_be_aimed_at_another_accounts_word(clie
     owner_headers = auth_headers()
     _g, word = _group_and_word(client, owner_headers, "asyncio")
     intruder_headers = auth_headers(username="mallory3", email="mallory3@example.com")
-    _grant(db_session, tool="lensword.record_context_occurrence", user_id=_user_id(client, intruder_headers))
+    _grant(db_session, tool="lensword_record_context_occurrence", user_id=_user_id(client, intruder_headers))
 
     response = _invoke(
-        client, intruder_headers, tool="lensword.record_context_occurrence",
+        client, intruder_headers, tool="lensword_record_context_occurrence",
         payload={"word_id": word["id"], "context_kind": "commit_message", "outcome": "correct", "confirmed": True},
     )
     assert response.status_code in (400, 404)

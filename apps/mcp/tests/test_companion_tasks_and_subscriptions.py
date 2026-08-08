@@ -10,12 +10,13 @@ from __future__ import annotations
 import io
 import json
 
-from lensword_mcp.server import BackendError, MCPServer, StdioMCPServer
+from lensword_cli.backend_client import BackendError
+from lensword_mcp.server import MCPServer, StdioMCPServer
 
 _TASK_TOOL_NAMES = (
-    "lensword.start_extraction_task",
-    "lensword.get_companion_task",
-    "lensword.cancel_companion_task",
+    "lensword_start_extraction_task",
+    "lensword_get_companion_task",
+    "lensword_cancel_companion_task",
 )
 
 
@@ -28,7 +29,7 @@ class FakeBackend:
     def capabilities(self):
         return {
             "tools": [
-                {"name": "lensword.search_words", "input_schema": {"type": "object", "properties": {}}},
+                {"name": "lensword_search_words", "input_schema": {"type": "object", "properties": {}}},
                 *(
                     {"name": name, "input_schema": {"type": "object", "properties": {}}}
                     for name in _TASK_TOOL_NAMES
@@ -38,7 +39,7 @@ class FakeBackend:
 
     def invoke(self, name, arguments):
         self.calls.append((name, arguments))
-        if name == "lensword.start_extraction_task":
+        if name == "lensword_start_extraction_task":
             return {"id": "task-1", "status": "pending"}
         return {"ok": True}
 
@@ -78,14 +79,14 @@ def test_task_tools_are_hidden_and_refused_without_client_task_capability():
     names = {tool["name"] for tool in listed["result"]["tools"]}
     # companion_reply/companion_elicit are always appended locally (#195) —
     # unrelated to task capability, so they're present either way.
-    assert names == {"lensword.search_words", "lensword.companion_reply", "lensword.companion_elicit"}
+    assert names == {"lensword_search_words", "lensword_companion_reply", "lensword_companion_elicit"}
 
     called = server.handle(
         {
             "jsonrpc": "2.0",
             "id": 3,
             "method": "tools/call",
-            "params": {"name": "lensword.start_extraction_task", "arguments": {}},
+            "params": {"name": "lensword_start_extraction_task", "arguments": {}},
         }
     )
     assert called["result"]["isError"] is True
@@ -100,7 +101,7 @@ def test_task_tools_are_exposed_and_callable_with_client_task_capability():
     listed = server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
     names = {tool["name"] for tool in listed["result"]["tools"]}
     assert names == {
-        "lensword.search_words", "lensword.companion_reply", "lensword.companion_elicit", *_TASK_TOOL_NAMES,
+        "lensword_search_words", "lensword_companion_reply", "lensword_companion_elicit", *_TASK_TOOL_NAMES,
     }
 
     called = server.handle(
@@ -108,11 +109,11 @@ def test_task_tools_are_exposed_and_callable_with_client_task_capability():
             "jsonrpc": "2.0",
             "id": 3,
             "method": "tools/call",
-            "params": {"name": "lensword.start_extraction_task", "arguments": {"text": "hola"}},
+            "params": {"name": "lensword_start_extraction_task", "arguments": {"text": "hola"}},
         }
     )
     assert called["result"]["isError"] is False
-    assert backend.calls[0][0] == "lensword.start_extraction_task"
+    assert backend.calls[0][0] == "lensword_start_extraction_task"
 
 
 def test_subscribe_rejects_uris_that_do_not_support_it():

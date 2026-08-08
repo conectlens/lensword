@@ -4,9 +4,10 @@
 contacts the backend. The four commands added here — `add`, `explain`,
 `diagnose`, `review` — necessarily do contact it (they read or write a
 learner's real account), through the same `/api/v1/mcp/invoke` boundary
-`lensword-mcp`'s stdio server already uses (`BackendClient` in `server.py`),
-so every one of them is still policy-gated, grant-checked, and audited by
-the backend exactly as an AI agent's MCP call would be — this CLI is not a
+`lensword-mcp`'s stdio server also uses (`BackendClient` in
+`backend_client.py`, shared by both packages — see issue #311), so every
+one of them is still policy-gated, grant-checked, and audited by the
+backend exactly as an AI agent's MCP call would be — this CLI is not a
 side door around that boundary.
 
 Every command that would write something (`add`, `review`) previews what it
@@ -38,8 +39,8 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, TextIO, Sequence
 
+from .backend_client import BackendClient, BackendError
 from .context_import import ContextImportPolicy, ContextImportRejected, preview_context
-from .server import BackendClient, BackendError
 
 
 EXIT_OK = 0
@@ -57,7 +58,7 @@ MAX_TRANSLATION_LENGTH = 255
 # without hunting through every print site.
 _PRIVATE_RESPONSE_FIELDS = frozenset({"mnemonic"})
 
-_ENV_VARS = ("LENSWORD_API_URL", "LENSWORD_TOKEN", "LENSWORD_MCP_REQUESTER", "LENSWORD_MCP_WORKSPACE")
+_ENV_VARS = ("LENSWORD_API_URL", "LENSWORD_TOKEN", "LENSWORD_MCP_WORKSPACE")
 
 
 def _redact(value: Any) -> Any:
@@ -218,10 +219,10 @@ def _backend_from_env(error_stream: TextIO) -> BackendClient | None:
         error_stream.write(
             f"lensword: missing environment variables: {', '.join(missing)}\n"
             "lensword: set them to connect this command to your LensWord backend "
-            "(see apps/mcp/README.md)\n"
+            "(see apps/cli/README.md)\n"
         )
         return None
-    return BackendClient(values["LENSWORD_API_URL"], values["LENSWORD_TOKEN"], values["LENSWORD_MCP_REQUESTER"], values["LENSWORD_MCP_WORKSPACE"])
+    return BackendClient(values["LENSWORD_API_URL"], values["LENSWORD_TOKEN"], values["LENSWORD_MCP_WORKSPACE"])
 
 
 def _confirm(prompt: str, *, assume_yes: bool, input_stream: TextIO, prompt_stream: TextIO) -> bool:
@@ -277,7 +278,7 @@ def _run_add(args: argparse.Namespace, input_stream: TextIO, output_stream: Text
         return EXIT_BACKEND_ERROR
     try:
         result = backend.invoke(
-            "lensword.add_word",
+            "lensword_add_word",
             {
                 "group_id": args.group_id,
                 "term": term,
@@ -301,7 +302,7 @@ def _run_explain(args: argparse.Namespace, output_stream: TextIO, error_stream: 
     if backend is None:
         return EXIT_BACKEND_ERROR
     try:
-        result = backend.invoke("lensword.explain_for_user", {"word_id": args.word_id})
+        result = backend.invoke("lensword_explain_for_user", {"word_id": args.word_id})
     except BackendError as exc:
         error_stream.write(f"lensword: {exc.detail}\n")
         return EXIT_BACKEND_ERROR
@@ -347,7 +348,7 @@ def _run_review(args: argparse.Namespace, input_stream: TextIO, output_stream: T
     if args.group_id is not None:
         payload["group_id"] = args.group_id
     try:
-        result = backend.invoke("lensword.create_study_session", payload)
+        result = backend.invoke("lensword_create_study_session", payload)
     except BackendError as exc:
         error_stream.write(f"lensword: {exc.detail}\n")
         return EXIT_BACKEND_ERROR

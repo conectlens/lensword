@@ -16,19 +16,23 @@ from app.application.mcp.dispatcher import MCPDispatcher, UnboundMCPToolError, U
 from app.application.mcp.idempotency import IdempotencyStore
 from app.application.mcp.bindings import (
     add_word_handler, begin_learning_activity_handler, cancel_companion_task_handler, check_known_term_handler,
-    create_study_session_handler, due_reviews_handler, explain_evidence_handler, explain_for_user_handler,
+    create_group_handler, create_room_handler, create_study_session_handler, delete_word_handler,
+    due_reviews_handler, explain_evidence_handler, explain_for_user_handler,
     extract_vocabulary_handler, finish_companion_session_handler, finish_learning_activity_handler,
-    generate_exercises_handler, get_activity_result_handler, get_companion_session_handler,
+    generate_exercises_handler, generate_mnemonic_handler, get_activity_result_handler,
+    get_companion_session_handler, get_mnemonics_handler, get_word_map_handler,
     get_companion_task_handler, language_profile_handler, learning_progress_handler,
-    pause_companion_session_handler, record_answer_handler, record_context_occurrence_handler,
+    list_group_words_handler, list_groups_handler, list_rooms_handler,
+    pause_companion_session_handler, place_word_in_room_handler, record_answer_handler,
+    record_context_occurrence_handler,
     request_hint_handler, resume_companion_session_handler, search_words_handler,
     start_companion_session_handler, start_extraction_task_handler,
-    submit_activity_response_handler, suggest_stretch_vocabulary_handler,
+    submit_activity_response_handler, suggest_stretch_vocabulary_handler, update_word_handler,
 )
 from app.api.deps import (
     CompanionActivityRepo, CompanionSessionRepo, CompanionTaskRepo, DbSession, DiagnosisRepo, GroupRepo,
-    LearningObservationRepo, PracticeExerciseRepo, RecallSettingsRepo, ReviewSessionRepo,
-    WordRepo,
+    KnowledgeEdgeRepo, LearningObservationRepo, MnemonicRepo, PracticeExerciseRepo,
+    RecallSettingsRepo, ReviewSessionRepo, RoomRepo, WordRepo, WordRevisionRepo,
 )
 from app.api.mcp_auth import CurrentMCPActor, MCPActor, PerActorAIProvider
 from app.config import get_settings
@@ -84,40 +88,56 @@ def _audit(db, requester: str, request: InvokeRequest, decision: str, *, payload
     db.add(MCPAuditEventModel(requester=requester, tool=request.tool, decision=decision, event=event, previous_hash=previous.event_hash if previous else "0" * 64, event_hash=event_hash, created_at=utcnow()))
     db.flush()
 
-def _handlers(groups, words, sessions, exercises, provider, companion_sessions, companion_tasks, recall_settings, diagnoses, observations, companion_activities) -> dict:
+def _handlers(groups, words, sessions, exercises, provider, companion_sessions, companion_tasks, recall_settings, diagnoses, observations, companion_activities, rooms, mnemonics, edges, revisions) -> dict:
     return {
-        "lensword.add_word": add_word_handler(words, groups), "lensword.search_words": search_words_handler(words, groups),
-        "lensword.get_due_reviews": due_reviews_handler(words), "lensword.create_study_session": create_study_session_handler(sessions, words),
-        "lensword.generate_exercises": generate_exercises_handler(exercises, words, groups), "lensword.get_learning_progress": learning_progress_handler(sessions),
-        "lensword.record_answer": record_answer_handler(sessions, words, SpacedRepetitionScheduler()), "lensword.extract_vocabulary": extract_vocabulary_handler(groups, provider),
-        "lensword.start_extraction_task": start_extraction_task_handler(companion_tasks, companion_sessions, recall_settings),
-        "lensword.get_companion_task": get_companion_task_handler(companion_tasks, companion_sessions, recall_settings),
-        "lensword.cancel_companion_task": cancel_companion_task_handler(companion_tasks, companion_sessions, recall_settings),
-        "lensword.start_companion_session": start_companion_session_handler(companion_sessions, recall_settings),
-        "lensword.get_companion_session": get_companion_session_handler(companion_sessions, recall_settings),
-        "lensword.resume_companion_session": resume_companion_session_handler(companion_sessions, recall_settings),
-        "lensword.pause_companion_session": pause_companion_session_handler(companion_sessions, recall_settings),
-        "lensword.finish_companion_session": finish_companion_session_handler(companion_sessions, recall_settings, provider),
-        "lensword.get_language_profile": language_profile_handler(groups, words), "lensword.check_known_term": check_known_term_handler(words, groups),
-        "lensword.explain_for_user": explain_for_user_handler(words, groups, diagnoses),
-        "lensword.suggest_stretch_vocabulary": suggest_stretch_vocabulary_handler(words, groups),
-        "lensword.record_context_occurrence": record_context_occurrence_handler(words, groups, observations),
-        "lensword.begin_learning_activity": begin_learning_activity_handler(
+        # Group management, word lifecycle, memory palace, MnemoLab and the
+        # knowledge graph. Every one of these delegates to a use case that
+        # already backs the equivalent REST route, so the MCP surface and the
+        # web app enforce ownership through the same code path rather than
+        # two parallel authorization checks that could drift.
+        "lensword_create_group": create_group_handler(groups),
+        "lensword_list_groups": list_groups_handler(groups, words),
+        "lensword_list_group_words": list_group_words_handler(groups, words),
+        "lensword_update_word": update_word_handler(words, groups, revisions),
+        "lensword_delete_word": delete_word_handler(words, groups),
+        "lensword_list_rooms": list_rooms_handler(rooms, words),
+        "lensword_create_room": create_room_handler(rooms, groups),
+        "lensword_place_word_in_room": place_word_in_room_handler(rooms, words),
+        "lensword_get_mnemonics": get_mnemonics_handler(mnemonics, words, groups),
+        "lensword_generate_mnemonic": generate_mnemonic_handler(mnemonics, words, groups, provider),
+        "lensword_get_word_map": get_word_map_handler(words, groups, edges),
+        "lensword_add_word": add_word_handler(words, groups), "lensword_search_words": search_words_handler(words, groups),
+        "lensword_get_due_reviews": due_reviews_handler(words), "lensword_create_study_session": create_study_session_handler(sessions, words),
+        "lensword_generate_exercises": generate_exercises_handler(exercises, words, groups), "lensword_get_learning_progress": learning_progress_handler(sessions),
+        "lensword_record_answer": record_answer_handler(sessions, words, SpacedRepetitionScheduler()), "lensword_extract_vocabulary": extract_vocabulary_handler(groups, provider),
+        "lensword_start_extraction_task": start_extraction_task_handler(companion_tasks, companion_sessions, recall_settings),
+        "lensword_get_companion_task": get_companion_task_handler(companion_tasks, companion_sessions, recall_settings),
+        "lensword_cancel_companion_task": cancel_companion_task_handler(companion_tasks, companion_sessions, recall_settings),
+        "lensword_start_companion_session": start_companion_session_handler(companion_sessions, recall_settings),
+        "lensword_get_companion_session": get_companion_session_handler(companion_sessions, recall_settings),
+        "lensword_resume_companion_session": resume_companion_session_handler(companion_sessions, recall_settings),
+        "lensword_pause_companion_session": pause_companion_session_handler(companion_sessions, recall_settings),
+        "lensword_finish_companion_session": finish_companion_session_handler(companion_sessions, recall_settings, provider),
+        "lensword_get_language_profile": language_profile_handler(groups, words), "lensword_check_known_term": check_known_term_handler(words, groups),
+        "lensword_explain_for_user": explain_for_user_handler(words, groups, diagnoses),
+        "lensword_suggest_stretch_vocabulary": suggest_stretch_vocabulary_handler(words, groups),
+        "lensword_record_context_occurrence": record_context_occurrence_handler(words, groups, observations),
+        "lensword_begin_learning_activity": begin_learning_activity_handler(
             companion_activities, companion_sessions, recall_settings, words, groups
         ),
-        "lensword.submit_activity_response": submit_activity_response_handler(
+        "lensword_submit_activity_response": submit_activity_response_handler(
             companion_activities, companion_sessions, recall_settings, observations
         ),
-        "lensword.get_activity_result": get_activity_result_handler(
+        "lensword_get_activity_result": get_activity_result_handler(
             companion_activities, companion_sessions, recall_settings
         ),
-        "lensword.finish_learning_activity": finish_learning_activity_handler(
+        "lensword_finish_learning_activity": finish_learning_activity_handler(
             companion_activities, companion_sessions, recall_settings
         ),
-        "lensword.request_hint": request_hint_handler(
+        "lensword_request_hint": request_hint_handler(
             companion_activities, companion_sessions, recall_settings, words, groups
         ),
-        "lensword.explain_evidence": explain_evidence_handler(
+        "lensword_explain_evidence": explain_evidence_handler(
             companion_activities, companion_sessions, recall_settings, words, groups, diagnoses
         ),
     }
@@ -128,6 +148,7 @@ async def invoke(
     sessions: ReviewSessionRepo, exercises: PracticeExerciseRepo, provider: PerActorAIProvider,
     companion_sessions: CompanionSessionRepo, companion_tasks: CompanionTaskRepo, recall_settings: RecallSettingsRepo,
     diagnoses: DiagnosisRepo, observations: LearningObservationRepo, companion_activities: CompanionActivityRepo,
+    rooms: RoomRepo, mnemonics: MnemonicRepo, edges: KnowledgeEdgeRepo, revisions: WordRevisionRepo,
 ) -> dict:
     requester = actor.requester
     payload_bytes = len(dumps(request.payload, sort_keys=True, default=str).encode())
@@ -135,7 +156,7 @@ async def invoke(
         _audit(db, requester, request, "invalid_workspace", payload_bytes=payload_bytes)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid_workspace")
     grants = [MCPGrant(item.requester, item.server, item.tool, AccessClass(item.access), item.workspace, GrantMode(item.mode), item.expires_at, item.revoked_at, item.consumed_at) for item in db.query(MCPGrantModel)]
-    dispatcher = MCPDispatcher(_handlers(groups, words, sessions, exercises, provider, companion_sessions, companion_tasks, recall_settings, diagnoses, observations, companion_activities))
+    dispatcher = MCPDispatcher(_handlers(groups, words, sessions, exercises, provider, companion_sessions, companion_tasks, recall_settings, diagnoses, observations, companion_activities, rooms, mnemonics, edges, revisions))
     try: contract = dispatcher.contract_for(request.tool)
     except UnknownMCPToolError as exc:
         _audit(db, requester, request, "unknown_tool", payload_bytes=payload_bytes)
@@ -180,6 +201,7 @@ async def read_resource(
     sessions: ReviewSessionRepo, exercises: PracticeExerciseRepo, provider: PerActorAIProvider,
     companion_sessions: CompanionSessionRepo, companion_tasks: CompanionTaskRepo, recall_settings: RecallSettingsRepo,
     diagnoses: DiagnosisRepo, observations: LearningObservationRepo, companion_activities: CompanionActivityRepo,
+    rooms: RoomRepo, mnemonics: MnemonicRepo, edges: KnowledgeEdgeRepo, revisions: WordRevisionRepo,
 ) -> dict:
     """Scoped resource read for both local and remote MCP callers.
 
@@ -200,9 +222,9 @@ async def read_resource(
     """
     requester = actor.requester
     resource_to_tool = {
-        "lensword://me/due": "lensword.get_due_reviews",
-        "lensword://me/active-words": "lensword.search_words",
-        "lensword://me/progress": "lensword.get_learning_progress",
+        "lensword://me/due": "lensword_get_due_reviews",
+        "lensword://me/active-words": "lensword_search_words",
+        "lensword://me/progress": "lensword_get_learning_progress",
     }
     known_resources = {r for tools in SCOPE_RESOURCES.values() for r in tools}
     if uri not in resource_to_tool or uri not in known_resources:
@@ -210,14 +232,14 @@ async def read_resource(
     if not is_valid_workspace(workspace):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid_workspace")
     tool = resource_to_tool[uri]
-    dispatcher = MCPDispatcher(_handlers(groups, words, sessions, exercises, provider, companion_sessions, companion_tasks, recall_settings, diagnoses, observations, companion_activities))
+    dispatcher = MCPDispatcher(_handlers(groups, words, sessions, exercises, provider, companion_sessions, companion_tasks, recall_settings, diagnoses, observations, companion_activities, rooms, mnemonics, edges, revisions))
     contract = dispatcher.contract_for(tool)
     grants = [MCPGrant(item.requester, item.server, item.tool, AccessClass(item.access), item.workspace, GrantMode(item.mode), item.expires_at, item.revoked_at, item.consumed_at) for item in db.query(MCPGrantModel)]
     decision = MCPPolicyGate(grants, calls=_request_calls).authorize(requester, "lensword", tool, contract.access, workspace, 0, utcnow())
     if not decision.allowed:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=decision.reason)
-    payload = {"limit": 100} if tool in ("lensword.get_due_reviews", "lensword.search_words") else {}
-    if tool == "lensword.search_words":
+    payload = {"limit": 100} if tool in ("lensword_get_due_reviews", "lensword_search_words") else {}
+    if tool == "lensword_search_words":
         payload["query"] = ""
     try:
         return await dispatcher.dispatch_async(actor.user.id or 0, tool, payload)

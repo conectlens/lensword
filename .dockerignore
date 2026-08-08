@@ -1,0 +1,43 @@
+# Root-level .dockerignore — picked up by any image whose build context is
+# the repo root (currently only apps/mcp/Dockerfile, via render.yaml's
+# dockerContext: . — needed once apps/mcp started depending on the sibling
+# apps/cli package, issue #311). Docker only reads a .dockerignore at the
+# root of the build context itself, so apps/mcp/.dockerignore (still used
+# for local-context builds elsewhere) does not apply here.
+.git
+.github
+
+apps/backend/.venv/
+apps/backend/__pycache__/
+apps/backend/**/__pycache__/
+apps/backend/*.egg-info/
+apps/backend/.pytest_cache/
+apps/backend/data/
+apps/backend/.env
+
+apps/cli/**/__pycache__/
+apps/cli/.pytest_cache/
+apps/cli/*.egg-info/
+
+apps/mcp/**/__pycache__/
+apps/mcp/.pytest_cache/
+apps/mcp/*.egg-info/
+
+apps/frontend/node_modules/
+apps/frontend/dist/
+apps/frontend/.env
+apps/frontend/.wrangler/
+
+apps/desktop/target/
+apps/desktop/src-tauri/gen/
+
+docs/node_modules/
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+
+scripts/node_modules/
+scripts/**/__pycache__/
+scripts/**/.pytest_cache/
+
+.DS_Store
+*.log

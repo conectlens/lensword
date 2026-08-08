@@ -185,7 +185,7 @@ def test_full_remote_flow_with_no_workspace_anywhere_in_the_request(client, auth
 
     invoked = client.post(
         "/api/v1/mcp/invoke", headers=access_headers,
-        json={"tool": "lensword.search_words", "workspace": get_settings().mcp_remote_workspace, "payload": {"query": "hola"}},
+        json={"tool": "lensword_search_words", "workspace": get_settings().mcp_remote_workspace, "payload": {"query": "hola"}},
     )
     assert invoked.status_code == 200, invoked.text
 
@@ -194,7 +194,7 @@ def test_full_remote_flow_with_no_workspace_anywhere_in_the_request(client, auth
     # different workspace must still be denied.
     wrong_workspace = client.post(
         "/api/v1/mcp/invoke", headers=access_headers,
-        json={"tool": "lensword.search_words", "workspace": "/approved", "payload": {"query": "hola"}},
+        json={"tool": "lensword_search_words", "workspace": "/approved", "payload": {"query": "hola"}},
     )
     assert wrong_workspace.status_code == 403
 
@@ -235,7 +235,7 @@ def test_full_flow_completes_oauth_reads_a_resource_and_invokes_one_tool(client,
 
     invoked = client.post(
         "/api/v1/mcp/invoke", headers=access_headers,
-        json={"tool": "lensword.search_words", "workspace": "/approved", "payload": {"query": "hola"}},
+        json={"tool": "lensword_search_words", "workspace": "/approved", "payload": {"query": "hola"}},
     )
     assert invoked.status_code == 200
 
@@ -246,7 +246,7 @@ def test_unapproved_scope_is_denied_even_with_a_valid_token(client, auth_headers
     access_headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     denied = client.post(
         "/api/v1/mcp/invoke", headers=access_headers,
-        json={"tool": "lensword.get_due_reviews", "workspace": "/approved", "payload": {}},
+        json={"tool": "lensword_get_due_reviews", "workspace": "/approved", "payload": {}},
     )
     assert denied.status_code == 403 and denied.json()["detail"] == "no_grant"
 
@@ -255,12 +255,12 @@ def test_revocation_blocks_subsequent_calls_immediately(client, auth_headers, re
     headers = auth_headers()
     client_id, _redirect_uri, tokens = _full_flow(client, headers)
     access_headers = {"Authorization": f"Bearer {tokens['access_token']}"}
-    assert client.post("/api/v1/mcp/invoke", headers=access_headers, json={"tool": "lensword.search_words", "workspace": "/approved", "payload": {"query": ""}}).status_code == 200
+    assert client.post("/api/v1/mcp/invoke", headers=access_headers, json={"tool": "lensword_search_words", "workspace": "/approved", "payload": {"query": ""}}).status_code == 200
 
     revoked = client.post(f"/api/v1/mcp/oauth/connections/{client_id}/revoke", headers=headers)
     assert revoked.status_code == 204
 
-    blocked = client.post("/api/v1/mcp/invoke", headers=access_headers, json={"tool": "lensword.search_words", "workspace": "/approved", "payload": {"query": ""}})
+    blocked = client.post("/api/v1/mcp/invoke", headers=access_headers, json={"tool": "lensword_search_words", "workspace": "/approved", "payload": {"query": ""}})
     assert blocked.status_code == 401
 
 
@@ -273,7 +273,7 @@ def test_revoke_endpoint_immediately_kills_the_access_token_too(client, auth_hea
     assert revoke_response.status_code == 200
 
     access_headers = {"Authorization": f"Bearer {tokens['access_token']}"}
-    blocked = client.post("/api/v1/mcp/invoke", headers=access_headers, json={"tool": "lensword.search_words", "workspace": "/approved", "payload": {"query": ""}})
+    blocked = client.post("/api/v1/mcp/invoke", headers=access_headers, json={"tool": "lensword_search_words", "workspace": "/approved", "payload": {"query": ""}})
     assert blocked.status_code == 401
 
 
@@ -344,7 +344,7 @@ def test_refresh_token_rotation_and_reuse_revokes_the_whole_family(client, auth_
 
     # The new access token works.
     new_headers = {"Authorization": f"Bearer {new_tokens['access_token']}"}
-    assert client.post("/api/v1/mcp/invoke", headers=new_headers, json={"tool": "lensword.search_words", "workspace": "/approved", "payload": {"query": ""}}).status_code == 200
+    assert client.post("/api/v1/mcp/invoke", headers=new_headers, json={"tool": "lensword_search_words", "workspace": "/approved", "payload": {"query": ""}}).status_code == 200
 
     # Reusing the OLD (already-rotated) refresh token is a replay attempt.
     replay = client.post("/api/v1/mcp/oauth/token", data={"grant_type": "refresh_token", "client_id": client_id, "refresh_token": tokens["refresh_token"]})
@@ -352,7 +352,7 @@ def test_refresh_token_rotation_and_reuse_revokes_the_whole_family(client, auth_
 
     # The whole family — including the token issued by the legitimate
     # rotation above — is now revoked as a precaution.
-    blocked = client.post("/api/v1/mcp/invoke", headers=new_headers, json={"tool": "lensword.search_words", "workspace": "/approved", "payload": {"query": ""}})
+    blocked = client.post("/api/v1/mcp/invoke", headers=new_headers, json={"tool": "lensword_search_words", "workspace": "/approved", "payload": {"query": ""}})
     assert blocked.status_code == 401
 
 
@@ -386,7 +386,7 @@ def test_two_accounts_authorizing_the_same_client_get_independently_scoped_grant
     # Alice's token still only works for Alice; there is nothing for Bob to
     # substitute it with, so this just re-confirms it is Alice's token, not
     # a token bound to "whoever holds it".
-    assert client.post("/api/v1/mcp/invoke", headers=bob_headers, json={"tool": "lensword.search_words", "workspace": "/approved", "payload": {"query": ""}}).status_code == 200
+    assert client.post("/api/v1/mcp/invoke", headers=bob_headers, json={"tool": "lensword_search_words", "workspace": "/approved", "payload": {"query": ""}}).status_code == 200
 
     connections_alice = client.get("/api/v1/mcp/oauth/connections", headers=alice).json()
     connections_bob = client.get("/api/v1/mcp/oauth/connections", headers=bob).json()
@@ -398,7 +398,7 @@ def test_requester_identity_for_oauth_actors_encodes_user_and_client(client, aut
     user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
     client_id, _redirect_uri, tokens = _full_flow(client, headers)
     access_headers = {"Authorization": f"Bearer {tokens['access_token']}"}
-    client.post("/api/v1/mcp/invoke", headers=access_headers, json={"tool": "lensword.search_words", "workspace": "/approved", "payload": {"query": ""}})
+    client.post("/api/v1/mcp/invoke", headers=access_headers, json={"tool": "lensword_search_words", "workspace": "/approved", "payload": {"query": ""}})
 
     from app.infrastructure.models import MCPAuditEventModel
 
@@ -410,12 +410,12 @@ def test_disabling_remote_mcp_immediately_invalidates_existing_oauth_tokens(clie
     headers = auth_headers()
     _client_id, _redirect_uri, tokens = _full_flow(client, headers)
     access_headers = {"Authorization": f"Bearer {tokens['access_token']}"}
-    assert client.post("/api/v1/mcp/invoke", headers=access_headers, json={"tool": "lensword.search_words", "workspace": "/approved", "payload": {"query": ""}}).status_code == 200
+    assert client.post("/api/v1/mcp/invoke", headers=access_headers, json={"tool": "lensword_search_words", "workspace": "/approved", "payload": {"query": ""}}).status_code == 200
 
     monkeypatch.setenv("REMOTE_MCP_ENABLED", "false")
     get_settings.cache_clear()
     try:
-        blocked = client.post("/api/v1/mcp/invoke", headers=access_headers, json={"tool": "lensword.search_words", "workspace": "/approved", "payload": {"query": ""}})
+        blocked = client.post("/api/v1/mcp/invoke", headers=access_headers, json={"tool": "lensword_search_words", "workspace": "/approved", "payload": {"query": ""}})
         assert blocked.status_code == 401
     finally:
         monkeypatch.setenv("REMOTE_MCP_ENABLED", "true")
@@ -428,3 +428,35 @@ def test_token_row_never_persists_the_raw_bearer_credential(client, auth_headers
     row = db_session.query(MCPOAuthTokenModel).order_by(MCPOAuthTokenModel.id.desc()).first()
     assert tokens["access_token"] not in row.access_token_hash
     assert tokens["refresh_token"] not in (row.refresh_token_hash or "")
+
+
+def test_every_declared_tool_is_reachable_through_at_least_one_scope():
+    """A tool missing from SCOPE_TOOLS is permanently unreachable remotely.
+
+    Scopes are the only way an OAuth grant is ever provisioned, so a tool
+    absent from `mcp_scopes.SCOPE_TOOLS` can never be consented to and
+    answers `no_grant` forever — with nothing distinguishing that from a
+    revoked or expired approval. An audit of the live remote surface found
+    exactly this: the registry had grown well past the eight tools mapped
+    here, so the entire companion subsystem (`start_companion_session` and
+    the fifteen-odd tools gated behind it) was dark in a way no error
+    message attributed to a missing line in a mapping table.
+
+    Asserting both directions keeps the two files honest about each other:
+    an unmapped contract fails here rather than in production, and a scope
+    naming a tool that no longer exists fails too, since a stale entry would
+    silently provision a grant for nothing.
+    """
+    from app.application.mcp.contracts import TOOL_CONTRACTS
+    from app.domain.services.mcp_scopes import SCOPE_TOOLS
+
+    declared = {tool.name for tool in TOOL_CONTRACTS}
+    mapped = {name for tools in SCOPE_TOOLS.values() for name in tools}
+
+    assert not declared - mapped, (
+        f"tools declared in contracts.py but absent from SCOPE_TOOLS "
+        f"(they can never be granted to a remote caller): {sorted(declared - mapped)}"
+    )
+    assert not mapped - declared, (
+        f"tools named in SCOPE_TOOLS that no longer exist in contracts.py: {sorted(mapped - declared)}"
+    )

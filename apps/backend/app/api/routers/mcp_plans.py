@@ -9,8 +9,8 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import (
     CompanionActivityRepo, CompanionSessionRepo, CompanionTaskRepo, CurrentUser, DbSession, DiagnosisRepo, GroupRepo,
-    LearningObservationRepo, PerUserAIProvider, PracticeExerciseRepo, RecallSettingsRepo, ReviewSessionRepo,
-    WordRepo,
+    KnowledgeEdgeRepo, LearningObservationRepo, MnemonicRepo, PerUserAIProvider, PracticeExerciseRepo,
+    RecallSettingsRepo, ReviewSessionRepo, RoomRepo, WordRepo, WordRevisionRepo,
 )
 from app.api.mcp_auth import MCPActor
 from app.api.routers.mcp import InvokeRequest, invoke
@@ -65,6 +65,7 @@ async def execute(
     words: WordRepo, sessions: ReviewSessionRepo, exercises: PracticeExerciseRepo, provider: PerUserAIProvider,
     companion_sessions: CompanionSessionRepo, companion_tasks: CompanionTaskRepo, recall_settings: RecallSettingsRepo,
     diagnoses: DiagnosisRepo, observations: LearningObservationRepo, companion_activities: CompanionActivityRepo,
+    rooms: RoomRepo, mnemonics: MnemonicRepo, edges: KnowledgeEdgeRepo, revisions: WordRevisionRepo,
 ) -> dict:
     stored = _get_plan(plan_id, current_user.id or 0)
     if payload.cancelled:
@@ -83,7 +84,7 @@ async def execute(
     results = []
     for step in stored.plan.steps:
         try:
-            result = await invoke(InvokeRequest(tool=step.tool, workspace=stored.request.workspace, payload=step.payload), actor, db, groups, words, sessions, exercises, provider, companion_sessions, companion_tasks, recall_settings, diagnoses, observations, companion_activities)
+            result = await invoke(InvokeRequest(tool=step.tool, workspace=stored.request.workspace, payload=step.payload), actor, db, groups, words, sessions, exercises, provider, companion_sessions, companion_tasks, recall_settings, diagnoses, observations, companion_activities, rooms, mnemonics, edges, revisions)
             results.append({"id": step.id, "tool": step.tool, "status": "completed", "result": result})
         except HTTPException as exc:
             results.append({"id": step.id, "tool": step.tool, "status": "failed", "detail": exc.detail})

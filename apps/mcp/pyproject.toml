@@ -7,10 +7,15 @@ name = "lensword-mcp"
 version = "0.1.0"
 description = "Model Context Protocol stdio server for LensWord"
 requires-python = ">=3.11"
+# lensword-cli supplies BackendClient/BackendError (issue #311's package
+# split) — neither package is on PyPI yet, so a fresh install needs both
+# installed from source together, e.g.:
+#   pip install -e apps/cli -e apps/mcp
+# See docs/install/mcp-local-cli.md.
+dependencies = ["lensword-cli==0.1.0"]
 
 [project.scripts]
 lensword-mcp = "lensword_mcp.server:main"
-lensword = "lensword_mcp.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

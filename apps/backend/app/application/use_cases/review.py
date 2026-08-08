@@ -395,11 +395,26 @@ class AddMnemonicUseCase:
         self.word_repo = word_repo
         self.group_repo = group_repo
 
-    def execute(self, user_id: int, word_id: int, text: str) -> MnemonicNote:
+    def execute(
+        self, user_id: int, word_id: int, text: str, *, is_ai_generated: bool = False
+    ) -> MnemonicNote:
+        """Save a mnemonic for a word the caller owns.
+
+        `is_ai_generated` defaults to False so the existing REST caller
+        (`POST /mnemonics`, where a person typed the text) is unchanged. It
+        exists because a model-written mnemonic persisted through the MCP
+        tool would otherwise be recorded as the learner's own work, and
+        `MnemonicNote.is_ai_generated` is what the gallery uses to tell the
+        two apart — silently mislabelling provenance is worse than not
+        storing the note at all.
+        """
         if not text.strip():
             raise ValidationError("Mnemonic text cannot be empty")
         _require_word_owner(self.word_repo, self.group_repo, word_id, user_id)
-        note = MnemonicNote(id=None, word_id=word_id, author_id=user_id, text=text.strip())
+        note = MnemonicNote(
+            id=None, word_id=word_id, author_id=user_id, text=text.strip(),
+            is_ai_generated=is_ai_generated,
+        )
         return self.mnemonic_repo.add(note)
 
 
@@ -482,22 +497,30 @@ class SuggestMnemonicUseCase:
         """
         return _require_word_owner(self.word_repo, self.group_repo, word_id, owner_id)
 
-    async def generate(self, word: Word) -> str:
-        """The slow half. Touches no repository."""
+    async def generate(self, word: Word, style: str | None = None) -> str:
+        """The slow half. Touches no repository.
+
+        `style` is optional and defaults to None so the existing REST caller
+        (`POST /mnemonics/suggest`) keeps asking for an unconstrained
+        suggestion exactly as before; only the MCP tool, whose contract
+        offers a closed set of styles, passes one.
+        """
         if self.provider is None:
             raise AIProviderNotConfiguredError()
-        return await self.provider.suggest_mnemonic(word.term, self._context_for(word))
+        return await self.provider.suggest_mnemonic(word.term, self._context_for(word, style))
 
-    async def execute(self, owner_id: int, word_id: int) -> str:
+    async def execute(self, owner_id: int, word_id: int, style: str | None = None) -> str:
         """Both halves, for callers with no connection to release."""
-        return await self.generate(self.resolve_word(owner_id, word_id))
+        return await self.generate(self.resolve_word(owner_id, word_id), style)
 
     @staticmethod
-    def _context_for(word: Word) -> str:
+    def _context_for(word: Word, style: str | None = None) -> str:
         language = word.target_language.value
         if word.translations:
-            return f"a {language} word meaning {', '.join(word.translations)}"
-        return f"a {language} word"
+            context = f"a {language} word meaning {', '.join(word.translations)}"
+        else:
+            context = f"a {language} word"
+        return f"{context}; build a {style} mnemonic" if style else context
 
 
 class VoteMnemonicUseCase:
