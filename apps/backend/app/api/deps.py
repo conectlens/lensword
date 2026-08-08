@@ -42,6 +42,7 @@ from app.infrastructure.repositories import (
     SqlAlchemySyncOperationRepository,
     SqlAlchemyReviewSessionRepository,
     SqlAlchemyRoomRepository,
+    SqlAlchemyUserAICredentialRepository,
     SqlAlchemyUserRepository,
     SqlAlchemyWordRepository,
 )
@@ -174,6 +175,10 @@ def get_conversation_correction_feedback_repository(
     return SqlAlchemyConversationCorrectionFeedbackRepository(db)
 
 
+def get_user_ai_credential_repository(db: DbSession) -> SqlAlchemyUserAICredentialRepository:
+    return SqlAlchemyUserAICredentialRepository(db)
+
+
 @lru_cache
 def _ai_provider() -> AIProvider | None:
     """Built once per process, not per request — the Ollama adapter owns a
@@ -290,6 +295,9 @@ AcquisitionStateRepo = Annotated[
 LearningPathRepo = Annotated[SqlAlchemyLearningPathRepository, Depends(get_learning_path_repository)]
 ConversationRepo = Annotated[SqlAlchemyConversationRepository, Depends(get_conversation_repository)]
 ScenarioAttemptRepo = Annotated[SqlAlchemyScenarioAttemptRepository, Depends(get_scenario_attempt_repository)]
+UserAICredentialRepo = Annotated[
+    SqlAlchemyUserAICredentialRepository, Depends(get_user_ai_credential_repository)
+]
 ConversationCorrectionFeedbackRepo = Annotated[
     SqlAlchemyConversationCorrectionFeedbackRepository, Depends(get_conversation_correction_feedback_repository)
 ]
@@ -326,6 +334,22 @@ def rate_limit_ai(current_user: CurrentUser, limiter: RateLimiter) -> None:
         window=timedelta(seconds=settings_.rate_limit_ai_window_seconds),
     )
     _enforce_rate_limit(limiter, "ai_generation", f"user:{current_user.id}", rule)
+
+
+def rate_limit_ai_credential_write(current_user: CurrentUser, limiter: RateLimiter) -> None:
+    """PUT/DELETE on a user's own BYOK AI credential — a separate budget
+    from rate_limit_ai above (see Settings.rate_limit_ai_credential_writes'
+    own comment): that one governs generation calls, this one governs
+    writes to the encrypted-credential path, which is a different abuse
+    surface (repeatedly probing accepted payload shapes, hammering
+    encrypt/decrypt) with no reason to share a budget with ordinary AI
+    usage or be starved by it."""
+    settings_ = get_settings()
+    rule = RateLimitRule(
+        limit=settings_.rate_limit_ai_credential_writes,
+        window=timedelta(seconds=settings_.rate_limit_ai_credential_write_window_seconds),
+    )
+    _enforce_rate_limit(limiter, "ai_credential_write", f"user:{current_user.id}", rule)
 
 
 def rate_limit_import_url(current_user: CurrentUser, limiter: RateLimiter) -> None:
