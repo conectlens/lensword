@@ -428,3 +428,35 @@ def test_token_row_never_persists_the_raw_bearer_credential(client, auth_headers
     row = db_session.query(MCPOAuthTokenModel).order_by(MCPOAuthTokenModel.id.desc()).first()
     assert tokens["access_token"] not in row.access_token_hash
     assert tokens["refresh_token"] not in (row.refresh_token_hash or "")
+
+
+def test_every_declared_tool_is_reachable_through_at_least_one_scope():
+    """A tool missing from SCOPE_TOOLS is permanently unreachable remotely.
+
+    Scopes are the only way an OAuth grant is ever provisioned, so a tool
+    absent from `mcp_scopes.SCOPE_TOOLS` can never be consented to and
+    answers `no_grant` forever — with nothing distinguishing that from a
+    revoked or expired approval. An audit of the live remote surface found
+    exactly this: the registry had grown well past the eight tools mapped
+    here, so the entire companion subsystem (`start_companion_session` and
+    the fifteen-odd tools gated behind it) was dark in a way no error
+    message attributed to a missing line in a mapping table.
+
+    Asserting both directions keeps the two files honest about each other:
+    an unmapped contract fails here rather than in production, and a scope
+    naming a tool that no longer exists fails too, since a stale entry would
+    silently provision a grant for nothing.
+    """
+    from app.application.mcp.contracts import TOOL_CONTRACTS
+    from app.domain.services.mcp_scopes import SCOPE_TOOLS
+
+    declared = {tool.name for tool in TOOL_CONTRACTS}
+    mapped = {name for tools in SCOPE_TOOLS.values() for name in tools}
+
+    assert not declared - mapped, (
+        f"tools declared in contracts.py but absent from SCOPE_TOOLS "
+        f"(they can never be granted to a remote caller): {sorted(declared - mapped)}"
+    )
+    assert not mapped - declared, (
+        f"tools named in SCOPE_TOOLS that no longer exist in contracts.py: {sorted(mapped - declared)}"
+    )

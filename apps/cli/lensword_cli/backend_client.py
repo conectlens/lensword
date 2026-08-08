@@ -34,6 +34,47 @@ class BackendError(RuntimeError):
         self.detail = detail
 
 
+def _error_detail(exc: urllib.error.HTTPError) -> str:
+    """Extract the most actionable message an error response carries.
+
+    The backend states failures in a JSON `detail` field, but nothing
+    guarantees one arrives: a proxy timeout, a crash below the framework's
+    own exception handler, or an HTML error page all land here too. Every
+    branch must still yield a string naming *something* the caller can act
+    on, because this text is what an MCP client shows its model verbatim.
+
+    The previous version answered a bare, statusless "LensWord request
+    failed" for all of those cases — identical whether the group did not
+    exist, belonged to someone else, or the server had fallen over — and it
+    called `.get` on whatever `json.loads` returned, so an error body that
+    was a JSON list or string raised `AttributeError` straight out of the
+    client instead of a `BackendError` any caller was prepared to catch.
+    """
+    try:
+        body = json.loads(exc.read())
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError, ValueError):
+        return f"{exc.reason or 'LensWord request failed'} (HTTP {exc.code})"
+
+    detail = body.get("detail") if isinstance(body, dict) else body
+    if isinstance(detail, str) and detail.strip():
+        return detail
+    if isinstance(detail, list):
+        # FastAPI validation errors arrive as a list of per-field records.
+        # Name the offending field rather than dumping a pydantic repr —
+        # "group_id: input should be a valid integer" is fixable by the
+        # caller; the raw structure is not.
+        parts: list[str] = []
+        for item in detail:
+            if not isinstance(item, dict):
+                continue
+            location = ".".join(str(part) for part in item.get("loc", ()) if part != "body")
+            message = str(item.get("msg", "invalid value"))
+            parts.append(f"{location}: {message}" if location else message)
+        if parts:
+            return "; ".join(parts)
+    return f"{exc.reason or 'LensWord request failed'} (HTTP {exc.code})"
+
+
 @dataclass(frozen=True)
 class BackendClient:
     """Talks to LensWord's `/api/v1/mcp/*` boundary over plain HTTPS/HTTP.
@@ -69,11 +110,7 @@ class BackendClient:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 return json.loads(response.read())
         except urllib.error.HTTPError as exc:
-            try:
-                detail = json.loads(exc.read()).get("detail", "LensWord request failed")
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                detail = "LensWord request failed"
-            raise BackendError(exc.code, str(detail)) from exc
+            raise BackendError(exc.code, _error_detail(exc)) from exc
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
             raise BackendError(503, "LensWord API unavailable") from exc
 
