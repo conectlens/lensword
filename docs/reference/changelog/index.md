@@ -81,6 +81,32 @@ Two compounding bugs, both found by tracing a real Claude.ai connection attempt 
 **Known limitations:**
 - The `resource` parameter Claude.ai's redirect includes (RFC 8707) is still not read or validated against — this fix addresses the concrete failure that blocked every connection attempt, not full RFC 8707 resource-indicator enforcement.
 
+**MCP Server, Local CLI, Backend (API)**
+
+<a id="mcp-crash-recovery-and-vocabulary-tools"></a>
+
+### Fixed: Companion tools no longer drop the connection when the backend rejects a credential, every declared tool is now reachable through an OAuth scope, and eleven vocabulary-management tools (groups, word editing, memory-palace rooms, mnemonics, word map) were added to the MCP surface.
+
+*2026-08-08* — verification: automated tests: passed
+
+Composing a companion reply against an expired or wrong-environment credential now returns a message saying the connection needs re-authentication, instead of appearing to hang; a single failing tool call no longer takes down a local MCP server. Remote companions can be granted every tool the server advertises rather than only eight. An AI assistant can now create and list vocabulary groups (previously it had to guess numeric group IDs), edit or delete words, place words in memory-palace rooms, read and generate mnemonics, and read the word relationship map.
+
+<details><summary>Technical detail</summary>
+
+Three independent defects, found by auditing the live MCP surface against its own logs.
+(1) Crash chain: MCPServer._ensure_loop caught a bare BackendError from get_loop and retried start_loop with the same credential, from outside any except block. On a 401 that exception escaped _reserve_or_error — whose docstring claimed it never raises — through tools/call and into the transport. http_transport.do_POST called MCPServer.handle unguarded, so socketserver logged a traceback and closed the socket with no response at all; StdioMCPServer.run caught only parse errors, so the same exception ended the serve loop and terminated the process. _ensure_loop now treats only 404 ("Companion loop has not been started") as "no budget yet" and propagates every other status; both transports answer with a JSON-RPC -32603 carrying an incident id, with the exception text logged rather than returned.
+(2) Unreachable tools: mcp_scopes.SCOPE_TOOLS mapped 8 of 26 declared tools. Scopes are the only path by which an OAuth grant is provisioned, so the other 18 — the whole companion subsystem included — could never be consented to and answered no_grant indefinitely, indistinguishable from a revoked approval. All tools are now mapped, with a test asserting coverage in both directions.
+(3) Opaque errors: add_word coerced target_language via SupportedLanguage(), whose ValueError is not a DomainError and so bypassed main.py's handler, producing an unhandled 500 that Starlette renders as plain text. The client found no JSON detail field and fell back to a fixed "LensWord request failed" string for every cause. BackendClient additionally called .get() on whatever json.loads returned, raising AttributeError instead of BackendError when an error body was a JSON list or string.
+The eleven added tools bind to the same use cases that back the equivalent REST routes, so ownership is enforced by one code path rather than two.
+
+</details>
+
+**Known limitations:**
+- Not exercised against a live third-party MCP client; verification is the repository's own test suites against the shared JSON-RPC handler, matching the standing gap recorded for this transport.
+- lensword_search_words still has no group filter. Enumerating one group is served by the new lensword_list_group_words instead.
+- lensword_delete_word is a hard delete with no archive tier, because the domain has none — DeleteWordUseCase removes the word and its review history. The tool requires an explicit confirmed=true and is annotated destructive.
+- lensword_extract_vocabulary still requires an AI provider to be configured server-side; that is a deployment gap this change does not address.
+
 **Web Application, Desktop Application, Browser Extension, MCP Server, Local CLI**
 
 <a id="cloud-ai-provider-adapters"></a>
