@@ -118,6 +118,16 @@ class Settings(BaseSettings):
     # largest one (an 8-milestone learning path).
     ai_max_output_tokens: int = 900
     ai_context_max_chars: int = 500
+    # Bring-Your-Own-Key AI credentials (a user's own Gemini/OpenAI/Vertex
+    # AI key, used for their own requests instead of the deployment's
+    # AI_PROVIDER — see app.infrastructure.credential_vault). A base64
+    # Fernet key from `python -c "from cryptography.fernet import Fernet;
+    # print(Fernet.generate_key().decode())"`. None by default: an install
+    # that never sets this simply cannot use BYOK — credential_vault raises
+    # a clear, loud error naming exactly what to do rather than silently
+    # storing a credential unencrypted, which is the one thing this field
+    # exists to make impossible.
+    ai_credential_encryption_key: str | None = None
     # Test/demo-only escape hatch. Production stays honest when AI is disabled:
     # it reports that state instead of presenting heuristic output as AI work.
     ai_extract_fallback_enabled: bool = False
@@ -138,6 +148,15 @@ class Settings(BaseSettings):
     rate_limit_fetch_window_seconds: int = 60
     rate_limit_upload_requests: int = 20
     rate_limit_upload_window_seconds: int = 60
+    # A separate budget from rate_limit_ai_requests above on purpose:
+    # that one governs actual AI generation calls, this one governs writes
+    # to a user's own stored BYOK credential
+    # (PUT/DELETE /api/v1/me/ai-credentials/{provider}) — a different abuse
+    # surface (repeatedly hammering the encrypt/decrypt path, or probing
+    # what payload shapes are accepted) with no reason to share a budget
+    # with, or be starved by, ordinary AI usage.
+    rate_limit_ai_credential_writes: int = 10
+    rate_limit_ai_credential_write_window_seconds: int = 60
 
     # Remote MCP over Streamable HTTP + OAuth (issue #196). Off by default —
     # every existing deployment (local stdio companion, desktop app,
@@ -200,6 +219,8 @@ class Settings(BaseSettings):
         "rate_limit_fetch_window_seconds",
         "rate_limit_upload_requests",
         "rate_limit_upload_window_seconds",
+        "rate_limit_ai_credential_writes",
+        "rate_limit_ai_credential_write_window_seconds",
         "rate_limit_mcp_oauth_attempts",
         "rate_limit_mcp_oauth_window_seconds",
         "mcp_access_token_ttl_minutes",

@@ -316,6 +316,22 @@ export interface AISettings {
   context_max_chars: number
 }
 
+// Bring-Your-Own-Key AI credentials — a user's own Gemini/OpenAI/Vertex AI
+// key, used for their own requests since the cloud deployment has no
+// billing/credits system to pay for everyone's usage. Mirrors
+// app.api.schemas.ai_credentials.UserAICredentialSummary: `details` never
+// contains the secret itself, only whichever non-secret fields that
+// provider has (Vertex's project_id/location; empty for Gemini/OpenAI,
+// which have nothing non-secret in their payload).
+export type ByokProvider = 'gemini' | 'openai' | 'vertex'
+
+export interface UserAICredentialSummary {
+  provider: ByokProvider
+  details: Record<string, string>
+  created_at: string
+  updated_at: string
+}
+
 /** Mirrors app.domain.value_objects.NotificationAction. */
 export type NotificationActionId = 'start_session' | 'remind_later' | 'skip_today'
 

@@ -18,7 +18,7 @@ from app.api.deps import (
     ConversationRepo,
     CurrentUser,
     MistakeEventRepo,
-    OptionalAIProvider,
+    PerUserAIProvider,
     rate_limit_ai,
 )
 from app.api.schemas.conversations import (
@@ -79,7 +79,7 @@ async def send_message(
     current_user: CurrentUser,
     repo: ConversationRepo,
     mistake_repo: MistakeEventRepo,
-    provider: OptionalAIProvider,
+    provider: PerUserAIProvider,
 ) -> SendMessageResponse:
     session = _owned(repo, session_id, current_user.id)
 

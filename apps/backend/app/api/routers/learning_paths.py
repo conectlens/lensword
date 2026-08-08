@@ -9,7 +9,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api.deps import CurrentUser, LearningPathRepo, OptionalAIProvider, rate_limit_ai
+from app.api.deps import CurrentUser, LearningPathRepo, PerUserAIProvider, rate_limit_ai
 from app.api.schemas.learning_paths import (
     GeneratePathRequest,
     GeneratePathResponse,
@@ -36,7 +36,7 @@ router = APIRouter(prefix="/api/v1/learning-paths", tags=["learning paths"])
 async def generate_path(
     payload: GeneratePathRequest,
     current_user: CurrentUser,
-    provider: OptionalAIProvider,
+    provider: PerUserAIProvider,
     path_repo: LearningPathRepo,
 ) -> GeneratePathResponse:
     if provider is None:

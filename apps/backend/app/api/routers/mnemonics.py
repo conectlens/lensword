@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.deps import CurrentUser, DbSession, GroupRepo, LearningObservationRepo, MnemonicRepo, OptionalAIProvider, WordRepo
+from app.api.deps import CurrentUser, DbSession, GroupRepo, LearningObservationRepo, MnemonicRepo, PerUserAIProvider, WordRepo
 from app.api.mappers import mnemonic_to_response
 from app.api.schemas.review import (
     MnemonicCreateRequest,
@@ -75,7 +75,7 @@ async def suggest_mnemonic(
     current_user: CurrentUser,
     word_repo: WordRepo,
     group_repo: GroupRepo,
-    ai_provider: OptionalAIProvider,
+    ai_provider: PerUserAIProvider,
     db: DbSession,
 ) -> MnemonicSuggestionResponse:
     """Always 200, with the outcome carried in `status`.

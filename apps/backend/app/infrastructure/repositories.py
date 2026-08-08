@@ -28,6 +28,7 @@ from app.domain.entities import (
     Room,
     RoomPlacement,
     User,
+    UserAICredential,
     Word,
 )
 from app.domain.exceptions import ConcurrentModificationError
@@ -104,6 +105,7 @@ from app.infrastructure.models import (
     CompanionTaskModel,
     CompanionLoopStateModel,
     CompanionSamplingEventModel,
+    UserAICredentialModel,
 )
 
 logger = logging.getLogger(__name__)
@@ -3018,3 +3020,70 @@ class SqlAlchemyAcquisitionStateRepository:
             .limit(limit)
         )
         return [_acquisition_state_to_domain(m) for m in self.db.scalars(stmt)]
+
+
+def _user_ai_credential_to_domain(m: UserAICredentialModel) -> UserAICredential:
+    return UserAICredential(
+        user_id=m.user_id,
+        provider=m.provider,
+        encrypted_payload=m.encrypted_payload,
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+    )
+
+
+class SqlAlchemyUserAICredentialRepository:
+    """Persists and returns UserAICredential.encrypted_payload exactly as
+    given — this class never encrypts, decrypts, or otherwise interprets
+    the blob it stores (see app.domain.repositories.
+    UserAICredentialRepository's own docstring)."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get(self, user_id: int, provider: str) -> UserAICredential | None:
+        m = self.db.scalar(
+            select(UserAICredentialModel).where(
+                UserAICredentialModel.user_id == user_id, UserAICredentialModel.provider == provider
+            )
+        )
+        return _user_ai_credential_to_domain(m) if m else None
+
+    def list_for_user(self, user_id: int) -> list[UserAICredential]:
+        stmt = (
+            select(UserAICredentialModel)
+            .where(UserAICredentialModel.user_id == user_id)
+            .order_by(UserAICredentialModel.provider)
+        )
+        return [_user_ai_credential_to_domain(m) for m in self.db.scalars(stmt)]
+
+    def upsert(self, credential: UserAICredential) -> UserAICredential:
+        m = self.db.scalar(
+            select(UserAICredentialModel).where(
+                UserAICredentialModel.user_id == credential.user_id,
+                UserAICredentialModel.provider == credential.provider,
+            )
+        )
+        if m is None:
+            m = UserAICredentialModel(
+                user_id=credential.user_id,
+                provider=credential.provider,
+                created_at=credential.created_at,
+            )
+            self.db.add(m)
+        m.encrypted_payload = credential.encrypted_payload
+        m.updated_at = credential.updated_at
+        self.db.flush()
+        return _user_ai_credential_to_domain(m)
+
+    def delete(self, user_id: int, provider: str) -> bool:
+        m = self.db.scalar(
+            select(UserAICredentialModel).where(
+                UserAICredentialModel.user_id == user_id, UserAICredentialModel.provider == provider
+            )
+        )
+        if m is None:
+            return False
+        self.db.delete(m)
+        self.db.flush()
+        return True
