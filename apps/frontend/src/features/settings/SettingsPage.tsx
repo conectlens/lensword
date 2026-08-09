@@ -19,6 +19,7 @@ import type { ClipboardCapture, ClipboardConfig } from '../../lib/clipboardCaptu
 import { autostartStatus, isAutostartDesktopAvailable, setAutostartEnabled } from '../../lib/autostart'
 import { captureSelectedText, configureSelectionCapture, isSelectionCaptureDesktopAvailable, selectionCaptureStatus } from '../../lib/selectionCapture'
 import type { SelectionCapture, SelectionCaptureStatus } from '../../lib/selectionCapture'
+import { Select } from '../../components/ui/Select'
 
 const INTENSITY_LABELS = ['', 'Gentle', 'Light', 'Balanced', 'Firm', 'Intense']
 
@@ -124,15 +125,16 @@ export function SettingsPage() {
 
         <label className="mb-4 flex flex-col gap-1 text-sm text-white/70">
           Review scheduler
-          <select
+          <Select
+            size="sm"
             aria-label="Review scheduler"
             value={settings.scheduler}
-            onChange={(event) => patch({ scheduler: event.target.value as RecallSettings['scheduler'] })}
-            className="rounded-lg bg-white/5 px-3 py-2 text-white"
-          >
-            <option value="sm2">SM-2 (classic)</option>
-            <option value="fsrs">FSRS (adaptive)</option>
-          </select>
+            onValueChange={(next) => patch({ scheduler: next as RecallSettings['scheduler'] })}
+            options={[
+              { value: 'sm2', label: 'SM-2 (classic)' },
+              { value: 'fsrs', label: 'FSRS (adaptive)' },
+            ]}
+          />
           <span className="text-xs text-white/40">FSRS schedules each next review from its estimated retrievability.</span>
         </label>
 
@@ -360,18 +362,14 @@ function SelectedTextCaptureCard() {
           {groups.length > 0 && (
             <label className="mt-3 block text-sm text-white/70">
               Review group
-              <select
+              <Select
+                size="sm"
+                className="ml-2"
                 aria-label="Selected-text review group"
                 value={groupId}
-                onChange={(event) => setGroupId(event.target.value)}
-                className="ml-2 rounded bg-white/10 p-2 text-white"
-              >
-                {groups.map((group) => (
-                  <option key={group.id} value={group.id}>
-                    {group.name}
-                  </option>
-                ))}
-              </select>
+                onValueChange={setGroupId}
+                options={groups.map((group) => ({ value: String(group.id), label: group.name }))}
+              />
             </label>
           )}
           <div className="mt-3 flex flex-wrap gap-2">
@@ -672,10 +670,16 @@ export function AISettingsCard({ settings, onSave }: { settings: AISettings; onS
       <p className="mt-1 text-sm text-white/50">Deployment-wide configuration. Only administrators can change these values.</p>
       <div className="mt-5 grid gap-4 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-sm text-white/70">Provider
-          <select aria-label="AI provider" value={draft.provider} onChange={(e) => setDraft({ ...draft, provider: e.target.value as AISettings['provider'] })} className="rounded-lg bg-white/5 px-3 py-2 text-white">
-            <option value="none">Disabled</option>
-            <option value="ollama">Ollama</option>
-          </select>
+          <Select
+            size="sm"
+            aria-label="AI provider"
+            value={draft.provider}
+            onValueChange={(next) => setDraft({ ...draft, provider: next as AISettings['provider'] })}
+            options={[
+              { value: 'none', label: 'Disabled' },
+              { value: 'ollama', label: 'Ollama' },
+            ]}
+          />
         </label>
         <label className="flex flex-col gap-1 text-sm text-white/70">Model
           <input aria-label="AI model" value={draft.model} onChange={(e) => setDraft({ ...draft, model: e.target.value })} className="rounded-lg bg-white/5 px-3 py-2 text-white" />
@@ -725,18 +729,12 @@ function TimeZoneSelect({ value, onChange }: { value: string; onChange: (v: stri
 
   return (
     <div className="flex flex-col gap-2">
-      <select
+      <Select
         aria-label="Time zone"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none focus:border-white/30"
-      >
-        {zones.map((zone) => (
-          <option key={zone} value={zone} className="bg-slate-900">
-            {zone}
-          </option>
-        ))}
-      </select>
+        onValueChange={onChange}
+        options={zones.map((zone) => ({ value: zone, label: zone }))}
+      />
       {value !== detected && (
         <button
           type="button"

@@ -5,6 +5,7 @@ import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { Icon } from '../../components/ui/Icon'
 import { Spinner } from '../../components/ui/Spinner'
+import { Select } from '../../components/ui/Select'
 
 /**
  * Turning a stated goal into milestones you can tell you have finished
@@ -157,18 +158,14 @@ export function LearningPathsPage() {
         <div className="flex flex-wrap items-center gap-3">
           <label className="text-sm text-white/70">
             Language
-            <select
-              value={language}
-              onChange={(event) => setLanguage(event.target.value)}
+            <Select
+              size="sm"
+              className="ml-2"
               aria-label="Target language"
-              className="ml-2 rounded bg-white/10 p-2 text-white"
-            >
-              {[...new Set(groups.map((group) => group.target_language))].map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
+              value={language}
+              onValueChange={setLanguage}
+              options={[...new Set(groups.map((group) => group.target_language))].map((value) => ({ value, label: value }))}
+            />
           </label>
           <Button loading={busy} disabled={!goal.trim() || !language} onClick={() => void generate()}>
             Generate a path

@@ -3,6 +3,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 import { BulkEditBar } from './BulkEditBar'
 import { wordsApi } from '../../lib/api'
+import { selectOption } from '../../test/selectOption'
 
 vi.mock('../../lib/api', () => ({
   wordsApi: { bulkEdit: vi.fn() },
@@ -16,7 +17,7 @@ beforeEach(() => {
 })
 
 describe('BulkEditBar', () => {
-  it('will not apply when nothing has been set', () => {
+  it('will not apply when nothing has been set', async () => {
     // A form that wiped every field it did not mention would destroy work with
     // one careless apply, and there is no undo here.
     render(<BulkEditBar selectedIds={[1, 2]} onApplied={vi.fn()} onClear={vi.fn()} />)
@@ -26,7 +27,7 @@ describe('BulkEditBar', () => {
 
   it('sends only the fields that were set', async () => {
     render(<BulkEditBar selectedIds={[1, 2]} onApplied={vi.fn()} onClear={vi.fn()} />)
-    fireEvent.change(screen.getByLabelText('Bulk CEFR level'), { target: { value: 'B1' } })
+    await selectOption('Bulk CEFR level', 'B1')
     fireEvent.click(screen.getByRole('button', { name: 'Apply to selected' }))
 
     await waitFor(() =>
@@ -37,7 +38,7 @@ describe('BulkEditBar', () => {
     )
   })
 
-  it('offers no control that could overwrite terms', () => {
+  it('offers no control that could overwrite terms', async () => {
     // Excluded on purpose: overwriting forty terms with one value is a mistake
     // waiting to be made irreversibly.
     render(<BulkEditBar selectedIds={[1]} onApplied={vi.fn()} onClear={vi.fn()} />)
@@ -48,7 +49,7 @@ describe('BulkEditBar', () => {
 
   it('reports how many cards were changed', async () => {
     render(<BulkEditBar selectedIds={[1, 2]} onApplied={vi.fn()} onClear={vi.fn()} />)
-    fireEvent.change(screen.getByLabelText('Bulk CEFR level'), { target: { value: 'B1' } })
+    await selectOption('Bulk CEFR level', 'B1')
     fireEvent.click(screen.getByRole('button', { name: 'Apply to selected' }))
 
     expect(await screen.findByRole('status')).toHaveTextContent('Updated 2 cards.')
@@ -60,7 +61,7 @@ describe('BulkEditBar', () => {
     bulkEdit.mockResolvedValue({ updated: 1, skipped: [7] })
 
     render(<BulkEditBar selectedIds={[1, 7]} onApplied={vi.fn()} onClear={vi.fn()} />)
-    fireEvent.change(screen.getByLabelText('Bulk CEFR level'), { target: { value: 'B1' } })
+    await selectOption('Bulk CEFR level', 'B1')
     fireEvent.click(screen.getByRole('button', { name: 'Apply to selected' }))
 
     expect(await screen.findByRole('status')).toHaveTextContent('1 could not be changed')
@@ -71,7 +72,7 @@ describe('BulkEditBar', () => {
     const onApplied = vi.fn()
 
     render(<BulkEditBar selectedIds={[1]} onApplied={onApplied} onClear={vi.fn()} />)
-    fireEvent.change(screen.getByLabelText('Bulk CEFR level'), { target: { value: 'B1' } })
+    await selectOption('Bulk CEFR level', 'B1')
     fireEvent.click(screen.getByRole('button', { name: 'Apply to selected' }))
 
     expect(await screen.findByRole('status')).toHaveTextContent('Could not apply')

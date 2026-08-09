@@ -8,6 +8,7 @@ import { Card } from '../../components/ui/Card'
 import { Spinner } from '../../components/ui/Spinner'
 import { OcrCapture } from './OcrCapture'
 import { SourceLoader } from './SourceLoader'
+import { ANY_OPTION, Select } from '../../components/ui/Select'
 
 export function ExtractPage() {
   const { groupId } = useParams()
@@ -51,7 +52,14 @@ export function ExtractPage() {
       <SourceLoader onLoaded={setText} />
       <OcrCapture onLoaded={setText} />
       <textarea value={text} onChange={(event) => setText(event.target.value)} rows={10} placeholder="Paste a passage, or load one from a file or URL above…" className="w-full rounded-lg border border-white/10 bg-white/5 p-3 text-white" />
-      <label className="text-sm text-white/70">Minimum CEFR level <select value={minLevel} onChange={(event) => setMinLevel(event.target.value)} className="ml-2 rounded bg-white/10 p-2 text-white"><option value="">Any</option>{['A1','A2','B1','B2','C1','C2'].map((level) => <option key={level} value={level}>{level}</option>)}</select></label>
+      <label className="text-sm text-white/70">Minimum CEFR level <Select
+        size="sm"
+        className="ml-2"
+        aria-label="Minimum CEFR level"
+        value={minLevel || ANY_OPTION}
+        onValueChange={(next) => setMinLevel(next === ANY_OPTION ? '' : next)}
+        options={[{ value: ANY_OPTION, label: 'Any' }, ...['A1','A2','B1','B2','C1','C2'].map((level) => ({ value: level, label: level }))]}
+      /></label>
       <Button onClick={extract} loading={loading} disabled={!text.trim()}>Extract with AI</Button>
     </Card>
     {result?.status === 'disabled' && <p className="text-amber-200">AI is not configured for this deployment.</p>}
