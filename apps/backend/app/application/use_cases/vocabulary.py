@@ -45,6 +45,24 @@ def _require_room_owner(room_repo: RoomRepository, room_id: int, owner_id: int) 
     return room
 
 
+def _invalidate_language_profile(owner_id: int) -> None:
+    """Drop this learner's cached language profile (issue #342).
+
+    Called by the use cases that change what the profile is derived from —
+    the code performing a mutation is the only place that reliably knows a
+    mutation happened, which is why the cache does not try to infer it from
+    unrelated signals.
+
+    Imported inside the function on purpose: `mcp_dev_workflow` imports the
+    ownership helpers from this module, so a module-level import here would
+    close that cycle. The call is a dict `pop`, so the cost of doing the
+    lookup per mutation is not worth restructuring two modules to avoid.
+    """
+    from app.application.use_cases.mcp_dev_workflow import LANGUAGE_PROFILE_CACHE
+
+    LANGUAGE_PROFILE_CACHE.invalidate(owner_id)
+
+
 @dataclass(frozen=True, slots=True)
 class GroupSummary:
     group: Group
@@ -60,7 +78,9 @@ class CreateGroupUseCase:
 
     def execute(self, owner_id: int, name: str, target_language: SupportedLanguage) -> Group:
         group = Group(id=None, owner_id=owner_id, name=name.strip(), target_language=target_language)
-        return self.group_repo.add(group)
+        created = self.group_repo.add(group)
+        _invalidate_language_profile(owner_id)
+        return created
 
 
 class ListGroupsUseCase:
@@ -114,6 +134,7 @@ class DeleteGroupUseCase:
     def execute(self, owner_id: int, group_id: int) -> None:
         _require_group_owner(self.group_repo, group_id, owner_id)
         self.group_repo.delete(group_id)
+        _invalidate_language_profile(owner_id)
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,6 +212,7 @@ class AddWordUseCase:
         word.set_mnemonic(data.mnemonic)
         added = self.word_repo.add(word)
         self._recompute_edges(owner_id, added.id)
+        _invalidate_language_profile(owner_id)
         return added
 
     def _recompute_edges(self, owner_id: int, word_id: int | None) -> None:
@@ -368,6 +390,7 @@ class DeleteWordUseCase:
     def execute(self, owner_id: int, word_id: int) -> None:
         _require_word_owner(self.word_repo, self.group_repo, word_id, owner_id)
         self.word_repo.delete(word_id)
+        _invalidate_language_profile(owner_id)
 
 
 class UpdateWordAssociationsUseCase:

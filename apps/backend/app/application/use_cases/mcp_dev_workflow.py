@@ -31,6 +31,7 @@ from app.domain.repositories import (
     WordRepository,
 )
 from app.domain.services.cefr_progress import MASTERY_STRENGTH
+from app.domain.services.per_user_cache import PerUserTTLCache
 from app.domain.services.diagnosis_contracts import LearningObservation
 from app.domain.value_objects import ReviewOutcome, SessionMode, utcnow
 
@@ -52,12 +53,61 @@ class LanguageProfile:
     group_count: int
 
 
+# One shared instance, because the reads and the invalidations happen in
+# different modules: `bindings.py` constructs the use case fresh per request,
+# while the mutations that make an entry wrong live in `vocabulary.py`. A
+# cache owned by either one would be invisible to the other. This mirrors
+# `ai.py`/`interventions.py`, which each hold a module-level `AIResponseCache`
+# for the same reason.
+LANGUAGE_PROFILE_CACHE: PerUserTTLCache[LanguageProfile] = PerUserTTLCache()
+
+
 class GetLanguageProfileUseCase:
-    def __init__(self, group_repo: GroupRepository, word_repo: WordRepository):
+    """The learner's aggregate counts, cached per user (issue #342).
+
+    Deriving this is a full scan of every group and every word the learner
+    owns, and it is reachable through `lensword_get_language_profile`, which
+    an agent may call before or after each word lookup or exercise — so the
+    uncached cost was one whole-collection scan per call, repeatedly, within
+    a single session.
+
+    The cache is injected rather than reached for, so a caller that must see
+    live data (or a test that wants no caching at all) can pass its own.
+    `execute`'s signature is unchanged.
+
+    **What invalidation covers.** The use cases that add or remove a word, or
+    create or delete a group, drop the entry themselves — those change the
+    counts structurally. Answering a review also moves `known_word_count` and
+    `active_word_count` as repetitions and strength cross the mastery
+    threshold, and that deliberately rides the TTL instead: it happens on the
+    hot path of every single review, the drift is at most a few words, and
+    the issue's own acceptance criterion allows "immediately via invalidation
+    or within one TTL window". Renaming a group is not invalidated because no
+    field of `LanguageProfile` depends on a group's name.
+    """
+
+    def __init__(
+        self,
+        group_repo: GroupRepository,
+        word_repo: WordRepository,
+        cache: PerUserTTLCache[LanguageProfile] | None = LANGUAGE_PROFILE_CACHE,
+    ):
         self.group_repo = group_repo
         self.word_repo = word_repo
+        self.cache = cache
 
     def execute(self, user_id: int) -> LanguageProfile:
+        now = utcnow()
+        if self.cache is not None:
+            cached = self.cache.get(user_id, now)
+            if cached is not None:
+                return cached
+        profile = self._derive(user_id)
+        if self.cache is not None:
+            self.cache.put(user_id, profile, now)
+        return profile
+
+    def _derive(self, user_id: int) -> LanguageProfile:
         groups = self.group_repo.list_by_owner(user_id)
         words = [word for group in groups for word in self.word_repo.list_by_group(group.id or 0)]
         known = sum(
