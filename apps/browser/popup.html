@@ -9,13 +9,22 @@
   <body>
     <main>
       <h1>LensWord Capture</h1>
-      <label>API URL<input id="api-url" type="url" required></label>
-      <label>Access token<input id="token" type="password" autocomplete="off"></label>
-      <label>Group ID<input id="group-id" type="number" min="1" required></label>
-      <button id="save" type="button">Save settings</button>
+
+      <section id="signed-out">
+        <label>Email<input id="email" type="email" required autocomplete="username"></label>
+        <label>Password<input id="password" type="password" required autocomplete="current-password"></label>
+        <button id="sign-in" type="button">Sign in</button>
+      </section>
+
+      <section id="signed-in" hidden>
+        <p id="account" class="account"></p>
+        <label>Save words into<select id="group"></select></label>
+        <button id="sign-out" type="button" class="secondary">Sign out</button>
+      </section>
+
       <p id="status" role="status"></p>
       <p class="hint">Select a word on any page, right-click it, then choose “Save to LensWord”.</p>
     </main>
-    <script src="popup.js"></script>
+    <script type="module" src="popup.js"></script>
   </body>
 </html>
