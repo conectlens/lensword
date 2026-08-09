@@ -1,12 +1,21 @@
 """Durable, provider-neutral companion sessions (#193)."""
+import logging
 from typing import Callable
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api.deps import CompanionSessionRepo, CurrentUser, PerUserAIProvider, RecallSettingsRepo
+from app.api.deps import (
+    CompanionSessionRepo,
+    CurrentUser,
+    PerUserAIProvider,
+    RecallSettingsRepo,
+    rate_limit_ai,
+)
 from app.api.schemas.companion import (
     CompanionActionResponse,
     CompanionExportResponse,
+    CompanionChatRequest,
+    CompanionChatResponse,
     CompanionSessionCreateRequest,
     CompanionSessionResponse,
     CompanionSessionTransferRequest,
@@ -20,9 +29,27 @@ from app.application.use_cases.companion_sessions import (
     TransitionCompanionSessionUseCase,
     SummarizeCompanionSessionUseCase,
 )
-from app.domain.exceptions import ConcurrentModificationError, EntityNotFoundError
-from app.domain.services.companion_sessions import CompanionSession, CompanionSessionStatus, CompanionTurn
+from app.domain.exceptions import (
+    AIProviderUnavailableError,
+    ConcurrentModificationError,
+    EntityNotFoundError,
+)
+from app.domain.services.companion_sessions import (
+    CompanionSession,
+    CompanionSessionStatus,
+    CompanionTurn,
+    CompanionTurnRole,
+)
+from app.domain.services.conversation import (
+    Difficulty,
+    Speaker,
+    Turn,
+    build_context,
+    validate_reply,
+)
 from app.domain.value_objects import utcnow
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/companion/sessions", tags=["companion"])
 
@@ -273,3 +300,129 @@ def delete_content(session_id: str, current_user: CurrentUser, settings_repo: Re
     _require_enabled(settings_repo, current_user.id)
     _owned(session_repo, current_user.id, session_id)
     session_repo.delete_content(current_user.id, session_id)
+
+
+def _difficulty_of(value: str | None) -> Difficulty:
+    try:
+        return Difficulty(value)
+    except ValueError:
+        # Stored as a free-form string, so an unrecognised value is a data
+        # possibility rather than a programming error.
+        return Difficulty.STEADY
+
+
+def _turn_response(turn: CompanionTurn) -> CompanionTurnResponse:
+    return CompanionTurnResponse(
+        id=turn.id,
+        session_id=turn.session_id,
+        role=turn.role,
+        content=turn.content,
+        activity_id=turn.activity_id,
+        operation_id=turn.operation_id,
+        created_at=turn.created_at,
+    )
+
+
+def _record(session_repo, session_id: str, role: CompanionTurnRole, content: str, operation_id: str | None) -> CompanionTurn:
+    return session_repo.add_turn(
+        CompanionTurn(
+            id=None,
+            session_id=session_id,
+            role=role,
+            content=content,
+            activity_id=None,
+            operation_id=operation_id,
+            created_at=utcnow(),
+        )
+    )
+
+
+@router.post("/{session_id}/chat", response_model=CompanionChatResponse, dependencies=[Depends(rate_limit_ai)])
+async def chat(
+    session_id: str,
+    payload: CompanionChatRequest,
+    current_user: CurrentUser,
+    settings_repo: RecallSettingsRepo,
+    session_repo: CompanionSessionRepo,
+    provider: PerUserAIProvider,
+) -> CompanionChatResponse:
+    """Answer one in-app chat message inside an existing companion session.
+
+    `POST /turns` exists for an external companion that has already produced
+    a turn elsewhere. An in-app chat has no such external author, so this
+    endpoint owns both halves of the exchange — while still writing them as
+    ordinary companion turns, so a conversation started in the app stays
+    readable, exportable and resumable through every other companion route.
+
+    The user's turn is stored *before* the provider is called. A model that
+    is down then costs the answer, not what the person typed.
+    """
+    _require_enabled(settings_repo, current_user.id)
+    session = _owned(session_repo, current_user.id, session_id)
+    if session.status is not CompanionSessionStatus.ACTIVE:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Session is not active")
+
+    # A retried request must not produce a second copy of the exchange. The
+    # assistant half is keyed off the same id so both halves are recoverable
+    # together rather than the reply being regenerated against a turn that
+    # was already stored.
+    assistant_operation_id = f"{payload.operation_id}:assistant" if payload.operation_id else None
+    if payload.operation_id:
+        existing = session_repo.find_turn_by_operation(current_user.id, session_id, payload.operation_id)
+        if existing is not None:
+            answered = session_repo.find_turn_by_operation(current_user.id, session_id, assistant_operation_id)
+            return CompanionChatResponse(
+                status="ok" if answered else "unavailable",
+                user_turn=_turn_response(existing),
+                assistant_turn=_turn_response(answered) if answered else None,
+                detail=None if answered else "The previous attempt was not answered. Send again to retry.",
+            )
+
+    history = [
+        Turn(
+            speaker=Speaker.LEARNER if turn.role is CompanionTurnRole.USER else Speaker.TUTOR,
+            text=turn.content,
+        )
+        for turn in session_repo.list_turns(current_user.id, session_id)
+    ]
+
+    try:
+        user_turn = _record(session_repo, session_id, CompanionTurnRole.USER, payload.content, payload.operation_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+    if provider is None:
+        return CompanionChatResponse(
+            status="disabled",
+            user_turn=_turn_response(user_turn),
+            detail="AI is not configured for this deployment, so the companion cannot reply.",
+        )
+
+    context = build_context(
+        target_language=session.language or "English",
+        difficulty=_difficulty_of(session.difficulty),
+        scenario=session.goal,
+        # The session's own transcript, injected as data and never as
+        # instructions — a companion turn is user-supplied text.
+        vocabulary=[],
+        recent_mistakes=[],
+        history=history,
+    )
+
+    try:
+        raw = await provider.converse(context, payload.content)
+    except AIProviderUnavailableError as exc:
+        return CompanionChatResponse(status="unavailable", user_turn=_turn_response(user_turn), detail=str(exc))
+
+    try:
+        answer, _corrections = validate_reply(raw, payload.content)
+    except ValueError as exc:
+        logger.info("Companion reply rejected: %s", exc)
+        return CompanionChatResponse(status="unavailable", user_turn=_turn_response(user_turn), detail=str(exc))
+
+    assistant_turn = _record(session_repo, session_id, CompanionTurnRole.ASSISTANT, answer, assistant_operation_id)
+    return CompanionChatResponse(
+        status="ok",
+        user_turn=_turn_response(user_turn),
+        assistant_turn=_turn_response(assistant_turn),
+    )

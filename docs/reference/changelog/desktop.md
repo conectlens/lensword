@@ -9,6 +9,28 @@ Status — Desktop Application: **unreleased**.
 
 Every entry states exactly what was verified — a passing automated test does not imply a platform was manually checked, and a manual check on one OS does not imply another. See [Verification levels](/reference/trust/verification-levels) for what each status means.
 
+<a id="companion-chat-assistant"></a>
+
+### Added: A chat assistant is available from the main navigation on web and desktop. Conversations are saved to the account and can be picked up from any connected companion.
+
+*2026-08-10* — verification: automated tests: passed
+
+Users can hold a conversation with the assistant inside the app on web and desktop instead of only through an external MCP client. A provider that is switched off or temporarily down shows an explanatory message and never discards what was typed; when the companion feature is off for the account, the screen explains that rather than failing.
+
+<details><summary>Technical detail</summary>
+
+Adds POST /api/v1/companion/sessions/{id}/chat, which records the user's turn, asks the configured AIProvider via converse(), and records the answer — both as ordinary companion turns, so an in-app conversation stays readable, exportable and resumable through every existing companion route rather than living in a parallel store. The pre-existing POST /turns only records a turn an external MCP companion already produced and never calls a provider, so no endpoint could answer an in-app message before this. The user's turn is stored before the provider is called, and operation_id makes a retried send idempotent (the assistant half is keyed off the same id) so a retry returns the stored exchange instead of prompting the model twice. Frontend adds CompanionChatPage at /assistant, gated on the ai_companion_enabled recall setting, which is now exposed on the frontend RecallSettings type.
+
+</details>
+
+**Known limitations:**
+- Replies are returned whole rather than streamed; the UI shows a "Thinking…" indicator for the duration of the call instead of incremental text.
+- Sessions are not listed or resumable from the UI yet — ending a chat starts a fresh one next time, though the finished session remains readable through the existing companion export route.
+- Corrections returned by the shared converse() contract are parsed but not displayed here; the conversation tutor at /tutor remains the surface that shows them.
+- Not exercised against a live AI provider in a running deployment; the provider interaction is covered by tests using a stubbed provider.
+
+References: [#343](https://github.com/conectlens/lensword/issues/343)
+
 <a id="weekly-report-action-feedback"></a>
 
 ### Fixed: The weekly report's "Generate AI interpretation" and "Refresh factual snapshot" buttons now show a spinner while working and a visible message when they fail, instead of appearing to do nothing.
