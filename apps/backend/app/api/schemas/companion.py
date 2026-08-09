@@ -62,6 +62,30 @@ class CompanionActionResponse(BaseModel):
     session: CompanionSessionResponse
 
 
+class CompanionChatRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=10000)
+    operation_id: str | None = Field(default=None, max_length=128)
+
+
+class CompanionChatResponse(BaseModel):
+    """One in-app chat exchange.
+
+    `POST /turns` records a turn that some external companion already
+    produced; this records the user's turn *and* asks the configured
+    provider for the answer, which is what an in-app chat surface needs.
+
+    Always HTTP 200 with a `status`, matching the conversation tutor: a
+    provider that is switched off or briefly down is a normal state of a
+    healthy install, not a client error. `user_turn` is present for every
+    status, so a failed reply still leaves what the user typed on screen.
+    """
+
+    status: str  # ok | disabled | unavailable
+    user_turn: CompanionTurnResponse
+    assistant_turn: CompanionTurnResponse | None = None
+    detail: str | None = None
+
+
 class CompanionSessionTransferRequest(BaseModel):
     """Reassigns which companion connection currently controls a session
     (#193 TODO 3), e.g. handing an in-progress session from a desktop client
