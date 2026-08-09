@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext'
 import { settingsApi } from '../../lib/api'
 import type { ProfileOverview } from '../../lib/types'
 import { Card } from '../../components/ui/Card'
-import { Icon } from '../../components/ui/Icon'
+import { Icon, resolveIconName } from '../../components/ui/Icon'
 import { Spinner } from '../../components/ui/Spinner'
 import { WeaknessesTab } from './WeaknessesTab'
 import { CefrProgressTab } from './CefrProgressTab'
@@ -78,7 +78,7 @@ export function ProfilePage() {
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-5">
           {overview.badges.map((b) => (
             <Card key={b.code} className={`flex flex-col items-center gap-2 p-5 text-center ${b.earned ? '' : 'opacity-30'}`}>
-              <Icon name={b.icon} className={`text-3xl ${b.earned ? 'text-primary' : 'text-white/50'}`} />
+              <Icon name={resolveIconName(b.icon)} className={`text-3xl ${b.earned ? 'text-primary' : 'text-white/50'}`} />
               <p className="text-sm font-semibold text-white">{b.name}</p>
               <p className="text-xs text-white/40">{b.description}</p>
             </Card>
