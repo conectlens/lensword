@@ -9,6 +9,29 @@ Status — Web Application: **unreleased**.
 
 Every entry states exactly what was verified — a passing automated test does not imply a platform was manually checked, and a manual check on one OS does not imply another. See [Verification levels](/reference/trust/verification-levels) for what each status means.
 
+<a id="pronunciation-playback"></a>
+
+### Added: Review and stabilization cards now have a speaker button that reads the word aloud in its own language.
+
+*2026-08-10* — verification: automated tests: passed
+
+A word can be heard in the language it is stored in while reviewing it, rather than read by whatever default voice the browser picked. Where playback isn't possible — no speech support, no installed voice for that language, or the "Other" language placeholder — the button stays visible and disabled with the reason on it, instead of silently doing nothing.
+
+<details><summary>Technical detail</summary>
+
+Adds lib/speech.ts (a Record<SupportedLanguage, string | null> mapping each stored language label to a BCP-47 tag, plus voice matching), lib/useSpeech.ts (a hook over window.speechSynthesis that subscribes to voiceschanged, because getVoices() is empty on first call in most browsers), and components/ui/PronunciationButton.tsx, wired into ReviewSessionPage and AcquisitionSessionPage. Voice selection prefers an exact locale match and falls back to any voice sharing the primary subtag, so a device carrying only es-MX still speaks Spanish. The issue described SupportedLanguage as free text with a KNOWN_LANGUAGES suggestion list; it is in fact a closed enum of ten values and KNOWN_LANGUAGES does not exist, so the mapping is exhaustive by type rather than open-ended. The pre-existing speechSynthesis call in PracticePage set no lang at all and now resolves one through the same layer. Adds a volume_up entry to the type-safe icon registry.
+
+</details>
+
+**Known limitations:**
+- Playback uses the browser's own speech engine, so which voices exist and how good they sound is a property of the user's device and operating system, not of LensWord.
+- The "Other" language stores no locale and cannot be spoken; the control is disabled and says so.
+- Only one regional variant is preferred per language (for example pt-PT for Portuguese); a device with only the other variant installed falls back to it via primary-subtag matching, but the variant is not user-selectable.
+- The button is on the review and stabilization cards only; the word list and MnemoLab card do not have it yet.
+- Not verified with real audio output in a browser — the speech API is covered by tests against a mocked speechSynthesis, which cannot confirm how a voice actually sounds.
+
+References: [#335](https://github.com/conectlens/lensword/issues/335)
+
 <a id="weekly-report-action-feedback"></a>
 
 ### Fixed: The weekly report's "Generate AI interpretation" and "Refresh factual snapshot" buttons now show a spinner while working and a visible message when they fail, instead of appearing to do nothing.

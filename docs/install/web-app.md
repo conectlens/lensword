@@ -123,6 +123,15 @@ to regenerate it yourself; both scripts are documented inline. Static
 fallback:
 ![Forced-recall review session prompting for the translation of "hablar"](../media/screenshots/web-review-session.webp)
 
+A speaker button beside the word reads it aloud in the language the word is
+stored in, using your browser's own speech engine — so which voices are
+available, and how natural they sound, depends on your device and operating
+system rather than on LensWord. When playback isn't possible (no speech
+support in the browser, no installed voice for that language, or a word
+filed under the "Other" language, which carries no locale to speak it with)
+the button stays visible but disabled and states the reason, rather than
+looking live and producing silence.
+
 Five presentation modes share this same session mechanic (`mode` query
 param on `/review`), not five separate implementations — see
 [Architecture § One `ReviewSessionPage`, not five](/learn/architecture):
