@@ -6,6 +6,7 @@ import { WordFormPage } from './WordFormPage'
 import { groupsApi } from '../../lib/api'
 import { loadQueuedOperations, queueLength } from '../../lib/offlineQueue'
 import type { Group } from '../../lib/types'
+import { selectOption } from '../../test/selectOption'
 
 vi.mock('../../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../../lib/api')>('../../lib/api')
@@ -60,7 +61,7 @@ describe('WordFormPage without a group in the URL', () => {
 
     renderAt('/words/new')
 
-    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Group' })).toHaveValue('1'))
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Group' })).toHaveTextContent('Travel'))
     fireEvent.change(screen.getByPlaceholderText('Enter the word'), { target: { value: 'hola' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save word' }))
 
@@ -73,8 +74,8 @@ describe('WordFormPage without a group in the URL', () => {
 
     renderAt('/words/new')
 
-    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Group' })).toHaveValue('1'))
-    fireEvent.change(screen.getByRole('combobox', { name: 'Group' }), { target: { value: '2' } })
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Group' })).toHaveTextContent('Travel'))
+    await selectOption('Group', 'Work')
     fireEvent.change(screen.getByPlaceholderText('Enter the word'), { target: { value: 'trabajo' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save word' }))
 

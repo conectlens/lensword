@@ -133,7 +133,7 @@ function CreateRoomModal({ groups, onClose, onCreated }: { groups: Group[]; onCl
         <Select
           label="Which group's words will live here?"
           value={String(groupId)}
-          onChange={(e) => setGroupId(Number(e.target.value))}
+          onValueChange={(next) => setGroupId(Number(next))}
           options={groups.map((g) => ({ value: String(g.id), label: `${g.name} (${g.word_count} words)` }))}
         />
         <div className="flex flex-col gap-2">

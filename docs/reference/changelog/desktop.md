@@ -29,6 +29,27 @@ Both buttons in WeeklyReportPage.tsx called reportsApi.<...>().then(setReport) d
 
 References: [#344](https://github.com/conectlens/lensword/issues/344)
 
+<a id="themed-select-component"></a>
+
+### Fixed: Dropdowns now open in the app's own dark styling instead of the browser's white system popup, and every dropdown in the app uses the same control.
+
+*2026-08-09* — verification: automated tests: passed
+
+Opening any dropdown in dark mode now shows a dark, app-styled list instead of a white system popup. Keyboard and screen-reader operation is preserved, and dropdowns look and behave identically everywhere in the app rather than varying by screen.
+
+<details><summary>Technical detail</summary>
+
+components/ui/Select.tsx wrapped a native `<select>` and styled its `<option>` elements, which browsers very largely ignore because the open dropdown is OS-level chrome rather than part of the page — so the popup kept rendering light against the app's dark surface no matter what CSS was applied. Rebuilt on @radix-ui/react-select, an unstyled accessible listbox primitive, so the open list is ordinary markup the app themes itself. Radix was chosen over a hand-rolled listbox because the parts that are easy to get wrong are the ones nobody notices until someone depends on them: roving focus, typeahead, aria-activedescendant, returning focus to the trigger on close. All 16 raw `<select>` elements across 11 files were migrated to the shared component, along with the 4 existing call sites, so the audit the issue asked for is complete rather than partial. The API is value/onValueChange rather than a native change event, and gained a size variant for the compact inline dropdowns several toolbars use. Radix reserves the empty string for "nothing selected", so filters offering "Any" or "Leave unchanged" use an exported ANY_OPTION sentinel that call sites map back themselves. Test setup gained the jsdom stubs the primitive needs (hasPointerCapture, ResizeObserver, DOMRect) and a shared selectOption helper that drives the control by keyboard.
+
+</details>
+
+**Known limitations:**
+- Visual QA across light and dark themes was not performed. The change is verified by unit tests asserting the open list is rendered by the app rather than as native popup chrome, which is the structural cause of the bug, but no dropdown was observed in a real browser in either theme.
+- Adds a runtime dependency (@radix-ui/react-select) to a frontend that previously had only React, the router and the icon library. The bundle grows accordingly. The issue names this trade explicitly, on the grounds that a hand-rolled listbox trades bundle size for accessibility risk.
+- The desktop shell's Content-Security-Policy was read and does permit the inline styles the primitive uses for positioning (style-src 'self' 'unsafe-inline'), but this was not confirmed by running the packaged desktop build.
+
+References: [#341](https://github.com/conectlens/lensword/issues/341)
+
 <a id="icon-name-type-safety"></a>
 
 ### Fixed: Two icons in the OAuth authorisation screen were silently drawing a placeholder glyph instead of the intended tick and empty circle, because they named icons the app does not define.
@@ -39,7 +60,7 @@ The consent screen's per-scope tick and empty-circle indicators now render corre
 
 <details><summary>Technical detail</summary>
 
-Completes issue #340. The migration from the Material Symbols ligature font to lucide-react removed the failure mode where a mistyped icon name rendered as literal text, but Icon.tsx still declared name as a plain string over a Record<string, LucideIcon> with a runtime fallback, so an unknown name survived to runtime as a placeholder glyph — quieter than before and no easier to catch in review. ICONS is now inferred with `satisfies` rather than annotated (annotating it widened the keys back to string, which would have made the new type mean nothing), IconName is keyof typeof ICONS, and the prop takes that type. Button.icon, EmptyState.icon and SettingsPage's ToggleRow propagate it, and the authored icon lists in LandingPage and RoomsPage are typed so a bad name fails where it is written. Server-stored names — a room's icon and a badge's icon — go through an explicit resolveIconName() that falls back to a named `unknown` entry, so the one place unchecked strings enter is visible rather than an inline cast. Turning the type on immediately surfaced check_circle and radio_button_unchecked, referenced by OAuthAuthorizePage and never defined; both are added.
+Completes issue #340. The migration from the Material Symbols ligature font to lucide-react removed the failure mode where a mistyped icon name rendered as literal text, but Icon.tsx still declared name as a plain string over a `Record<string, LucideIcon>` with a runtime fallback, so an unknown name survived to runtime as a placeholder glyph — quieter than before and no easier to catch in review. ICONS is now inferred with `satisfies` rather than annotated (annotating it widened the keys back to string, which would have made the new type mean nothing), IconName is keyof typeof ICONS, and the prop takes that type. Button.icon, EmptyState.icon and SettingsPage's ToggleRow propagate it, and the authored icon lists in LandingPage and RoomsPage are typed so a bad name fails where it is written. Server-stored names — a room's icon and a badge's icon — go through an explicit resolveIconName() that falls back to a named `unknown` entry, so the one place unchecked strings enter is visible rather than an inline cast. Turning the type on immediately surfaced check_circle and radio_button_unchecked, referenced by OAuthAuthorizePage and never defined; both are added.
 
 </details>
 

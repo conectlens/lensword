@@ -11,7 +11,7 @@ technical_summary: >-
   Completes issue #340. The migration from the Material Symbols ligature font
   to lucide-react removed the failure mode where a mistyped icon name rendered
   as literal text, but Icon.tsx still declared name as a plain string over a
-  Record<string, LucideIcon> with a runtime fallback, so an unknown name
+  `Record<string, LucideIcon>` with a runtime fallback, so an unknown name
   survived to runtime as a placeholder glyph — quieter than before and no
   easier to catch in review. ICONS is now inferred with `satisfies` rather
   than annotated (annotating it widened the keys back to string, which would
