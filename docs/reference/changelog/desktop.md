@@ -50,6 +50,27 @@ components/ui/Select.tsx wrapped a native `<select>` and styled its `<option>` e
 
 References: [#341](https://github.com/conectlens/lensword/issues/341)
 
+<a id="icon-name-type-safety"></a>
+
+### Fixed: Two icons in the OAuth authorisation screen were silently drawing a placeholder glyph instead of the intended tick and empty circle, because they named icons the app does not define.
+
+*2026-08-09* — verification: automated tests: passed
+
+The consent screen's per-scope tick and empty-circle indicators now render correctly instead of a placeholder glyph. No other visible change — this is mostly a guarantee that a future mistyped icon name fails the build rather than shipping.
+
+<details><summary>Technical detail</summary>
+
+Completes issue #340. The migration from the Material Symbols ligature font to lucide-react removed the failure mode where a mistyped icon name rendered as literal text, but Icon.tsx still declared name as a plain string over a `Record<string, LucideIcon>` with a runtime fallback, so an unknown name survived to runtime as a placeholder glyph — quieter than before and no easier to catch in review. ICONS is now inferred with `satisfies` rather than annotated (annotating it widened the keys back to string, which would have made the new type mean nothing), IconName is keyof typeof ICONS, and the prop takes that type. Button.icon, EmptyState.icon and SettingsPage's ToggleRow propagate it, and the authored icon lists in LandingPage and RoomsPage are typed so a bad name fails where it is written. Server-stored names — a room's icon and a badge's icon — go through an explicit resolveIconName() that falls back to a named `unknown` entry, so the one place unchecked strings enter is visible rather than an inline cast. Turning the type on immediately surfaced check_circle and radio_button_unchecked, referenced by OAuthAuthorizePage and never defined; both are added.
+
+</details>
+
+**Known limitations:**
+- The guarantee is a compile-time one, which no runtime test can observe directly. The accompanying tests pin the surface it rests on — the lookup table, the resolver's behaviour on unknown names, and the runtime fallback — rather than the type itself.
+- The two corrected icons were verified by unit test, not by loading the OAuth consent screen in a browser.
+- Icon names remain the Material Symbols vocabulary rather than lucide's own, deliberately: those strings are persisted server-side on rooms and badges, so renaming them would orphan existing rows.
+
+References: [#340](https://github.com/conectlens/lensword/issues/340)
+
 <a id="cloud-ai-provider-adapters"></a>
 
 ### Added: AI_PROVIDER now accepts gemini, vertex, or openai alongside the existing none/ollama, so a hosted deployment that cannot run its own Ollama daemon can still enable real AI features (mnemonic suggestions, vocabulary extraction/enrichment, the conversation tutor, learning paths, and the companion coach).

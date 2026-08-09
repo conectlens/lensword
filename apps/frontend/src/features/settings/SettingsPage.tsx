@@ -9,7 +9,7 @@ import { WebNotificationsCard } from './WebNotificationsCard'
 import type { AISettings, DailySession, Group, McpConnection, RecallSettings, SyncConflict } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
-import { Icon } from '../../components/ui/Icon'
+import { Icon, type IconName } from '../../components/ui/Icon'
 import { Spinner } from '../../components/ui/Spinner'
 import { Toggle } from '../../components/ui/Toggle'
 import { connectMcpServer, deleteMcpServer, disconnectMcpServer, isMcpDesktopAvailable, listMcpServers, saveMcpServer } from '../../lib/mcpClient'
@@ -748,7 +748,7 @@ function TimeZoneSelect({ value, onChange }: { value: string; onChange: (v: stri
   )
 }
 
-function ToggleRow({ icon, title, description, checked, onChange }: { icon: string; title: string; description: string; checked: boolean; onChange: (v: boolean) => void }) {
+function ToggleRow({ icon, title, description, checked, onChange }: { icon: IconName; title: string; description: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <div className="flex items-center justify-between py-3">
       <div className="flex items-center gap-3">

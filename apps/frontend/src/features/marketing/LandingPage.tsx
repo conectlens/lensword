@@ -1,15 +1,15 @@
 import { Link } from 'react-router-dom'
-import { Icon } from '../../components/ui/Icon'
+import { Icon, type IconName } from '../../components/ui/Icon'
 import { Button } from '../../components/ui/Button'
 import { useAuth } from '../../context/AuthContext'
 
-const STEPS = [
+const STEPS: { icon: IconName; title: string; body: string }[] = [
   { icon: 'add_circle', title: 'Add or import words', body: 'Easily add new vocabulary you encounter, organized into groups.' },
   { icon: 'psychology', title: 'Daily forced recall', body: 'LensWord prompts you to remember words right before you forget them.' },
   { icon: 'monitoring', title: 'Long-term memory tracking', body: 'Watch your vocabulary move from short-term to long-term memory.' },
 ]
 
-const FEATURES = [
+const FEATURES: { icon: IconName; title: string; body: string }[] = [
   { icon: 'update', title: 'Spaced repetition', body: 'An SM-2 based algorithm schedules reviews at increasing intervals for optimal retention.' },
   { icon: 'memory', title: 'Forced Recall Engine', body: 'Actively retrieve words from memory on your terms — morning, idle time, or before sleep.' },
   { icon: 'meeting_room', title: 'Memory palace rooms', body: 'Place words spatially in memory rooms using the method-of-loci technique.' },
