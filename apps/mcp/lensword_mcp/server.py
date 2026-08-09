@@ -54,6 +54,15 @@ _SUBSCRIBABLE_PREFIX = "lensword://session/"
 # still whatever the next `resources/read` returns.
 DEFAULT_COALESCE_SECONDS = 5.0
 
+# Minimum time between two backend *fetches* for the same uri, as distinct
+# from the notification-coalesce window above. The two answer different
+# questions and must not be conflated: coalescing bounds how often a host is
+# told, this bounds how often the backend is asked. `StdioMCPServer.run`
+# polls after every processed message, so without this a rapid burst of tool
+# calls drives one fetch per message per subscribed uri no matter how little
+# the underlying resource is changing.
+DEFAULT_MIN_POLL_SECONDS = 5.0
+
 # The bounded catalog of structured fields #195 TODO 1 names. Presenting
 # only fields from this catalog, built through `ElicitationField`, is what
 # keeps an elicitation request from ever asking for a secret and keeps it
@@ -288,22 +297,28 @@ class MCPServer:
         requester: str = "lensword-mcp",
         clock: Callable[[], float] = time.monotonic,
         coalesce_seconds: float = DEFAULT_COALESCE_SECONDS,
+        min_poll_seconds: float = DEFAULT_MIN_POLL_SECONDS,
     ):
         self.backend = backend
         self.server_version = server_version
         self.initialized = False
         self.protocol_version: str | None = None
         self._capabilities: dict[str, Any] | None = None
+        # Completion candidate lists, cached for the session's lifetime —
+        # see _completion_candidates.
+        self._completion_cache: dict[str, tuple[str, ...]] = {}
         self._sampler = sampler
         self._elicitor = elicitor
         self._requester = requester
         self._client_capabilities: dict[str, Any] = {}
         self._client_info: dict[str, Any] = {}
-        # uri -> {"fingerprint": ..., "notified_fingerprint": ..., "last_notified": float | None}
+        # uri -> {"fingerprint": ..., "notified_fingerprint": ...,
+        #         "last_notified": float | None, "last_polled": float | None}
         # (#197 TODO 1)
         self._subscriptions: dict[str, dict[str, Any]] = {}
         self._clock = clock
         self._coalesce_seconds = coalesce_seconds
+        self._min_poll_seconds = min_poll_seconds
 
     def handle(self, message: dict[str, Any]) -> dict[str, Any] | None:
         if message.get("jsonrpc") != "2.0":
@@ -878,6 +893,10 @@ class MCPServer:
             "fingerprint": fingerprint,
             "notified_fingerprint": fingerprint,
             "last_notified": None,
+            # Subscribing just fetched, so the minimum-poll clock starts now
+            # rather than at None — otherwise the very next processed message
+            # would refetch a resource read microseconds earlier.
+            "last_polled": self._clock(),
         }
         return {"jsonrpc": "2.0", "id": request_id, "result": {}}
 
@@ -911,17 +930,33 @@ class MCPServer:
         """
         now = self._clock()
         notifications: list[dict[str, Any]] = []
+        # Values already fetched during *this* pass, keyed so that uris
+        # resolving to one backend call are only asked once. See _poll_key.
+        fetched: dict[str, Any] = {}
         for uri, state in self._subscriptions.items():
-            try:
-                value = self.backend.resource(uri)
-            except BackendError:
-                continue  # a transient read failure is not a "material change"
-            fingerprint = self._fingerprint(uri, value)
-            state["fingerprint"] = fingerprint
-            if fingerprint == state["notified_fingerprint"]:
+            last_polled = state["last_polled"]
+            if last_polled is not None and now - last_polled < self._min_poll_seconds:
                 continue
             last_notified = state["last_notified"]
             if last_notified is not None and now - last_notified < self._coalesce_seconds:
+                # Both guards sit above the fetch deliberately. Previously the
+                # coalesce check ran *after* `backend.resource(uri)`, so the
+                # window suppressed the outbound notification while the HTTP
+                # request had already been paid for — it saved no load at all.
+                continue
+            key = self._poll_key(uri)
+            if key in fetched:
+                value = fetched[key]
+            else:
+                try:
+                    value = self.backend.resource(uri)
+                except BackendError:
+                    continue  # a transient read failure is not a "material change"
+                fetched[key] = value
+            state["last_polled"] = now
+            fingerprint = self._fingerprint(uri, value)
+            state["fingerprint"] = fingerprint
+            if fingerprint == state["notified_fingerprint"]:
                 continue
             state["notified_fingerprint"] = fingerprint
             state["last_notified"] = now
@@ -929,6 +964,21 @@ class MCPServer:
                 {"jsonrpc": "2.0", "method": "notifications/resources/updated", "params": {"uri": uri}}
             )
         return notifications
+
+    @staticmethod
+    def _poll_key(uri: str) -> str:
+        """Group uris that resolve to one and the same backend call.
+
+        `BackendClient.resource` maps both `lensword://me/today` and
+        `lensword://me/due` onto an identical `lensword_get_due_reviews`
+        invocation, so a host subscribed to both used to issue two byte-for-
+        byte identical 100-row queries on every pass — and then discard both
+        payloads to keep one integer each. Session uris are genuinely
+        distinct resources and stay keyed by themselves.
+        """
+        if uri in _SUBSCRIBABLE_EXACT_URIS:
+            return "due-reviews"
+        return uri
 
     @staticmethod
     def _prompts_list(request_id: Any) -> dict[str, Any]:
@@ -981,14 +1031,14 @@ class MCPServer:
             # authenticated `/api/v1/groups` listing — never a shared
             # constant, since a group name is private data (issue #192
             # TODO 3: "keep suggestions account-scoped").
-            candidates = tuple(self.backend.groups())
+            candidates = self._completion_candidates("group", self.backend.groups)
         elif name == "scenario":
             # The scenario catalog is a fixed product list (`CATALOG` in
             # `app/domain/services/scenarios.py`), not account data, so
             # every account sees the same keys — the same reasoning
             # `_LANGUAGES`/`_DURATIONS`/`_DIFFICULTIES` already rest on,
             # just sourced from the backend instead of duplicated here.
-            candidates = tuple(self.backend.scenarios())
+            candidates = self._completion_candidates("scenario", self.backend.scenarios)
         else:
             # `topic` and `active-learning-path` have no closed,
             # account-scoped source to complete against yet: topics are
@@ -999,6 +1049,32 @@ class MCPServer:
             candidates = ()
         values = [candidate for candidate in candidates if candidate.casefold().startswith(value.casefold())][:20]
         return {"jsonrpc": "2.0", "id": request_id, "result": {"completion": {"values": values, "hasMore": False, "total": len(values)}}}
+
+    def _completion_candidates(self, name: str, source: Callable[[], list[str]]) -> tuple[str, ...]:
+        """Fetch a completion candidate list once per session, then reuse it.
+
+        `completion/complete` is typically invoked per keystroke, and both
+        backed lookups were hitting the network on every one of them. The
+        session-lifetime cache `_get_capabilities` already established is the
+        right shape for both, for slightly different reasons: the scenario
+        catalog is a fixed product list that cannot change under a running
+        session at all, and a learner's own group names change rarely enough
+        that completing against a list up to one session old is a far better
+        trade than a request per keystroke. A newly created group appears in
+        completion on the next session — `lensword_list_groups` remains the
+        authoritative, always-live read.
+
+        A failed lookup is not cached: `groups()`/`scenarios()` already fail
+        closed to an empty list, and remembering that emptiness would turn one
+        transient blip into a session with no completions at all.
+        """
+        cached = self._completion_cache.get(name)
+        if cached is None:
+            cached = tuple(source())
+            if not cached:
+                return cached
+            self._completion_cache[name] = cached
+        return cached
 
     def _get_capabilities(self) -> dict[str, Any]:
         if self._capabilities is None:

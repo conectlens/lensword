@@ -11,8 +11,10 @@
     "lint": "eslint src --ext ts,tsx"
   },
   "dependencies": {
+    "@radix-ui/react-select": "^2.3.7",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-notification": "^2.3.3",
+    "lucide-react": "^1.31.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^6.28.0"

@@ -26,3 +26,43 @@ if (typeof window.localStorage?.getItem !== 'function') {
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {}
 }
+
+// Browser APIs the themed Select's listbox primitive uses for positioning and
+// pointer tracking, none of which jsdom implements (issue #341). Stubbed here
+// for the same reason `scrollIntoView` is: they are real browser behaviour,
+// and a component that feature-detected them would be carrying
+// test-environment knowledge into product code.
+if (!Element.prototype.hasPointerCapture) {
+  Element.prototype.hasPointerCapture = () => false
+  Element.prototype.setPointerCapture = () => {}
+  Element.prototype.releasePointerCapture = () => {}
+}
+
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver
+}
+
+if (typeof globalThis.DOMRect === 'undefined') {
+  globalThis.DOMRect = class {
+    constructor(
+      public x = 0,
+      public y = 0,
+      public width = 0,
+      public height = 0,
+    ) {}
+    top = 0
+    right = 0
+    bottom = 0
+    left = 0
+    static fromRect() {
+      return new globalThis.DOMRect()
+    }
+    toJSON() {
+      return this
+    }
+  } as unknown as typeof DOMRect
+}

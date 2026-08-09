@@ -170,11 +170,29 @@ jobs:
           # Publishing is the `publish` job below, once every platform's
           # build has finished.
 
+      - name: List built artifact paths
+        # actions/upload-artifact needs one path per real newline, but
+        # GitHub Actions expression string literals don't interpret '\n' as
+        # one — join(..., '\n') produces a literal backslash-n, so the next
+        # step was searching for one bogus path containing "\n" and always
+        # came up empty. $GITHUB_OUTPUT's heredoc form is what actually
+        # emits real newlines.
+        id: artifact-paths
+        shell: bash
+        env:
+          ARTIFACT_PATHS_JSON: ${{ steps.tauri-build.outputs.artifactPaths }}
+        run: |
+          {
+            echo 'paths<<ARTIFACT_PATHS_EOF'
+            jq -r '.[]' <<< "$ARTIFACT_PATHS_JSON"
+            echo 'ARTIFACT_PATHS_EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Upload installers for the publish job
         uses: actions/upload-artifact@v7
         with:
           name: desktop-installer-${{ matrix.platform }}
-          path: ${{ join(fromJson(steps.tauri-build.outputs.artifactPaths), '\n') }}
+          path: ${{ steps.artifact-paths.outputs.paths }}
           if-no-files-found: error
           retention-days: 1
 

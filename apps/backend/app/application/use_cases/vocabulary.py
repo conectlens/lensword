@@ -3,7 +3,12 @@ from datetime import datetime
 
 from app.application.use_cases.knowledge_graph import RecomputeKnowledgeEdgesForWordUseCase
 from app.domain.entities import Group, Room, Word
-from app.domain.exceptions import EntityNotFoundError, PermissionDeniedError
+from app.domain.exceptions import (
+    EntityNotFoundError,
+    InvalidPlacementError,
+    PermissionDeniedError,
+    ValidationError,
+)
 from app.domain.repositories import GroupRepository, RoomRepository, WordRepository
 from app.domain.services.ai_provenance import (
     AI_AUTHORED_FIELDS,
@@ -40,6 +45,24 @@ def _require_room_owner(room_repo: RoomRepository, room_id: int, owner_id: int) 
     return room
 
 
+def _invalidate_language_profile(owner_id: int) -> None:
+    """Drop this learner's cached language profile (issue #342).
+
+    Called by the use cases that change what the profile is derived from —
+    the code performing a mutation is the only place that reliably knows a
+    mutation happened, which is why the cache does not try to infer it from
+    unrelated signals.
+
+    Imported inside the function on purpose: `mcp_dev_workflow` imports the
+    ownership helpers from this module, so a module-level import here would
+    close that cycle. The call is a dict `pop`, so the cost of doing the
+    lookup per mutation is not worth restructuring two modules to avoid.
+    """
+    from app.application.use_cases.mcp_dev_workflow import LANGUAGE_PROFILE_CACHE
+
+    LANGUAGE_PROFILE_CACHE.invalidate(owner_id)
+
+
 @dataclass(frozen=True, slots=True)
 class GroupSummary:
     group: Group
@@ -55,7 +78,9 @@ class CreateGroupUseCase:
 
     def execute(self, owner_id: int, name: str, target_language: SupportedLanguage) -> Group:
         group = Group(id=None, owner_id=owner_id, name=name.strip(), target_language=target_language)
-        return self.group_repo.add(group)
+        created = self.group_repo.add(group)
+        _invalidate_language_profile(owner_id)
+        return created
 
 
 class ListGroupsUseCase:
@@ -109,6 +134,7 @@ class DeleteGroupUseCase:
     def execute(self, owner_id: int, group_id: int) -> None:
         _require_group_owner(self.group_repo, group_id, owner_id)
         self.group_repo.delete(group_id)
+        _invalidate_language_profile(owner_id)
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +177,16 @@ class AddWordUseCase:
 
     def execute(self, owner_id: int, group_id: int, data: WordInput) -> Word:
         _require_group_owner(self.group_repo, group_id, owner_id)
+        return self._create(owner_id, group_id, data)
+
+    def _create(self, owner_id: int, group_id: int, data: WordInput) -> Word:
+        """Build and persist one word, ownership already established.
+
+        Split from `execute` so `AddWordsUseCase` can check the group once
+        for a whole batch and still construct every word through exactly this
+        code path — a second copy of this constructor would be free to drift
+        from it silently.
+        """
         word = Word(
             id=None,
             group_id=group_id,
@@ -176,6 +212,7 @@ class AddWordUseCase:
         word.set_mnemonic(data.mnemonic)
         added = self.word_repo.add(word)
         self._recompute_edges(owner_id, added.id)
+        _invalidate_language_profile(owner_id)
         return added
 
     def _recompute_edges(self, owner_id: int, word_id: int | None) -> None:
@@ -184,6 +221,68 @@ class AddWordUseCase:
         RecomputeKnowledgeEdgesForWordUseCase(self.word_repo, self.edge_repo, self.mistake_repo).execute(
             owner_id, word_id
         )
+
+
+@dataclass(frozen=True, slots=True)
+class SkippedWordInput:
+    """One item an add batch declined, identified by position.
+
+    Position rather than term: terms are caller-supplied and need not be
+    unique within a batch, so an index is the only thing that unambiguously
+    points at the item that failed.
+    """
+
+    index: int
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class AddWordsResult:
+    added: tuple[Word, ...]
+    skipped: tuple[SkippedWordInput, ...]
+
+
+class AddWordsUseCase:
+    """Add several words to one group, checking that group's ownership once.
+
+    Every word in the batch lands in the same group, so the ownership check
+    is a property of the call rather than of each item — N calls to
+    `AddWordUseCase` re-answered an identical question N times. Word rows are
+    still distinct inserts; unlike batched room placement there is no shared
+    aggregate to collapse, so the win here is round trips and repeated
+    authorization work rather than write amplification.
+
+    Partial success matches the rest of the batch surface: an item the domain
+    rejects is reported with its position, and the valid items around it
+    still land.
+    """
+
+    def __init__(
+        self,
+        word_repo: WordRepository,
+        group_repo: GroupRepository,
+        edge_repo=None,
+        mistake_repo=None,
+    ):
+        self.word_repo = word_repo
+        self.group_repo = group_repo
+        self.edge_repo = edge_repo
+        self.mistake_repo = mistake_repo
+
+    def execute(self, owner_id: int, group_id: int, items: list[WordInput]) -> AddWordsResult:
+        _require_group_owner(self.group_repo, group_id, owner_id)
+        single = AddWordUseCase(self.word_repo, self.group_repo, self.edge_repo, self.mistake_repo)
+
+        added: list[Word] = []
+        skipped: list[SkippedWordInput] = []
+        for index, data in enumerate(items):
+            try:
+                added.append(single._create(owner_id, group_id, data))
+            except ValidationError as error:
+                # A term the domain refuses (blank after stripping, say) is a
+                # property of that item, not of the batch.
+                skipped.append(SkippedWordInput(index, str(error) or "invalid_word"))
+        return AddWordsResult(added=tuple(added), skipped=tuple(skipped))
 
 
 _GRAPH_FIELDS = frozenset({"synonyms", "antonyms", "collocations", "topics"})
@@ -291,6 +390,7 @@ class DeleteWordUseCase:
     def execute(self, owner_id: int, word_id: int) -> None:
         _require_word_owner(self.word_repo, self.group_repo, word_id, owner_id)
         self.word_repo.delete(word_id)
+        _invalidate_language_profile(owner_id)
 
 
 class UpdateWordAssociationsUseCase:
@@ -329,6 +429,87 @@ class GetWordUseCase:
 
     def execute(self, owner_id: int, word_id: int) -> Word:
         return _require_word_owner(self.word_repo, self.group_repo, word_id, owner_id)
+
+
+@dataclass(frozen=True, slots=True)
+class BulkFieldEdit:
+    """The fields a bulk edit may set. `None` means "leave alone".
+
+    Deliberately the same narrow set the REST schema allows: term and
+    translations are excluded because they are what makes a card that card,
+    and a bulk control able to overwrite forty terms with one value is a
+    mistake waiting to be made irreversibly.
+    """
+
+    cefr_level: str | None = None
+    part_of_speech: str | None = None
+    category: str | None = None
+    tags: list[str] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BulkEditResult:
+    updated: int
+    skipped: tuple[int, ...]
+
+
+class BulkEditWordsUseCase:
+    """Set the same fields on several cards at once.
+
+    Lifted out of the `PATCH /api/v1/words/bulk` route body (issue #347) so
+    the MCP tool exposing this capability and the REST route behind the web
+    UI run the *same* code rather than two implementations that agree until
+    one of them is edited. Words that are not this account's are skipped and
+    reported rather than failing the whole request.
+    """
+
+    # Only the AI-authored fields carry history; category and tags are
+    # organisational and were never model claims about the language.
+    _VERSIONED_FIELDS = frozenset({"cefr_level", "part_of_speech"})
+    _FIELDS = ("cefr_level", "part_of_speech", "category", "tags")
+
+    def __init__(self, word_repo: WordRepository, group_repo: GroupRepository, revision_repo=None):
+        self.word_repo = word_repo
+        self.group_repo = group_repo
+        self.revision_repo = revision_repo
+
+    def execute(self, owner_id: int, word_ids: list[int], edit: BulkFieldEdit) -> BulkEditResult:
+        updated = 0
+        skipped: list[int] = []
+        for word_id in word_ids:
+            try:
+                word = _require_word_owner(self.word_repo, self.group_repo, word_id, owner_id)
+            except (EntityNotFoundError, PermissionDeniedError):
+                skipped.append(word_id)
+                continue
+            if self._apply(word, edit):
+                self.word_repo.update(word)
+                updated += 1
+        return BulkEditResult(updated=updated, skipped=tuple(skipped))
+
+    def _apply(self, word: Word, edit: BulkFieldEdit) -> bool:
+        """Apply the set fields, recording each real change. Returns whether any."""
+        changed = False
+        for name in self._FIELDS:
+            new_value = getattr(edit, name)
+            # None means "leave alone", which is different from setting a
+            # field to empty — an edit that omitted a field must not clear it.
+            if new_value is None:
+                continue
+            old_value = getattr(word, name)
+            if old_value == new_value:
+                continue
+            setattr(word, name, new_value)
+            changed = True
+            if name in self._VERSIONED_FIELDS and self.revision_repo is not None:
+                self.revision_repo.record(
+                    word_id=word.id,
+                    field=name,
+                    before_value=old_value,
+                    after_value=new_value,
+                    source=EditSource.BULK.value,
+                )
+        return changed
 
 
 class SearchWordsUseCase:
@@ -408,6 +589,108 @@ class PlaceWordUseCase:
             raise EntityNotFoundError("Word", word_id)
         room.place_word(word, x_percent, y_percent)
         return self.room_repo.update(room)
+
+
+@dataclass(frozen=True, slots=True)
+class PlacementInput:
+    word_id: int
+    x_percent: float
+    y_percent: float
+
+
+@dataclass(frozen=True, slots=True)
+class SkippedPlacement:
+    """One placement the batch declined, and why.
+
+    Reported rather than silently dropped, for the same reason
+    `BulkWordEditResponse.skipped` is: a batch that quietly did less than it
+    was asked is worse than one that says so.
+    """
+
+    word_id: int
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class PlaceWordsResult:
+    room: Room
+    applied: tuple[int, ...]
+    skipped: tuple[SkippedPlacement, ...]
+
+
+class PlaceWordsUseCase:
+    """Place many words into one room, loading and saving the aggregate once.
+
+    `PlaceWordUseCase` above is correct for a single placement but is the
+    wrong shape for a set of them: called N times against the same room it
+    performs N ownership checks, N loads and N writes of *the same* Room, and
+    leaves N windows in which a concurrent placement can be lost. The Room is
+    the natural transaction boundary for a set of placements, so this reads
+    it once, applies every placement to that one loaded aggregate, and
+    persists once.
+
+    Word resolution follows the same principle: the room's group is listed
+    once rather than fetched per word. Because `Room.place_word` already
+    requires a word to belong to the room's own group, that single list is
+    exactly the set of placeable words — and because the room's ownership was
+    checked first, membership of it is itself proof of ownership. No word
+    from another account can reach `place_word` by this path.
+
+    Partial success is deliberate: an invalid word id midway through must not
+    discard the valid placements that preceded it.
+    """
+
+    def __init__(self, room_repo: RoomRepository, word_repo: WordRepository, group_repo: GroupRepository):
+        self.room_repo = room_repo
+        self.word_repo = word_repo
+        self.group_repo = group_repo
+
+    def execute(self, owner_id: int, room_id: int, placements: list[PlacementInput]) -> PlaceWordsResult:
+        room = _require_room_owner(self.room_repo, room_id, owner_id)
+        placeable = {word.id: word for word in self.word_repo.list_by_group(room.group_id) if word.id is not None}
+
+        applied: list[int] = []
+        skipped: list[SkippedPlacement] = []
+        for item in placements:
+            word = placeable.get(item.word_id)
+            if word is None:
+                skipped.append(SkippedPlacement(item.word_id, self._miss_reason(item.word_id, owner_id)))
+                continue
+            try:
+                room.place_word(word, item.x_percent, item.y_percent)
+            except InvalidPlacementError:
+                # `placeable` already guarantees the group invariant, so the
+                # only way to land here is out-of-range coordinates.
+                skipped.append(SkippedPlacement(item.word_id, "invalid_coordinates"))
+                continue
+            applied.append(item.word_id)
+
+        # Skip the write entirely when nothing applied; an all-invalid batch
+        # should not rewrite the aggregate to its own current value.
+        if applied:
+            room = self.room_repo.update(room)
+        return PlaceWordsResult(room=room, applied=tuple(applied), skipped=tuple(skipped))
+
+    def _miss_reason(self, word_id: int, owner_id: int) -> str:
+        """Explain a miss without becoming a cross-account existence oracle.
+
+        A word this account does not own is reported exactly as a word that
+        does not exist. Distinguishing the two would let a caller holding one
+        valid grant probe which word ids belong to other accounts, one batch
+        item at a time. A word the caller *does* own but filed under another
+        group is named precisely, because that is the ordinary mistake this
+        reason exists to explain and it discloses nothing the caller cannot
+        already read.
+
+        Only misses pay these lookups, so a batch of valid placements still
+        costs one room load, one group listing and one save.
+        """
+        word = self.word_repo.get_by_id(word_id)
+        if word is not None:
+            group = self.group_repo.get_by_id(word.group_id)
+            if group is not None and group.owner_id == owner_id:
+                return "word_in_different_group"
+        return "word_not_found"
 
 
 class RemovePlacementUseCase:

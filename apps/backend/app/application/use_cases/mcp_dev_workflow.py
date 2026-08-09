@@ -23,7 +23,7 @@ from datetime import datetime
 
 from app.application.mcp.contracts import CONTEXT_KINDS
 from app.application.use_cases.vocabulary import _require_group_owner, _require_word_owner
-from app.domain.exceptions import ValidationError
+from app.domain.exceptions import EntityNotFoundError, PermissionDeniedError, ValidationError
 from app.domain.repositories import (
     DiagnosisRepository,
     GroupRepository,
@@ -31,6 +31,7 @@ from app.domain.repositories import (
     WordRepository,
 )
 from app.domain.services.cefr_progress import MASTERY_STRENGTH
+from app.domain.services.per_user_cache import PerUserTTLCache
 from app.domain.services.diagnosis_contracts import LearningObservation
 from app.domain.value_objects import ReviewOutcome, SessionMode, utcnow
 
@@ -52,12 +53,61 @@ class LanguageProfile:
     group_count: int
 
 
+# One shared instance, because the reads and the invalidations happen in
+# different modules: `bindings.py` constructs the use case fresh per request,
+# while the mutations that make an entry wrong live in `vocabulary.py`. A
+# cache owned by either one would be invisible to the other. This mirrors
+# `ai.py`/`interventions.py`, which each hold a module-level `AIResponseCache`
+# for the same reason.
+LANGUAGE_PROFILE_CACHE: PerUserTTLCache[LanguageProfile] = PerUserTTLCache()
+
+
 class GetLanguageProfileUseCase:
-    def __init__(self, group_repo: GroupRepository, word_repo: WordRepository):
+    """The learner's aggregate counts, cached per user (issue #342).
+
+    Deriving this is a full scan of every group and every word the learner
+    owns, and it is reachable through `lensword_get_language_profile`, which
+    an agent may call before or after each word lookup or exercise — so the
+    uncached cost was one whole-collection scan per call, repeatedly, within
+    a single session.
+
+    The cache is injected rather than reached for, so a caller that must see
+    live data (or a test that wants no caching at all) can pass its own.
+    `execute`'s signature is unchanged.
+
+    **What invalidation covers.** The use cases that add or remove a word, or
+    create or delete a group, drop the entry themselves — those change the
+    counts structurally. Answering a review also moves `known_word_count` and
+    `active_word_count` as repetitions and strength cross the mastery
+    threshold, and that deliberately rides the TTL instead: it happens on the
+    hot path of every single review, the drift is at most a few words, and
+    the issue's own acceptance criterion allows "immediately via invalidation
+    or within one TTL window". Renaming a group is not invalidated because no
+    field of `LanguageProfile` depends on a group's name.
+    """
+
+    def __init__(
+        self,
+        group_repo: GroupRepository,
+        word_repo: WordRepository,
+        cache: PerUserTTLCache[LanguageProfile] | None = LANGUAGE_PROFILE_CACHE,
+    ):
         self.group_repo = group_repo
         self.word_repo = word_repo
+        self.cache = cache
 
     def execute(self, user_id: int) -> LanguageProfile:
+        now = utcnow()
+        if self.cache is not None:
+            cached = self.cache.get(user_id, now)
+            if cached is not None:
+                return cached
+        profile = self._derive(user_id)
+        if self.cache is not None:
+            self.cache.put(user_id, profile, now)
+        return profile
+
+    def _derive(self, user_id: int) -> LanguageProfile:
         groups = self.group_repo.list_by_owner(user_id)
         words = [word for group in groups for word in self.word_repo.list_by_group(group.id or 0)]
         known = sum(
@@ -334,3 +384,70 @@ class RecordContextOccurrenceUseCase:
             context_source=saved.context_source or "", outcome=saved.outcome.value,
             recorded_at=saved.observed_at,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class SkippedOccurrence:
+    word_id: int
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class BatchContextOccurrenceResult:
+    applied: tuple[ContextOccurrenceResult, ...]
+    skipped: tuple[SkippedOccurrence, ...]
+
+
+class RecordContextOccurrencesUseCase:
+    """Record one passage's worth of sightings — several words, one context.
+
+    The single-item use case above is delegated to per word rather than
+    reimplemented, so every invariant it enforces (explicit confirmation, the
+    closed `CONTEXT_KINDS` vocabulary, ownership, the write staying a
+    low-trust `LearningObservation`) holds identically for a batched call.
+
+    **Idempotency.** The caller supplies one `operation_id` for the whole
+    batch, but observations are deduped individually, so each item derives
+    its own id as `f"{operation_id}:{index}"`. Without that derivation a
+    retry of a partially-applied batch would dedupe the whole batch against
+    its first item and silently drop the rest. The index is stable for a
+    given payload, which is what makes the retry converge.
+
+    `context_kind`, `outcome` and `confirmed` are batch-wide, so a
+    `ValidationError` about them is fatal for every item rather than a
+    property of one — it propagates instead of becoming N identical skips.
+    """
+
+    def __init__(
+        self,
+        word_repo: WordRepository,
+        group_repo: GroupRepository,
+        observation_repo: LearningObservationRepository,
+    ):
+        self._single = RecordContextOccurrenceUseCase(word_repo, group_repo, observation_repo)
+
+    def execute(
+        self,
+        user_id: int,
+        *,
+        word_ids: list[int],
+        context_kind: str,
+        outcome: str,
+        confirmed: bool,
+        operation_id: str | None = None,
+    ) -> BatchContextOccurrenceResult:
+        applied: list[ContextOccurrenceResult] = []
+        skipped: list[SkippedOccurrence] = []
+        for index, word_id in enumerate(word_ids):
+            data = ContextOccurrenceInput(
+                word_id=word_id, context_kind=context_kind, outcome=outcome, confirmed=confirmed,
+                operation_id=None if operation_id is None else f"{operation_id}:{index}",
+            )
+            try:
+                applied.append(self._single.execute(user_id, data))
+            except (EntityNotFoundError, PermissionDeniedError):
+                # Collapsed into one reason on purpose: reporting "exists but
+                # is not yours" separately from "does not exist" would turn a
+                # batch into a cross-account existence oracle.
+                skipped.append(SkippedOccurrence(word_id, "word_not_found"))
+        return BatchContextOccurrenceResult(applied=tuple(applied), skipped=tuple(skipped))

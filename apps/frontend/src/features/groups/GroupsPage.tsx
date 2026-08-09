@@ -106,7 +106,7 @@ function CreateGroupModal({ onClose, onCreated }: { onClose: () => void; onCreat
         <Select
           label="Target language"
           value={language}
-          onChange={(e) => setLanguage(e.target.value as SupportedLanguage)}
+          onValueChange={(next) => setLanguage(next as SupportedLanguage)}
           options={LANGUAGES.map((l) => ({ value: l, label: l }))}
         />
         <div className="mt-2 flex flex-col gap-3 sm:flex-row-reverse">

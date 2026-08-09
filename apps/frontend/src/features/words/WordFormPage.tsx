@@ -183,7 +183,7 @@ export function WordFormPage() {
               label="Group"
               name="group"
               value={pickedGroupId?.toString() ?? ''}
-              onChange={(e) => pickGroup(Number(e.target.value))}
+              onValueChange={(next) => pickGroup(Number(next))}
               options={pickableGroups.map((g) => ({ value: g.id.toString(), label: g.name }))}
             />
           )}
@@ -192,7 +192,7 @@ export function WordFormPage() {
             <Select
               label="Target language"
               value={language}
-              onChange={(e) => setLanguage(e.target.value as SupportedLanguage)}
+              onValueChange={(next) => setLanguage(next as SupportedLanguage)}
               options={LANGUAGES.map((l) => ({ value: l, label: l }))}
             />
           </div>

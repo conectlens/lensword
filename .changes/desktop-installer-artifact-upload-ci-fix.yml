@@ -1,0 +1,61 @@
+id: desktop-installer-artifact-upload-ci-fix
+products:
+  - desktop
+type: none
+reason: >-
+  CI-only change. It repairs the Continuous Desktop Build workflow's own
+  artifact upload step and touches no application code, so no released
+  desktop build behaves differently as a result. The installers this
+  workflow produces were already correct — they were simply not being
+  attached to the run, which is a property of the pipeline rather than of
+  the product.
+summary: >-
+  No user-observable change — repairs artifact upload inside the Continuous
+  Desktop Build workflow.
+technical_summary: >-
+  actions/upload-artifact takes one path per real newline, but a GitHub
+  Actions expression string literal does not interpret '\n' as one, so
+  join(fromJson(steps.tauri-build.outputs.artifactPaths), '\n') produced a
+  single literal backslash-n-joined string. The upload step therefore looked
+  for one bogus path and, with if-no-files-found: error, failed the job. A
+  new step now writes the paths through $GITHUB_OUTPUT's heredoc form, which
+  emits real newlines, and the upload step consumes that output instead.
+user_impact: >-
+  None for users of the desktop app. Maintainers get the installer artifacts
+  attached to Continuous Desktop Build runs again, which is what makes a
+  build testable before release.
+release_status: unreleased
+breaking: false
+migration: none
+known_limitations:
+  - >-
+    A workflow change can only be proven by running the workflow on the
+    default branch; the corrected upload is verified by the pipeline itself
+    rather than by a separate test.
+compatibility:
+  requires:
+    server_api: null
+verification:
+  automated_tests:
+    status: not_run
+    commands: []
+    workflow_url: null
+  artifact_build:
+    status: not_run
+    artifacts: []
+  manual_platform_checks:
+    macos: not_run
+    windows: not_run
+    linux: not_run
+  production_observation:
+    status: not_observed
+security_impact: >-
+  Neutral. The artifact paths are passed to the shell through an env var
+  rather than interpolated into the run script, which is the safer of the two
+  forms for a value that originates from another step's output.
+documentation_required: false
+date: '2026-08-09'
+references:
+  issues: []
+  pull_requests: [346]
+  commits: []

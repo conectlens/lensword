@@ -9,6 +9,28 @@ Status — Local CLI: **unreleased**.
 
 Every entry states exactly what was verified — a passing automated test does not imply a platform was manually checked, and a manual check on one OS does not imply another. See [Verification levels](/reference/trust/verification-levels) for what each status means.
 
+<a id="mcp-transport-request-amplification"></a>
+
+### Performance: MCP tool calls now reuse a single network connection instead of opening a new one per request, subscribed resources are no longer refetched after every message, and bulk vocabulary imports and edits are a single call.
+
+*2026-08-09* — verification: automated tests: passed
+
+Importing or editing vocabulary through an MCP client is substantially faster, especially against a hosted backend where every call previously paid a fresh TLS handshake. Long-lived remote MCP servers no longer grow in memory as clients reconnect. Argument completion in an MCP host responds without a network round trip per keystroke.
+
+<details><summary>Technical detail</summary>
+
+Five compounding defects made a 100-word import cost roughly 300 HTTP requests over 300 separate TCP+TLS connections. BackendClient._request was built on urllib.request.urlopen, which supports neither keep-alive nor pooling; it now uses a lazily created, lock-guarded persistent http.client.HTTP(S)Connection that transparently reconnects and replays once when a peer closes an idle socket, keeping lensword-cli's zero-runtime-dependency guarantee and the BackendError contract unchanged. poll_subscriptions ran its coalesce check after the fetch, so the window suppressed only the notification while the request had already been paid for; both that guard and a new, separate minimum poll interval now sit above the fetch, and lensword://me/today and lensword://me/due are fetched once per pass rather than twice despite resolving to an identical backend call. The Streamable HTTP transport's session_ttl_seconds was assigned and never read, and _Session carried no timestamp to compute it from, so every reconnect without an explicit DELETE leaked a session for the process lifetime; sessions now carry last_seen, are evicted opportunistically under the existing lock, and have their pooled connection closed on eviction. Completion candidate lookups are cached per session instead of hitting the network per keystroke. Two bulk tools were added, lensword_add_words and lensword_update_words, the latter finally exposing the PATCH /api/v1/words/bulk capability that had existed since #140 without ever appearing on the MCP surface; both the tool and the REST route now run one shared BulkEditWordsUseCase rather than two implementations.
+
+</details>
+
+**Known limitations:**
+- The minimum poll interval means a subscribed resource's change can take up to that interval to be noticed. Delivery is unchanged — a material change still produces exactly one notification, and nothing is lost — but detection is no longer instantaneous on the very next processed message.
+- Subscription fingerprints still request a full 100-row page where they only need a count. Shrinking that page cannot be done without either making the count wrong beyond the page size or having the backend return a total, so it is deliberately left alone rather than traded for a fingerprint that silently misses changes.
+- Connection reuse is verified against a loopback HTTP server, which proves the connection count but not TLS-handshake savings against a real remote HTTPS backend.
+- The new CI job is not yet in the repository's required-status-check set, so a red run there will not block a merge until branch protection is updated.
+
+References: [#347](https://github.com/conectlens/lensword/issues/347)
+
 <a id="split-local-cli-package"></a>
 
 ### Changed: The Local CLI is now published from its own apps/cli package (lensword-cli), independently versioned from the MCP server, with a PyPI publish workflow in place — not yet triggered.
@@ -71,6 +93,26 @@ Refactored OllamaProvider onto a new _TextGeneratingProvider Template Method bas
 - Vertex AI's Application Default Credentials resolution has not been verified end-to-end in an actual Docker/Render deployment — only that the google-genai SDK's own credential-loading path is reached correctly in a mocked-transport test.
 
 References: [#315](https://github.com/conectlens/lensword/issues/315)
+
+<a id="byok-ai-credentials"></a>
+
+### Added: Signed-in users can now supply their own Gemini, OpenAI, or Vertex AI key on the Settings page ("Bring Your Own Key") and have it used automatically for their own AI requests, instead of being limited to whatever the deployment itself is configured with (or nothing, if the deployment has AI switched off).
+
+*2026-08-08* — verification: automated tests: passed
+
+A signed-in user can add, update, or remove their own Gemini/OpenAI/ Vertex AI key from the Settings page. Once added, their own AI requests (mnemonic suggestions, vocabulary enrichment, the conversation tutor, learning paths, the companion coach) use that key automatically. No change for a user who does not configure one — AI features work exactly as before, off the deployment's own configuration.
+
+<details><summary>Technical detail</summary>
+
+New user-scoped API (GET/PUT/DELETE /api/v1/me/ai-credentials[/{provider}]) alongside the existing admin-only, deployment-wide /api/v1/ai-settings — no admin opt-in gate required per user. Provider-agnostic Strategy pattern for extensibility: CredentialSchema subclasses per provider (app/domain/services/ai_credentials.py, zero third-party imports, matching the domain layer's existing boundary) registered in PROVIDER_CREDENTIAL_SCHEMAS validate each provider's own payload shape (a bare api_key for Gemini/OpenAI; a GCP service-account JSON plus project_id/location for Vertex AI) and declare which fields are safe to echo back (Vertex's project_id/location) versus never (the secret). A new provider needs one schema class plus one builder function in app/infrastructure/ai_providers/credential_mapping.py — nothing else in the stack changes. Stored encrypted (UserAICredentialModel, migration 20260808_01_user_ai_credentials) with application-level authenticated encryption (cryptography.fernet.Fernet) under one master key, AI_CREDENTIAL_ENCRYPTION_KEY — deliberately not a cloud KMS/Vault, to avoid adding a second service to this project's self-hosted-first Docker/Render/SQLite posture. The first reversibly-encrypted secret this codebase has ever stored; every other credential (passwords, OAuth tokens) is one-way hashed. resolve_ai_provider_for_user (app/api/deps.py) is the shared precedence policy behind every AI-serving route (twelve REST endpoints via PerUserAIProvider, plus the MCP invocation boundary via app.api.mcp_auth.get_ai_provider_for_actor, which resolves caller identity differently — a remote MCP OAuth token is not a login JWT): no stored credential falls back to the deployment default unchanged; a user's single stored credential is used regardless of the deployment's own provider; with more than one, whichever matches the deployment's own AI_PROVIDER wins, otherwise it falls back rather than guessing. A credential that exists but is currently unusable (wrong encryption key, unusable key material) deliberately raises the same AIProviderUnavailableError every other provider failure does, rather than silently falling back and spending the deployment's own budget on a user's broken personal key. New Settings page section (ByokCredentialsCard) mirrors the existing MCP connection credential field's write-only pattern: every field is password/textarea input, nothing is ever pre-filled from a saved value.
+
+</details>
+
+**Known limitations:**
+- Fully covered by unit tests against a mocked transport only — no real Gemini/OpenAI/Vertex AI credentials were available to verify a live round trip through a user's own stored key. See docs/install/cloud-ai-providers.md's "Bring Your Own Key" section.
+- This is the first reversibly-encrypted secret this codebase has ever stored (every prior credential is one-way hashed) and handles real financial-risk credentials. A focused security review was performed before this reached development, which found and this fragment's change fixes one SSRF (a self-signed Vertex AI service_account_json's token_uri, trusted verbatim by google-auth's own token-refresh HTTP call, could be pointed at an internal address such as the cloud metadata endpoint — closed by allowlisting token_uri to Google's real OAuth endpoint, since a genuine key never has any other value). No other findings survived the review's false-positive filtering pass.
+- A user who configures credentials for more than one provider, neither matching the deployment's own AI_PROVIDER, cannot currently choose explicitly which one is used — the system falls back to the deployment default in that specific case rather than guessing. No UI exists yet for an explicit "active provider" choice.
+- There is no key-rotation or re-encryption tooling if AI_CREDENTIAL_ENCRYPTION_KEY itself needs to change after credentials have already been stored under the old one.
 
 <a id="mcp-read-tool-request-id-fix"></a>
 

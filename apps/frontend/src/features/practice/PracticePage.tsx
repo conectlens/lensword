@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { Spinner } from '../../components/ui/Spinner'
 import { Textarea } from '../../components/ui/Textarea'
+import { Select } from '../../components/ui/Select'
 
 export function PracticePage() {
   const { groupId } = useParams()
@@ -83,9 +84,13 @@ export function PracticePage() {
       <div><h1 className="font-display text-3xl font-bold text-white">Adaptive practice</h1><p className="text-white/50">Practice each word with targeted exercises and feedback.</p></div>
       <Card className="p-6">
         <label className="flex flex-col gap-2 text-sm text-white/70">Word
-          <select value={wordId ?? ''} onChange={(event) => setWordId(Number(event.target.value))} className="rounded-lg bg-white/5 px-3 py-2 text-white">
-            {words.map((word) => <option key={word.id} value={word.id}>{word.term} — {word.translations[0]}</option>)}
-          </select>
+          <Select
+            size="sm"
+            aria-label="Word to practise"
+            value={wordId ? String(wordId) : undefined}
+            onValueChange={(next) => setWordId(Number(next))}
+            options={words.map((word) => ({ value: String(word.id), label: `${word.term} — ${word.translations[0]}` }))}
+          />
         </label>
         <div className="mt-4 flex flex-wrap gap-2"><Button onClick={generate} disabled={!wordId}>Generate exercise</Button>{selected && <Button variant="secondary" onClick={speak}>Listen to “{selected.term}”</Button>}{selected && <Button variant="secondary" onClick={recordPronunciation} disabled={!speechAvailable || recording}>{recording ? 'Listening…' : 'Check pronunciation'}</Button>}</div>
         <p className="mt-3 text-xs text-white/40">{speechAvailable ? 'Record your pronunciation for immediate transcript-based feedback.' : 'Speech-to-text is not supported by this browser; listening remains available where supported.'}</p>

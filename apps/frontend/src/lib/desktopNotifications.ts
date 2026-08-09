@@ -19,19 +19,13 @@
  * replace, not something to reproduce.
  */
 
-import { ApiRequestError, notificationsApi } from './api'
-import type { DesktopNotification, NotificationActionId } from './types'
+import { act, DEFAULT_CLICK_ACTION, drainOnce as drainOutbox } from './notificationOutbox'
 
-/**
- * Action buttons on a toast are the ideal, but support is uneven: they need a
- * registered action type on macOS, a channel on Android, and are unavailable
- * on some Linux notification daemons entirely. Rather than detect all that,
- * the shell registers buttons where the plugin accepts them and treats a
- * plain click as `start_session` everywhere else — which is the action a
- * click most plausibly means, and the only one that is safe to infer, since
- * it changes no server state on its own.
- */
-export const DEFAULT_CLICK_ACTION: NotificationActionId = 'start_session'
+// The collect → show → acknowledge loop and the click-action constant moved to
+// `notificationOutbox.ts` when the web client (issue #345) grew the same need:
+// only `show` and `ensurePermission` were ever desktop-specific. Re-exported
+// here so existing importers of this module are unaffected.
+export { act, DEFAULT_CLICK_ACTION }
 
 /**
  * True when running inside the Tauri shell. Feature-detected on the marker
@@ -67,52 +61,7 @@ export async function show(title: string, body: string): Promise<void> {
   sendNotification({ title, body })
 }
 
-/**
- * Carry out one action from a notification.
- *
- * Returns whether the review UI should be opened. A notification that expired
- * while it sat in the tray answers 409; that is an ordinary outcome — the user
- * clicked a stale toast — so it is swallowed rather than surfaced as an error.
- */
-export async function act(
-  notificationId: number,
-  action: NotificationActionId,
-): Promise<boolean> {
-  try {
-    const result = await notificationsApi.act(notificationId, action)
-    return result.open_review
-  } catch (error) {
-    if (error instanceof ApiRequestError && error.status === 409) return false
-    throw error
-  }
-}
-
-/**
- * Collect what the tray is owed, show it, and acknowledge it.
- *
- * Returns the number of notifications shown, which is what the caller needs to
- * decide whether to poll again immediately: the backend caps a page, so a full
- * one means there is more waiting.
- */
+/** Collect what the tray is owed, show it as an OS toast, acknowledge it. */
 export async function drainOnce(showFn: typeof show = show): Promise<number> {
-  const pending = await notificationsApi.listPending()
-  if (pending.notifications.length === 0) return 0
-
-  const shown: number[] = []
-  for (const notification of pending.notifications) {
-    try {
-      // title/body come from the backend, which is where the lock-screen
-      // redaction decision is made — the shell must not reconstruct the body
-      // from `message` or it would undo that.
-      await showFn(notification.title, notification.body)
-      shown.push(notification.id)
-    } catch {
-      // Stop at the first failure rather than marking the rest delivered. The
-      // unacknowledged ones stay pending and are retried next cycle.
-      break
-    }
-  }
-
-  if (shown.length > 0) await notificationsApi.acknowledge(shown)
-  return shown.length
+  return drainOutbox(showFn)
 }

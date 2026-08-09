@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { wordsApi } from '../../lib/api'
 import { Button } from '../../components/ui/Button'
+import { ANY_OPTION, Select } from '../../components/ui/Select'
 
 /**
  * Setting one field across several cards at once (issue #140).
@@ -66,19 +67,14 @@ export function BulkEditBar({ selectedIds, onApplied, onClear }: Props) {
 
       <label className="text-sm text-white/70">
         CEFR
-        <select
-          value={level}
-          onChange={(event) => setLevel(event.target.value)}
+        <Select
+          size="sm"
+          className="ml-2"
           aria-label="Bulk CEFR level"
-          className="ml-2 rounded bg-white/10 p-1.5 text-white"
-        >
-          <option value="">Leave unchanged</option>
-          {LEVELS.map((value) => (
-            <option key={value} value={value}>
-              {value}
-            </option>
-          ))}
-        </select>
+          value={level || ANY_OPTION}
+          onValueChange={(next) => setLevel(next === ANY_OPTION ? '' : next)}
+          options={[{ value: ANY_OPTION, label: 'Leave unchanged' }, ...LEVELS.map((value) => ({ value, label: value }))]}
+        />
       </label>
 
       <input

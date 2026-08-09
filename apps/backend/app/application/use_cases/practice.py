@@ -1,7 +1,11 @@
+from dataclasses import dataclass
+
+from app.application.use_cases.vocabulary import _require_word_owner
 from app.domain.entities import DailySessionPreference, PracticeExercise, Word
 from app.domain.exceptions import EntityNotFoundError, PermissionDeniedError
 from app.domain.repositories import (
     DailySessionPreferenceRepository,
+    GroupRepository,
     PracticeExerciseRepository,
     WordRepository,
 )
@@ -25,6 +29,53 @@ class GenerateExerciseUseCase:
                 answer=answer, options=[answer, word.term],
             )
         )
+
+
+@dataclass(frozen=True, slots=True)
+class SkippedExercise:
+    word_id: int
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class GenerateExercisesResult:
+    applied: tuple[PracticeExercise, ...]
+    skipped: tuple[SkippedExercise, ...]
+
+
+class GenerateExercisesUseCase:
+    """Generate exercises for several words in one call.
+
+    Unlike batched room placement, there is no shared aggregate here — this
+    is a pure per-word transform, so the only saving is round trips, and the
+    per-word ownership check is kept exactly as the single-item path performs
+    it. Batching must change how often ownership is checked, never whether.
+    """
+
+    def __init__(
+        self,
+        exercises: PracticeExerciseRepository,
+        words: WordRepository,
+        groups: GroupRepository,
+    ):
+        self.exercises = exercises
+        self.words = words
+        self.groups = groups
+
+    def execute(self, user_id: int, word_ids: list[int], kind: str) -> GenerateExercisesResult:
+        single = GenerateExerciseUseCase(self.exercises, self.words)
+        applied: list[PracticeExercise] = []
+        skipped: list[SkippedExercise] = []
+        for word_id in word_ids:
+            try:
+                word = _require_word_owner(self.words, self.groups, word_id, user_id)
+            except (EntityNotFoundError, PermissionDeniedError):
+                # One reason for both, so a batch cannot be used to probe
+                # which word ids exist under other accounts.
+                skipped.append(SkippedExercise(word_id, "word_not_found"))
+                continue
+            applied.append(single.execute(user_id, word, kind))
+        return GenerateExercisesResult(applied=tuple(applied), skipped=tuple(skipped))
 
 
 class AnswerExerciseUseCase:
