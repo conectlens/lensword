@@ -39,10 +39,12 @@ CLI-behavior claims below were not independently re-run today.
 
 A running LensWord server (the [Getting Started](/setup/) Compose stack
 works) and an access token for your account — the same token the web app
-uses, not a separate MCP-specific credential. Get it the same way described
-for the [browser extension](/install/browser-extension#getting-your-token-safely):
-log into the web app and copy the token from DevTools, rather than typing
-your password anywhere else.
+uses, not a separate MCP-specific credential. The MCP CLI has no login flow
+of its own, so get the token the safest way available: log into the
+[web app](/install/web-app), open DevTools → Application → Local/Session
+storage (or the Network tab on any authenticated request) and copy the
+access token your own session is already using, rather than typing your
+password anywhere else.
 
 ### Install
 
