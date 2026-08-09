@@ -102,12 +102,21 @@ SCOPE_TOOLS: dict[MCPScope, tuple[str, ...]] = {
         "lensword_create_room",
         "lensword_place_word_in_room",
         "lensword_generate_mnemonic",
+        # Batched siblings (issue #348) sit in the same scope as the
+        # single-item tool each one batches. A scope is what a resource owner
+        # approves on a consent screen, and "place words in a room" is not a
+        # different permission from "place a word in a room" — filing a batch
+        # elsewhere would make consent depend on call shape rather than on
+        # what the call can do.
+        "lensword_place_words_in_room",
+        "lensword_generate_exercises_for_words",
     ),
     MCPScope.CONTEXT_IMPORT: (
         "lensword_extract_vocabulary",
         "lensword_start_extraction_task",
         "lensword_cancel_companion_task",
         "lensword_record_context_occurrence",
+        "lensword_record_context_occurrences",
     ),
 }
 

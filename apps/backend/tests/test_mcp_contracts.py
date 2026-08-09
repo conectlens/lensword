@@ -21,7 +21,12 @@ def test_contracts_are_versioned_bounded_and_classified():
     # delete_word), 3 memory-palace (list_rooms/create_room/
     # place_word_in_room), 2 MnemoLab (get_mnemonics/generate_mnemonic) and
     # 1 knowledge-graph (get_word_map).
-    assert CONTRACT_VERSION == "1.0.0" and len(TOOL_CONTRACTS) == 38
+    # Plus 3 batched siblings of existing single-item write tools (#348):
+    # place_words_in_room/record_context_occurrences/
+    # generate_exercises_for_words. Each batches a tool that remains in the
+    # registry beside it — the single-item forms stay correct for a one-off
+    # call, and removing one would invalidate OAuth grants keyed on its name.
+    assert CONTRACT_VERSION == "1.0.0" and len(TOOL_CONTRACTS) == 41
     for tool in TOOL_CONTRACTS:
         assert tool.schema_id.endswith(".schema.json")
         assert tool.input_schema["additionalProperties"] is False

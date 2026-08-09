@@ -3,7 +3,7 @@ from datetime import datetime
 
 from app.application.use_cases.knowledge_graph import RecomputeKnowledgeEdgesForWordUseCase
 from app.domain.entities import Group, Room, Word
-from app.domain.exceptions import EntityNotFoundError, PermissionDeniedError
+from app.domain.exceptions import EntityNotFoundError, InvalidPlacementError, PermissionDeniedError
 from app.domain.repositories import GroupRepository, RoomRepository, WordRepository
 from app.domain.services.ai_provenance import (
     AI_AUTHORED_FIELDS,
@@ -408,6 +408,108 @@ class PlaceWordUseCase:
             raise EntityNotFoundError("Word", word_id)
         room.place_word(word, x_percent, y_percent)
         return self.room_repo.update(room)
+
+
+@dataclass(frozen=True, slots=True)
+class PlacementInput:
+    word_id: int
+    x_percent: float
+    y_percent: float
+
+
+@dataclass(frozen=True, slots=True)
+class SkippedPlacement:
+    """One placement the batch declined, and why.
+
+    Reported rather than silently dropped, for the same reason
+    `BulkWordEditResponse.skipped` is: a batch that quietly did less than it
+    was asked is worse than one that says so.
+    """
+
+    word_id: int
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class PlaceWordsResult:
+    room: Room
+    applied: tuple[int, ...]
+    skipped: tuple[SkippedPlacement, ...]
+
+
+class PlaceWordsUseCase:
+    """Place many words into one room, loading and saving the aggregate once.
+
+    `PlaceWordUseCase` above is correct for a single placement but is the
+    wrong shape for a set of them: called N times against the same room it
+    performs N ownership checks, N loads and N writes of *the same* Room, and
+    leaves N windows in which a concurrent placement can be lost. The Room is
+    the natural transaction boundary for a set of placements, so this reads
+    it once, applies every placement to that one loaded aggregate, and
+    persists once.
+
+    Word resolution follows the same principle: the room's group is listed
+    once rather than fetched per word. Because `Room.place_word` already
+    requires a word to belong to the room's own group, that single list is
+    exactly the set of placeable words — and because the room's ownership was
+    checked first, membership of it is itself proof of ownership. No word
+    from another account can reach `place_word` by this path.
+
+    Partial success is deliberate: an invalid word id midway through must not
+    discard the valid placements that preceded it.
+    """
+
+    def __init__(self, room_repo: RoomRepository, word_repo: WordRepository, group_repo: GroupRepository):
+        self.room_repo = room_repo
+        self.word_repo = word_repo
+        self.group_repo = group_repo
+
+    def execute(self, owner_id: int, room_id: int, placements: list[PlacementInput]) -> PlaceWordsResult:
+        room = _require_room_owner(self.room_repo, room_id, owner_id)
+        placeable = {word.id: word for word in self.word_repo.list_by_group(room.group_id) if word.id is not None}
+
+        applied: list[int] = []
+        skipped: list[SkippedPlacement] = []
+        for item in placements:
+            word = placeable.get(item.word_id)
+            if word is None:
+                skipped.append(SkippedPlacement(item.word_id, self._miss_reason(item.word_id, owner_id)))
+                continue
+            try:
+                room.place_word(word, item.x_percent, item.y_percent)
+            except InvalidPlacementError:
+                # `placeable` already guarantees the group invariant, so the
+                # only way to land here is out-of-range coordinates.
+                skipped.append(SkippedPlacement(item.word_id, "invalid_coordinates"))
+                continue
+            applied.append(item.word_id)
+
+        # Skip the write entirely when nothing applied; an all-invalid batch
+        # should not rewrite the aggregate to its own current value.
+        if applied:
+            room = self.room_repo.update(room)
+        return PlaceWordsResult(room=room, applied=tuple(applied), skipped=tuple(skipped))
+
+    def _miss_reason(self, word_id: int, owner_id: int) -> str:
+        """Explain a miss without becoming a cross-account existence oracle.
+
+        A word this account does not own is reported exactly as a word that
+        does not exist. Distinguishing the two would let a caller holding one
+        valid grant probe which word ids belong to other accounts, one batch
+        item at a time. A word the caller *does* own but filed under another
+        group is named precisely, because that is the ordinary mistake this
+        reason exists to explain and it discloses nothing the caller cannot
+        already read.
+
+        Only misses pay these lookups, so a batch of valid placements still
+        costs one room load, one group listing and one save.
+        """
+        word = self.word_repo.get_by_id(word_id)
+        if word is not None:
+            group = self.group_repo.get_by_id(word.group_id)
+            if group is not None and group.owner_id == owner_id:
+                return "word_in_different_group"
+        return "word_not_found"
 
 
 class RemovePlacementUseCase:
