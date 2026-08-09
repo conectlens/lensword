@@ -17,11 +17,12 @@
     <!-- Fonts are self-hosted under /public/fonts (see src/index.css) rather
          than loaded from fonts.googleapis.com/fonts.gstatic.com. The Tauri
          desktop shell's CSP (style-src/font-src 'self') blocks those origins
-         outright, which silently broke every heading/body font and the
-         Material Symbols icon ligatures (the icon name text rendered
-         literally instead of the glyph) in the desktop build only — the web
-         build has no such CSP and never showed it. Self-hosting fixes both
-         targets from one source instead of special-casing desktop. -->
+         outright, which silently broke every heading/body font in the
+         desktop build only — the web build has no such CSP and never showed
+         it. Self-hosting fixes both targets from one source instead of
+         special-casing desktop. Icons are inline SVG components
+         (lucide-react, see components/ui/Icon.tsx), so they aren't affected
+         by font loading or this CSP at all. -->
   </head>
   <body class="bg-canvas-dark text-white font-body antialiased">
     <div id="root"></div>

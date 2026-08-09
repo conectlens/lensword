@@ -1,4 +1,5 @@
 import { forwardRef, type SelectHTMLAttributes } from 'react'
+import { Icon } from './Icon'
 
 interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   label?: string
@@ -25,12 +26,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
             </option>
           ))}
         </select>
-        <span
-          className="msi pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-white/40"
-          aria-hidden="true"
-        >
-          expand_more
-        </span>
+        <Icon name="expand_more" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-white/40" />
       </div>
     </label>
   )

@@ -3,15 +3,10 @@
 @tailwind utilities;
 
 /* Self-hosted (see index.html for why: Tauri's CSP blocks Google Fonts,
-   which silently broke these — including the Material Symbols icon
-   ligatures rendering as literal text — in the desktop build only).
+   which silently broke these in the desktop build only).
    Montserrat/Poppins are the Latin-only static instances Google itself
    serves for these weights; non-Latin scripts fall back to the `sans-serif`
-   stack below rather than blocking on a much larger set of subset files.
-   The icon font is glyph-subsetted to exactly the icon names src/ actually
-   uses (see components/ui/Icon.tsx callers) — regenerate it the same way
-   (fonts.googleapis.com/css2?family=Material+Symbols+Outlined&text=...) if
-   a new icon name is ever added and it fails to render. */
+   stack below rather than blocking on a much larger set of subset files. */
 @font-face {
   font-family: 'Montserrat';
   font-style: normal;
@@ -48,14 +43,6 @@
   font-display: swap;
   src: url('/fonts/poppins-600.woff2') format('woff2');
 }
-@font-face {
-  font-family: 'Material Symbols Outlined';
-  font-style: normal;
-  font-weight: 400;
-  font-display: block;
-  src: url('/fonts/material-symbols-outlined.woff2') format('woff2');
-}
-
 @layer base {
   html {
     color-scheme: dark;
@@ -73,17 +60,6 @@
 }
 
 @layer utilities {
-  .msi {
-    font-family: 'Material Symbols Outlined';
-    font-weight: normal;
-    font-style: normal;
-    line-height: 1;
-    display: inline-block;
-    white-space: nowrap;
-    word-wrap: normal;
-    direction: ltr;
-    -webkit-font-smoothing: antialiased;
-  }
   .scrollbar-none::-webkit-scrollbar { display: none; }
   .scrollbar-none { scrollbar-width: none; }
 }

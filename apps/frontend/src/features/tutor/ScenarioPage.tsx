@@ -7,6 +7,7 @@ import type {
 } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
+import { Icon } from '../../components/ui/Icon'
 import { Spinner } from '../../components/ui/Spinner'
 import { ScenarioVocabulary } from './ScenarioVocabulary'
 
@@ -78,8 +79,9 @@ function Evaluation({ attempt }: { attempt: ScenarioAttempt }) {
           {attempt.scenario.goals.map((goal) => {
             const met = evaluation.goals_met.includes(goal)
             return (
-              <li key={goal} className={met ? 'text-emerald-300' : 'text-white/50'}>
-                {met ? '✓' : '○'} {goal}
+              <li key={goal} className="flex items-center gap-1.5">
+                <Icon name={met ? 'check' : 'circle'} className={met ? 'text-emerald-300' : 'text-white/50'} />
+                <span className={met ? 'text-emerald-300' : 'text-white/50'}>{goal}</span>
               </li>
             )
           })}

@@ -3,6 +3,7 @@ import { groupsApi, learningPathsApi } from '../../lib/api'
 import type { Group, LearningPath, PathMilestone } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
+import { Icon } from '../../components/ui/Icon'
 import { Spinner } from '../../components/ui/Spinner'
 
 /**
@@ -25,7 +26,7 @@ function MilestoneCard({ milestone, isNext }: { milestone: PathMilestone; isNext
     <Card className={`p-4 ${isNext ? 'border-primary/40' : ''}`}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <span className="font-semibold text-white">
-          {milestone.complete && <span className="mr-2 text-emerald-300">✓</span>}
+          {milestone.complete && <Icon name="check" className="mr-2 text-emerald-300" />}
           {milestone.title}
         </span>
         <span className="text-sm text-white/50">
