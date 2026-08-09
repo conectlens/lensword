@@ -19,6 +19,29 @@ The shared backend (`apps/backend`) is not an independently released product —
 
 ## Latest changes, all products
 
+**Backend (API), MCP Server**
+
+<a id="mcp-batch-write-tools"></a>
+
+### Performance: Three MCP tools gained batched siblings, so placing words in a memory-palace room, recording a passage's word encounters, or generating exercises for a set of words is one call instead of one call per word.
+
+*2026-08-09* — verification: automated tests: passed
+
+Populating a memory palace or recording vocabulary met while reading is noticeably faster over MCP, and a single bad word id no longer discards the valid work alongside it: unusable items come back listed with a reason while the rest still apply.
+
+<details><summary>Technical detail</summary>
+
+Adds lensword_place_words_in_room, lensword_record_context_occurrences and lensword_generate_exercises_for_words, each bounded at 100 items and returning the {applied, skipped} partial-success shape BulkWordEditResponse already established. PlaceWordsUseCase is the substantive one: the previous path loaded, mutated and saved the same Room aggregate once per placement, so N placements meant N ownership checks, N reads, N writes and N windows for a lost update. It now resolves and ownership-checks the room once, lists the room's group once to obtain the placeable words, applies every placement to that single aggregate and persists once — three repository calls regardless of batch size. Batched record_context_occurrences derives a per-item operation id from the call's request_id so a retried, partially-applied batch converges instead of deduping the whole batch against its first item. The contract validator was extended to check array items recursively; it previously understood only string items, so an array of integers or of objects passed through unvalidated. Single-item tools are retained — removing one would invalidate OAuth grants keyed on its name — and each batch is registered under the same scope as the tool it batches.
+
+</details>
+
+**Known limitations:**
+- lensword_delete_word is deliberately not batched; bulk-destructive confirmation semantics need their own decision.
+- record_answer, begin_learning_activity, submit_activity_response and request_hint remain single-item by design — each call depends on the previous call's result, so batching them would be semantically wrong.
+- The batched exercise generator eliminates round trips only. Unlike room placement it has no shared aggregate, so it still performs one ownership check per word.
+
+References: [#348](https://github.com/conectlens/lensword/issues/348)
+
 **MCP Server, Local CLI**
 
 <a id="split-local-cli-package"></a>

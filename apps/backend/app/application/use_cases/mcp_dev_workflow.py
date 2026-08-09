@@ -23,7 +23,7 @@ from datetime import datetime
 
 from app.application.mcp.contracts import CONTEXT_KINDS
 from app.application.use_cases.vocabulary import _require_group_owner, _require_word_owner
-from app.domain.exceptions import ValidationError
+from app.domain.exceptions import EntityNotFoundError, PermissionDeniedError, ValidationError
 from app.domain.repositories import (
     DiagnosisRepository,
     GroupRepository,
@@ -334,3 +334,70 @@ class RecordContextOccurrenceUseCase:
             context_source=saved.context_source or "", outcome=saved.outcome.value,
             recorded_at=saved.observed_at,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class SkippedOccurrence:
+    word_id: int
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class BatchContextOccurrenceResult:
+    applied: tuple[ContextOccurrenceResult, ...]
+    skipped: tuple[SkippedOccurrence, ...]
+
+
+class RecordContextOccurrencesUseCase:
+    """Record one passage's worth of sightings — several words, one context.
+
+    The single-item use case above is delegated to per word rather than
+    reimplemented, so every invariant it enforces (explicit confirmation, the
+    closed `CONTEXT_KINDS` vocabulary, ownership, the write staying a
+    low-trust `LearningObservation`) holds identically for a batched call.
+
+    **Idempotency.** The caller supplies one `operation_id` for the whole
+    batch, but observations are deduped individually, so each item derives
+    its own id as `f"{operation_id}:{index}"`. Without that derivation a
+    retry of a partially-applied batch would dedupe the whole batch against
+    its first item and silently drop the rest. The index is stable for a
+    given payload, which is what makes the retry converge.
+
+    `context_kind`, `outcome` and `confirmed` are batch-wide, so a
+    `ValidationError` about them is fatal for every item rather than a
+    property of one — it propagates instead of becoming N identical skips.
+    """
+
+    def __init__(
+        self,
+        word_repo: WordRepository,
+        group_repo: GroupRepository,
+        observation_repo: LearningObservationRepository,
+    ):
+        self._single = RecordContextOccurrenceUseCase(word_repo, group_repo, observation_repo)
+
+    def execute(
+        self,
+        user_id: int,
+        *,
+        word_ids: list[int],
+        context_kind: str,
+        outcome: str,
+        confirmed: bool,
+        operation_id: str | None = None,
+    ) -> BatchContextOccurrenceResult:
+        applied: list[ContextOccurrenceResult] = []
+        skipped: list[SkippedOccurrence] = []
+        for index, word_id in enumerate(word_ids):
+            data = ContextOccurrenceInput(
+                word_id=word_id, context_kind=context_kind, outcome=outcome, confirmed=confirmed,
+                operation_id=None if operation_id is None else f"{operation_id}:{index}",
+            )
+            try:
+                applied.append(self._single.execute(user_id, data))
+            except (EntityNotFoundError, PermissionDeniedError):
+                # Collapsed into one reason on purpose: reporting "exists but
+                # is not yours" separately from "does not exist" would turn a
+                # batch into a cross-account existence oracle.
+                skipped.append(SkippedOccurrence(word_id, "word_not_found"))
+        return BatchContextOccurrenceResult(applied=tuple(applied), skipped=tuple(skipped))
