@@ -114,6 +114,19 @@ class Group:
             raise InvalidPlacementError("Group name cannot be empty")
         self.name = new_name.strip()
 
+    def retarget(self, language: SupportedLanguage) -> None:
+        """Point the group at a different target language (issue #337).
+
+        Words already in the group keep their own `target_language`. A word
+        card records which language that word is in, and that stays true
+        however its container is later relabelled — rewriting every word
+        here would silently restate real vocabulary as something it is not,
+        to fix a label on the group. The two fields are independent by
+        design, which is also why adding a word never checks them against
+        each other.
+        """
+        self.target_language = language
+
 
 @dataclass(slots=True)
 class Word:

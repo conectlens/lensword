@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.domain.value_objects import SupportedLanguage, WordStatus
 
@@ -10,8 +10,24 @@ class GroupCreateRequest(BaseModel):
     target_language: SupportedLanguage
 
 
-class GroupRenameRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=128)
+class GroupUpdateRequest(BaseModel):
+    """Group-level attribute changes (issue #337).
+
+    Both fields are optional so the rename-only body every existing caller
+    sends — `{"name": "..."}` — keeps working unchanged. Omitting a field
+    means "leave it alone", which is why neither defaults to a value.
+    """
+
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    target_language: SupportedLanguage | None = None
+
+    @model_validator(mode="after")
+    def _at_least_one_change(self) -> "GroupUpdateRequest":
+        # An empty body is far more likely to be a caller bug than a
+        # deliberate no-op, and answering 200 would hide it.
+        if self.name is None and self.target_language is None:
+            raise ValueError("Provide a name, a target_language, or both")
+        return self
 
 
 class GroupResponse(BaseModel):

@@ -161,8 +161,11 @@ export const groupsApi = {
   list: () => request<Group[]>('/api/v1/groups'),
   create: (name: string, target_language: SupportedLanguage) =>
     request<Group>('/api/v1/groups', { method: 'POST', body: JSON.stringify({ name, target_language }) }),
-  rename: (groupId: number, name: string) =>
-    request<Group>(`/api/v1/groups/${groupId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+  // Group-level attribute changes (issue #337). An omitted field means
+  // "leave it alone" server-side, so a name-only call behaves exactly as
+  // the previous rename-only helper did.
+  update: (groupId: number, changes: { name?: string; target_language?: SupportedLanguage }) =>
+    request<Group>(`/api/v1/groups/${groupId}`, { method: 'PATCH', body: JSON.stringify(changes) }),
   remove: (groupId: number) => request<void>(`/api/v1/groups/${groupId}`, { method: 'DELETE' }),
   words: (groupId: number) => request<Word[]>(`/api/v1/groups/${groupId}/words`),
   addWord: (groupId: number, input: WordInput) =>

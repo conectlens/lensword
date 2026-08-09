@@ -19,6 +19,29 @@ The shared backend (`apps/backend`) is not an independently released product —
 
 ## Latest changes, all products
 
+**Web Application, Desktop Application, Backend (API)**
+
+<a id="edit-group-language"></a>
+
+### Added: A group's name and target language can both be edited after creation, from an Edit button on the group card.
+
+*2026-08-10* — verification: automated tests: passed
+
+A group created with the wrong target language no longer has to be deleted and rebuilt. Words already in the group keep the language they were added with — the editor says so before saving, rather than leaving it to be discovered afterwards.
+
+<details><summary>Technical detail</summary>
+
+PATCH /api/v1/groups/{group_id} previously accepted only `name` (GroupRenameRequest) and no UI called it. The body is now GroupUpdateRequest, where `name` and `target_language` are each optional and an omitted field means "leave it alone", so the rename-only body existing callers send is unchanged; a body with neither field is a 422 rather than a silent no-op. RenameGroupUseCase becomes UpdateGroupUseCase, applying group-level attribute changes, and Group gains a `retarget` method alongside `rename`. A language change invalidates the cached per-user language profile (issue #342) because that cache is derived from which languages the learner studies; a rename deliberately does not, since it cannot affect the profile. Frontend replaces the unused groupsApi.rename with groupsApi.update and adds an EditGroupModal to GroupsPage.
+
+</details>
+
+**Known limitations:**
+- Existing words are not offered a bulk language change; retargeting a group that already holds vocabulary leaves those words marked with their original language by design, and changing them is still a per-word edit.
+- The edit affordance is on the group card in /groups only; GroupDetailPage has no group-level edit control yet.
+- Not exercised in a browser; covered by backend API tests and a component test for the modal.
+
+References: [#337](https://github.com/conectlens/lensword/issues/337)
+
 **Web Application, Desktop Application**
 
 <a id="weekly-report-action-feedback"></a>
