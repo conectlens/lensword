@@ -6,6 +6,7 @@ import type { SessionMode, SessionSummary, Word } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { Icon } from '../../components/ui/Icon'
+import { PronunciationButton } from '../../components/ui/PronunciationButton'
 import { Spinner } from '../../components/ui/Spinner'
 
 const MULTIPLE_CHOICE_MODES: SessionMode[] = ['walking', 'night', 'break']
@@ -210,7 +211,10 @@ export function ReviewSessionPage() {
 
       <Card className="flex w-full flex-col gap-8 p-6 sm:p-10">
         <div className="text-center">
-          <h1 className="font-display text-4xl font-bold text-white sm:text-5xl">{currentWord.term}</h1>
+          <div className="flex items-center justify-center gap-2">
+            <h1 className="font-display text-4xl font-bold text-white sm:text-5xl">{currentWord.term}</h1>
+            <PronunciationButton term={currentWord.term} language={currentWord.target_language} />
+          </div>
           <p className="mt-2 text-lg text-white/50">{currentWord.target_language}</p>
         </div>
 

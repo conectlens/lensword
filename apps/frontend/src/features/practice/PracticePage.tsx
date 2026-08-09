@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { groupsApi, practiceApi } from '../../lib/api'
+import { localeFor } from '../../lib/speech'
 import type { PracticeExercise, Word } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
@@ -58,6 +59,11 @@ export function PracticePage() {
   function speak() {
     if (!selected || !('speechSynthesis' in window)) return
     const utterance = new SpeechSynthesisUtterance(selected.term)
+    // Without this the browser reads a foreign word with its default voice
+    // — an English mouth on a Spanish word, which is worse than no audio
+    // for someone using it to learn the pronunciation (issue #335).
+    const locale = localeFor(selected.target_language)
+    if (locale) utterance.lang = locale
     window.speechSynthesis.speak(utterance)
   }
 

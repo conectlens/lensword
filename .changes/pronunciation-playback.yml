@@ -1,0 +1,75 @@
+id: pronunciation-playback
+products:
+  - web
+  - desktop
+type: added
+summary: >-
+  Review and stabilization cards now have a speaker button that reads the
+  word aloud in its own language.
+technical_summary: >-
+  Adds lib/speech.ts (a Record<SupportedLanguage, string | null> mapping
+  each stored language label to a BCP-47 tag, plus voice matching),
+  lib/useSpeech.ts (a hook over window.speechSynthesis that subscribes to
+  voiceschanged, because getVoices() is empty on first call in most
+  browsers), and components/ui/PronunciationButton.tsx, wired into
+  ReviewSessionPage and AcquisitionSessionPage. Voice selection prefers an
+  exact locale match and falls back to any voice sharing the primary
+  subtag, so a device carrying only es-MX still speaks Spanish. The
+  issue described SupportedLanguage as free text with a KNOWN_LANGUAGES
+  suggestion list; it is in fact a closed enum of ten values and
+  KNOWN_LANGUAGES does not exist, so the mapping is exhaustive by type
+  rather than open-ended. The pre-existing speechSynthesis call in
+  PracticePage set no lang at all and now resolves one through the same
+  layer. Adds a volume_up entry to the type-safe icon registry.
+user_impact: >-
+  A word can be heard in the language it is stored in while reviewing it,
+  rather than read by whatever default voice the browser picked. Where
+  playback isn't possible — no speech support, no installed voice for that
+  language, or the "Other" language placeholder — the button stays visible
+  and disabled with the reason on it, instead of silently doing nothing.
+release_status: unreleased
+breaking: false
+migration: none
+known_limitations:
+  - Playback uses the browser's own speech engine, so which voices exist
+    and how good they sound is a property of the user's device and
+    operating system, not of LensWord.
+  - The "Other" language stores no locale and cannot be spoken; the
+    control is disabled and says so.
+  - Only one regional variant is preferred per language (for example
+    pt-PT for Portuguese); a device with only the other variant installed
+    falls back to it via primary-subtag matching, but the variant is not
+    user-selectable.
+  - The button is on the review and stabilization cards only; the word
+    list and MnemoLab card do not have it yet.
+  - Not verified with real audio output in a browser — the speech API is
+    covered by tests against a mocked speechSynthesis, which cannot
+    confirm how a voice actually sounds.
+compatibility:
+  requires:
+    server_api: null
+verification:
+  automated_tests:
+    status: passed
+    commands:
+      - cd apps/frontend && npx vitest run src/lib/speech.test.ts src/components/ui/PronunciationButton.test.tsx
+      - cd apps/frontend && npx tsc -b
+    workflow_url: null
+  artifact_build:
+    status: not_run
+    artifacts: []
+  manual_platform_checks:
+    macos: not_run
+    windows: not_run
+    linux: not_run
+  production_observation:
+    status: not_observed
+security_impact: >-
+  No new network or backend surface; speech synthesis runs entirely in the
+  browser against text the account already stores.
+documentation_required: true
+date: '2026-08-10'
+references:
+  issues: [335]
+  pull_requests: []
+  commits: []
