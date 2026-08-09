@@ -32,6 +32,29 @@ Adds lib/speech.ts (a Record<SupportedLanguage, string | null> mapping each stor
 
 References: [#335](https://github.com/conectlens/lensword/issues/335)
 
+<a id="mind-palace-3d"></a>
+
+### Changed: Mind Palace rooms are now a navigable 3D space: orbit the room, select a word and click the floor to place it. The flat board remains available.
+
+*2026-08-10* — verification: automated tests: passed; artifact build: passed
+
+A room can be orbited and viewed as a space rather than a flat board, which is the point of a memory palace. Words already placed keep their positions and need no re-placing. A browser without WebGL gets the flat board and a message saying why, instead of an empty screen; the flat board is also still reachable by choice on browsers that do support 3D.
+
+<details><summary>Technical detail</summary>
+
+Adds three, @react-three/fiber and @react-three/drei, imported only by RoomScene3D, which RoomDetailPage loads through React.lazy. The build splits it into its own ~990 kB chunk; the main bundle is unchanged at ~516 kB. Placements keep the existing x_percent/y_percent contract — lib/roomSpace.ts reads them as coordinates on a square floor, which is what they already describe — so no migration is needed, no endpoint changed, and placements made before this feature appear in the 3D room as they are. floorToPercent applies the same 2-98 clamp as the 2D board so both views can store identical positions, and rounds to two decimals because unrounded round-tripping rewrote 2 as 2.0000000000000018 on every place-reload cycle. WebGL support is probed before mounting rather than caught after, since a failed context is a blank canvas that reads as an empty room. The renderer is disposed on unmount.
+
+</details>
+
+**Known limitations:**
+- Not verified by looking at the rendered scene. jsdom has no WebGL, so the automated tests cover the coordinate mapping, the round-trip and the WebGL fallback decision — not whether the room actually looks right, which needs a person with a browser.
+- Placements remain two-dimensional. Words sit on the floor plane; there is no height axis, because nothing stores one and adding it would be a schema change for an interaction that does not exist yet.
+- The camera orbits and zooms but does not pan or walk, so the room is something you look around rather than move through.
+- Words are placed by selecting one and clicking the floor. Dragging from the sidebar still works in the flat view only, since a drag has no meaning against a 3D surface.
+- The 3D chunk is roughly 990 kB and is fetched the first time a room is opened in 3D.
+
+References: [#339](https://github.com/conectlens/lensword/issues/339)
+
 <a id="flashcard-swipe-practice"></a>
 
 ### Added: A Flashcards option on the dashboard practises due words by flipping a card and marking it known or not known, by swipe, button, or arrow key.

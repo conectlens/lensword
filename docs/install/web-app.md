@@ -169,10 +169,18 @@ showing an empty, ambiguous screen:
 ### Use Mind Palace rooms and spatial anchors
 
 **Mind Palace** in the top nav lists your memory rooms. Creating one asks
-for a name, which group's words it draws from, and an icon. Inside a room,
-drag a word from the sidebar list onto the canvas to place it as a spatial
-anchor (the method-of-loci technique) — a placed word shows as a small
-marker at the position you dropped it.
+for a name, which group's words it draws from, and an icon.
+
+Inside a room, words are placed as spatial anchors (the method-of-loci
+technique). The default view is a 3D room you can orbit and zoom: pick a
+word from the sidebar, then click the floor to place it, and click a marker
+to remove it. A **Flat view** button switches to the original
+drag-and-drop board, and browsers without WebGL get that board
+automatically with a message explaining why the 3D view isn't offered.
+
+Both views read and write the same placement, so a word placed in one
+appears in the same spot in the other, and rooms built before the 3D view
+existed keep their layout.
 
 ![Mind Palace room canvas with a word placed as a spatial anchor](../media/screenshots/web-mind-palace.webp)
 
