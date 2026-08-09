@@ -230,6 +230,10 @@ export interface RecallSettings {
   learning_diagnosis_enabled: boolean
   acquisition_loop_enabled: boolean
   ai_coach_enabled: boolean
+  /** Off by default. Gates every companion-session route on the backend,
+   *  including the in-app chat; the chat surface hides itself when this is
+   *  off rather than letting every request 403. */
+  ai_companion_enabled: boolean
   /** IANA identifier, e.g. 'Europe/Istanbul'. Reminder times and quiet
    *  hours are interpreted in this zone. */
   time_zone: string
@@ -689,4 +693,48 @@ export interface ScenarioVocabulary {
   // True when the deck is too thin for a list to be worth showing.
   sparse: boolean
   detail: string
+}
+
+// --- Companion chat (issue #343) ----------------------------------------
+
+export type CompanionTurnRole = 'user' | 'assistant'
+
+export type CompanionSessionStatus = 'active' | 'paused' | 'finished' | 'revoked'
+
+export interface CompanionTurn {
+  id: number
+  session_id: string
+  role: CompanionTurnRole
+  content: string
+  activity_id: string | null
+  operation_id: string | null
+  created_at: string
+}
+
+export interface CompanionSession {
+  id: string
+  connection_id: string
+  client_id: string
+  goal: string | null
+  language: string | null
+  group_id: number | null
+  difficulty: string | null
+  active_activity: string | null
+  summary: string | null
+  status: CompanionSessionStatus
+  revision: number
+  created_at: string
+  updated_at: string
+  turns: CompanionTurn[]
+}
+
+/** Always HTTP 200 with a status, matching the conversation tutor: a
+ *  provider switched off or briefly down is a normal state of a healthy
+ *  install. `user_turn` is present for every status, so a failed reply
+ *  still leaves what was typed on screen. */
+export interface CompanionChatResult {
+  status: 'ok' | 'disabled' | 'unavailable'
+  user_turn: CompanionTurn
+  assistant_turn: CompanionTurn | null
+  detail: string | null
 }

@@ -14,6 +14,7 @@ import { AcquisitionSessionPage } from './features/review/AcquisitionSessionPage
 import { MnemoLabPage } from './features/mnemolab/MnemoLabPage'
 import { LearningPathsPage } from './features/paths/LearningPathsPage'
 import { ConversationPage } from './features/tutor/ConversationPage'
+import { CompanionChatPage } from './features/companion/CompanionChatPage'
 import { ScenarioPage } from './features/tutor/ScenarioPage'
 import { PracticeLabPage } from './features/tutor/PracticeLabPage'
 import { MindMapPage } from './features/mindmap/MindMapPage'
@@ -85,6 +86,7 @@ export default function App() {
 
       <Route path="/paths" element={<ProtectedRoute><LearningPathsPage /></ProtectedRoute>} />
       <Route path="/tutor" element={<ProtectedRoute><ConversationPage /></ProtectedRoute>} />
+      <Route path="/assistant" element={<ProtectedRoute><CompanionChatPage /></ProtectedRoute>} />
       <Route path="/roleplay" element={<ProtectedRoute><ScenarioPage /></ProtectedRoute>} />
       <Route path="/lab" element={<ProtectedRoute><PracticeLabPage /></ProtectedRoute>} />
       <Route path="/mnemolab" element={<ProtectedRoute><MnemoLabPage /></ProtectedRoute>} />
