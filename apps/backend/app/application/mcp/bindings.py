@@ -25,6 +25,9 @@ from app.application.use_cases.mcp_dev_workflow import (
 )
 from app.application.use_cases.vocabulary import AddWordUseCase, SearchWordsUseCase, WordInput
 from app.application.use_cases.vocabulary import (
+    AddWordsUseCase,
+    BulkEditWordsUseCase,
+    BulkFieldEdit,
     CreateGroupUseCase,
     CreateRoomUseCase,
     DeleteWordUseCase,
@@ -163,6 +166,43 @@ def add_word_handler(words: WordRepository, groups: GroupRepository):
             ),
         )
         return word_to_response(word).model_dump(mode="json")
+    return handle
+
+
+def add_words_handler(words: WordRepository, groups: GroupRepository):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        language = _language(payload["target_language"])
+        result = AddWordsUseCase(words, groups).execute(
+            user_id,
+            int(payload["group_id"]),
+            [
+                WordInput(
+                    term=str(item["term"]), target_language=language,
+                    translations=[str(value) for value in item.get("translations", [])],
+                )
+                for item in payload["items"]
+            ],
+        )
+        return {
+            "added": [word_to_response(word).model_dump(mode="json") for word in result.added],
+            "skipped": [{"index": item.index, "reason": item.reason} for item in result.skipped],
+        }
+    return handle
+
+
+def update_words_handler(words: WordRepository, groups: GroupRepository, revisions):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        result = BulkEditWordsUseCase(words, groups, revisions).execute(
+            user_id,
+            [int(word_id) for word_id in payload["word_ids"]],
+            BulkFieldEdit(
+                cefr_level=payload.get("cefr_level"),
+                part_of_speech=payload.get("part_of_speech"),
+                category=payload.get("category"),
+                tags=[str(tag) for tag in payload["tags"]] if payload.get("tags") is not None else None,
+            ),
+        )
+        return {"updated": result.updated, "skipped": list(result.skipped)}
     return handle
 
 

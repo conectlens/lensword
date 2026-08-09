@@ -10,13 +10,14 @@ own copy.
 """
 from __future__ import annotations
 
+import http.client
 import json
 import re
-import urllib.error
-import urllib.request
+import threading
 import uuid
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 # CompanionSession.id is `uuid4().hex` (see StartCompanionSessionUseCase) —
 # always exactly 32 lowercase hex characters. Checking the shape here, before
@@ -34,7 +35,7 @@ class BackendError(RuntimeError):
         self.detail = detail
 
 
-def _error_detail(exc: urllib.error.HTTPError) -> str:
+def _error_detail(status: int, reason: str, payload: bytes) -> str:
     """Extract the most actionable message an error response carries.
 
     The backend states failures in a JSON `detail` field, but nothing
@@ -51,9 +52,9 @@ def _error_detail(exc: urllib.error.HTTPError) -> str:
     client instead of a `BackendError` any caller was prepared to catch.
     """
     try:
-        body = json.loads(exc.read())
+        body = json.loads(payload)
     except (json.JSONDecodeError, UnicodeDecodeError, OSError, ValueError):
-        return f"{exc.reason or 'LensWord request failed'} (HTTP {exc.code})"
+        return f"{reason or 'LensWord request failed'} (HTTP {status})"
 
     detail = body.get("detail") if isinstance(body, dict) else body
     if isinstance(detail, str) and detail.strip():
@@ -72,7 +73,98 @@ def _error_detail(exc: urllib.error.HTTPError) -> str:
             parts.append(f"{location}: {message}" if location else message)
         if parts:
             return "; ".join(parts)
-    return f"{exc.reason or 'LensWord request failed'} (HTTP {exc.code})"
+    return f"{reason or 'LensWord request failed'} (HTTP {status})"
+
+
+# Failures that mean "the socket we were reusing is gone", as distinct from
+# "the request was rejected". A peer that closes an idle keep-alive
+# connection is behaving correctly, and the client that reused it must not
+# turn that into a user-visible error — it reconnects and replays once.
+_STALE_CONNECTION_ERRORS = (
+    http.client.RemoteDisconnected,
+    http.client.BadStatusLine,
+    http.client.CannotSendRequest,
+    http.client.ResponseNotReady,
+    ConnectionResetError,
+    BrokenPipeError,
+)
+
+
+class _Transport:
+    """One persistent HTTP connection to the backend, guarded for reuse.
+
+    `urllib.request.urlopen` supports neither keep-alive nor pooling: it
+    sends `Connection: close` and tears the socket down after every call, so
+    every tool invocation, resource read and subscription poll paid a fresh
+    TCP handshake plus, over HTTPS, a full TLS handshake before its request
+    was even transmitted. Against a remote backend that is roughly two
+    round-trips of pure setup per call, on a path that issues hundreds of
+    calls for one bulk import.
+
+    `http.client` is the stdlib's own persistent-connection primitive, which
+    keeps `lensword-cli`'s zero-runtime-dependency guarantee (see
+    pyproject.toml) intact — no `httpx`, no `requests`.
+
+    The lock is not optional. `http_transport.py` serves on a
+    `ThreadingHTTPServer`, so one session's `BackendClient` can be entered
+    from several threads at once, and two interleaved exchanges on a single
+    socket would read each other's responses.
+    """
+
+    __slots__ = ("_host", "_port", "_secure", "_timeout", "_base_path", "_lock", "_connection")
+
+    def __init__(self, api_url: str, timeout: float):
+        parts = urlsplit(api_url)
+        self._secure = parts.scheme == "https"
+        self._host = parts.hostname or "localhost"
+        self._port = parts.port
+        self._timeout = timeout
+        # An api_url may carry a path prefix (a reverse proxy mounting the
+        # backend under a sub-path). urlopen took the whole URL; http.client
+        # takes host and path separately, so that prefix has to be preserved
+        # explicitly or every request would silently lose it.
+        self._base_path = parts.path.rstrip("/")
+        self._lock = threading.Lock()
+        self._connection: http.client.HTTPConnection | None = None
+
+    def request(self, method: str, path: str, body: bytes | None, headers: dict[str, str]):
+        """Perform one exchange, returning (status, reason, payload)."""
+        url = f"{self._base_path}{path}"
+        with self._lock:
+            try:
+                return self._exchange(method, url, body, headers)
+            except _STALE_CONNECTION_ERRORS:
+                # Replaying is safe by construction rather than by luck: if
+                # the peer closed the socket while idle, nothing was sent, and
+                # if it closed after processing, every write this client makes
+                # carries a `request_id` the backend's IdempotencyStore
+                # deduplicates against. Exactly once — a second failure is a
+                # real fault and belongs to the caller.
+                self._drop()
+                return self._exchange(method, url, body, headers)
+
+    def _exchange(self, method: str, url: str, body: bytes | None, headers: dict[str, str]):
+        if self._connection is None:
+            factory = http.client.HTTPSConnection if self._secure else http.client.HTTPConnection
+            self._connection = factory(self._host, self._port, timeout=self._timeout)
+        self._connection.request(method, url, body=body, headers=headers)
+        response = self._connection.getresponse()
+        # The body must be drained in full before the connection can carry
+        # another request; leaving it unread is what silently turns a pooled
+        # connection into a one-shot one.
+        return response.status, response.reason, response.read()
+
+    def _drop(self) -> None:
+        if self._connection is not None:
+            try:
+                self._connection.close()
+            except OSError:
+                pass
+            self._connection = None
+
+    def close(self) -> None:
+        with self._lock:
+            self._drop()
 
 
 @dataclass(frozen=True)
@@ -94,25 +186,48 @@ class BackendClient:
     workspace: str
     timeout: float = 30.0
 
+    def _transport(self) -> _Transport:
+        """The connection this client reuses, built on first use.
+
+        Created lazily rather than in `__post_init__` so that subclasses and
+        tests that replace `_request` outright never open a socket at all,
+        and so constructing a client stays free of side effects. The
+        dataclass is frozen, so the cached transport is attached through
+        `object.__setattr__`; it is deliberately not a field, since it is
+        connection state rather than part of the client's identity.
+        """
+        transport = self.__dict__.get("_transport_instance")
+        if transport is None:
+            transport = _Transport(self.api_url, self.timeout)
+            object.__setattr__(self, "_transport_instance", transport)
+        return transport
+
     def _request(self, path: str, body: dict[str, Any] | None = None) -> Any:
         data = None if body is None else json.dumps(body, separators=(",", ":")).encode()
-        request = urllib.request.Request(
-            f"{self.api_url.rstrip('/')}{path}",
-            data=data,
-            method="POST" if body is not None else "GET",
-            headers={
-                "Accept": "application/json",
-                "Authorization": f"Bearer {self.token}",
-                "Content-Type": "application/json",
-            },
-        )
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": "application/json",
+        }
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                return json.loads(response.read())
-        except urllib.error.HTTPError as exc:
-            raise BackendError(exc.code, _error_detail(exc)) from exc
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            status, reason, payload = self._transport().request(
+                "POST" if body is not None else "GET", path, data, headers
+            )
+        except (OSError, http.client.HTTPException, TimeoutError) as exc:
             raise BackendError(503, "LensWord API unavailable") from exc
+        if status >= 400:
+            raise BackendError(status, _error_detail(status, reason or "", payload))
+        try:
+            return json.loads(payload)
+        except json.JSONDecodeError as exc:
+            raise BackendError(503, "LensWord API unavailable") from exc
+
+    def close(self) -> None:
+        """Release the pooled socket. Safe to call on a client that never
+        opened one, and safe to call more than once."""
+        transport = self.__dict__.get("_transport_instance")
+        if transport is not None:
+            transport.close()
 
     def capabilities(self) -> dict[str, Any]:
         return self._request("/api/v1/mcp/capabilities")

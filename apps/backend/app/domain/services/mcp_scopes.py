@@ -110,6 +110,8 @@ SCOPE_TOOLS: dict[MCPScope, tuple[str, ...]] = {
         # what the call can do.
         "lensword_place_words_in_room",
         "lensword_generate_exercises_for_words",
+        "lensword_add_words",
+        "lensword_update_words",
     ),
     MCPScope.CONTEXT_IMPORT: (
         "lensword_extract_vocabulary",

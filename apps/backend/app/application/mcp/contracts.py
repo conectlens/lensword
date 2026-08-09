@@ -160,8 +160,19 @@ TOOL_DOCS: dict[str, tuple[str, str]] = {
         "Add Vocabulary Word",
         "Add one vocabulary word to a specific group in the learner's collection, "
         "optionally with its translations. Use when the learner names a word they "
-        "want to study. For pulling many words out of a passage at once, use "
-        "Extract Vocabulary from Text instead.",
+        "want to study. To add several words the learner has already chosen, use "
+        "Add Vocabulary Words — one call, not one per word. For pulling many words "
+        "out of a passage at once, use Extract Vocabulary from Text instead.",
+    ),
+    "lensword_add_words": (
+        "Add Vocabulary Words",
+        "Add up to 100 vocabulary words to one group in a single call, each "
+        "optionally with its translations. Every word joins the same group and is "
+        "recorded in that group's language, so use this for a list the learner has "
+        "already decided on — Extract Vocabulary from Text is still the right tool "
+        "for finding candidate words inside a passage. Words that cannot be added "
+        "are returned in `skipped` with their position and a reason; the rest are "
+        "still saved.",
     ),
     "lensword_search_words": (
         "Search Vocabulary",
@@ -375,7 +386,18 @@ TOOL_DOCS: dict[str, tuple[str, str]] = {
         "Correct a saved word's translations, example sentence, or mnemonic, or "
         "move it to another group, keeping its review history intact. Use this "
         "rather than deleting and re-adding, which would reset the word's "
-        "spaced-repetition schedule to new.",
+        "spaced-repetition schedule to new. To set the same level, part of "
+        "speech, category, or tags across several words, use Update Vocabulary "
+        "Words instead.",
+    ),
+    "lensword_update_words": (
+        "Update Vocabulary Words",
+        "Set the same CEFR level, part of speech, category, or tags on up to 100 "
+        "saved words at once. Only fields you supply are changed; an omitted field "
+        "is left alone rather than cleared. Term and translations deliberately "
+        "cannot be set this way — they are what makes a card that card, and one "
+        "value cannot be right for a hundred of them. Words that are not this "
+        "account's are reported in `skipped`. Review history is untouched.",
     ),
     "lensword_delete_word": (
         "Delete Vocabulary Word",
@@ -442,6 +464,36 @@ TOOL_DOCS: dict[str, tuple[str, str]] = {
 
 TOOL_CONTRACTS = tuple(ToolContract(name, f"https://lensword.app/mcp/{CONTRACT_VERSION}/{name}.schema.json", access, schema) for name, access, schema in (
     ("lensword_add_word", AccessClass.WRITE, _schema({"group_id": {"type":"integer", "minimum":1}, "term":{"type":"string","minLength":1,"maxLength":255}, "target_language":{"type":"string"}, "translations":{"type":"array","maxItems":20,"items":{"type":"string","maxLength":255}}}, ["group_id","term","target_language"], write=True)),
+    # Bulk vocabulary write (issue #347 Bug 5). `group_id` and
+    # `target_language` stay top-level: an import lands in one group, and a
+    # group has one language, so repeating them per item would invite a batch
+    # that disagreed with itself. That shape is also what lets the group's
+    # ownership be checked once for the whole call.
+    ("lensword_add_words", AccessClass.WRITE, _schema({
+        "group_id": {"type":"integer","minimum":1},
+        "target_language": {"type":"string"},
+        "items": {
+            "type":"array","minItems":1,"maxItems":MAX_PAGE_SIZE,
+            "items": {
+                "type":"object","additionalProperties":False,
+                "properties": {
+                    "term": {"type":"string","minLength":1,"maxLength":255},
+                    "translations": {"type":"array","maxItems":20,"items":{"type":"string","maxLength":255}},
+                },
+                "required":["term"],
+            },
+        },
+    }, ["group_id","target_language","items"], write=True)),
+    # The backend has had `PATCH /api/v1/words/bulk` since #140 but never
+    # exposed it here, so an agent editing forty cards had to issue forty
+    # `update_word` calls to reach a capability that already existed.
+    ("lensword_update_words", AccessClass.WRITE, _schema({
+        "word_ids": {"type":"array","minItems":1,"maxItems":MAX_PAGE_SIZE,"items":{"type":"integer","minimum":1}},
+        "cefr_level": {"type":"string","maxLength":8},
+        "part_of_speech": {"type":"string","maxLength":64},
+        "category": {"type":"string","maxLength":128},
+        "tags": {"type":"array","maxItems":50,"items":{"type":"string","maxLength":64}},
+    }, ["word_ids"], write=True)),
     ("lensword_search_words", AccessClass.READ, _schema({"query":{"type":"string","maxLength":255}, "limit":{"type":"integer","minimum":1,"maximum":100}, "cursor":{"type":"string","maxLength":256}})),
     ("lensword_extract_vocabulary", AccessClass.WRITE, _schema({"group_id":{"type":"integer","minimum":1}, "text":{"type":"string","minLength":1,"maxLength":20000}, "target_language":{"type":"string"}, "max_items":{"type":"integer","minimum":1,"maximum":50}}, ["group_id","text","target_language"], write=True)),
     ("lensword_get_due_reviews", AccessClass.READ, _schema({"group_id":{"type":"integer","minimum":1}, "limit":{"type":"integer","minimum":1,"maximum":100}, "cursor":{"type":"string","maxLength":256}})),

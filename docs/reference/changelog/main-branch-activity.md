@@ -11,6 +11,7 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 
 | Date | Commit | Author | Subject | Changelog fragment |
 |---|---|---|---|---|
+| 2026-08-09 | [439a6df](https://github.com/conectlens/lensword/commit/439a6df615673db79ce5f634cd8ebf8289cca712) | Ömer Faruk Coşkun | Batch the remaining single-item MCP write tools (#348) (#349) | none (predates this system) |
 | 2026-08-09 | [4f37a2c](https://github.com/conectlens/lensword/commit/4f37a2c56ad3c734f110c1fec27b740b74ddb6b6) | ÖMER FARUK COŞKUN | Replace Material Symbols icon font with lucide-react | none (predates this system) |
 | 2026-08-08 | [2317145](https://github.com/conectlens/lensword/commit/2317145626d8ff0eaa61bec3d4b86b65ff28b6d8) | Lenser | Merge main into development to catch up before merging desktop-build fix | none (predates this system) |
 | 2026-08-08 | [a55ad47](https://github.com/conectlens/lensword/commit/a55ad477aad481ebe89386caf8eacf73a67791c3) | Lenser | Fix desktop installer builds racing on shared release concurrency group | none (predates this system) |
@@ -50,6 +51,5 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 | 2026-08-08 | [75d14b2](https://github.com/conectlens/lensword/commit/75d14b22a01d528b32dff4cccb145a3a3c3f9701) | ÖMER FARUK COŞKUN | Refactor OllamaProvider onto a shared Template Method base | none (predates this system) |
 | 2026-08-08 | [d9d4148](https://github.com/conectlens/lensword/commit/d9d41482de6d59392b286b7b6d3f7de73d3a7451) | Ömer Faruk Coşkun | Merge pull request #323 from conectlens/development | none (predates this system) |
 | 2026-08-08 | [2d95ddd](https://github.com/conectlens/lensword/commit/2d95dddda1c9b9fe8395e38ca8160e13d89b48ca) | ÖMER FARUK COŞKUN | Merge remote-tracking branch 'origin/development' into development | none (predates this system) |
-| 2026-08-08 | [eb67961](https://github.com/conectlens/lensword/commit/eb679619dcce4020546a966370b559f8cb7eed27) | ÖMER FARUK COŞKUN | Make MCP tools loadable, readable, and correctly permissioned | none (predates this system) |
 
 Generated from `git log -40 development` — 40 commits shown.

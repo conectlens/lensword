@@ -3,7 +3,12 @@ from datetime import datetime
 
 from app.application.use_cases.knowledge_graph import RecomputeKnowledgeEdgesForWordUseCase
 from app.domain.entities import Group, Room, Word
-from app.domain.exceptions import EntityNotFoundError, InvalidPlacementError, PermissionDeniedError
+from app.domain.exceptions import (
+    EntityNotFoundError,
+    InvalidPlacementError,
+    PermissionDeniedError,
+    ValidationError,
+)
 from app.domain.repositories import GroupRepository, RoomRepository, WordRepository
 from app.domain.services.ai_provenance import (
     AI_AUTHORED_FIELDS,
@@ -151,6 +156,16 @@ class AddWordUseCase:
 
     def execute(self, owner_id: int, group_id: int, data: WordInput) -> Word:
         _require_group_owner(self.group_repo, group_id, owner_id)
+        return self._create(owner_id, group_id, data)
+
+    def _create(self, owner_id: int, group_id: int, data: WordInput) -> Word:
+        """Build and persist one word, ownership already established.
+
+        Split from `execute` so `AddWordsUseCase` can check the group once
+        for a whole batch and still construct every word through exactly this
+        code path — a second copy of this constructor would be free to drift
+        from it silently.
+        """
         word = Word(
             id=None,
             group_id=group_id,
@@ -184,6 +199,68 @@ class AddWordUseCase:
         RecomputeKnowledgeEdgesForWordUseCase(self.word_repo, self.edge_repo, self.mistake_repo).execute(
             owner_id, word_id
         )
+
+
+@dataclass(frozen=True, slots=True)
+class SkippedWordInput:
+    """One item an add batch declined, identified by position.
+
+    Position rather than term: terms are caller-supplied and need not be
+    unique within a batch, so an index is the only thing that unambiguously
+    points at the item that failed.
+    """
+
+    index: int
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class AddWordsResult:
+    added: tuple[Word, ...]
+    skipped: tuple[SkippedWordInput, ...]
+
+
+class AddWordsUseCase:
+    """Add several words to one group, checking that group's ownership once.
+
+    Every word in the batch lands in the same group, so the ownership check
+    is a property of the call rather than of each item — N calls to
+    `AddWordUseCase` re-answered an identical question N times. Word rows are
+    still distinct inserts; unlike batched room placement there is no shared
+    aggregate to collapse, so the win here is round trips and repeated
+    authorization work rather than write amplification.
+
+    Partial success matches the rest of the batch surface: an item the domain
+    rejects is reported with its position, and the valid items around it
+    still land.
+    """
+
+    def __init__(
+        self,
+        word_repo: WordRepository,
+        group_repo: GroupRepository,
+        edge_repo=None,
+        mistake_repo=None,
+    ):
+        self.word_repo = word_repo
+        self.group_repo = group_repo
+        self.edge_repo = edge_repo
+        self.mistake_repo = mistake_repo
+
+    def execute(self, owner_id: int, group_id: int, items: list[WordInput]) -> AddWordsResult:
+        _require_group_owner(self.group_repo, group_id, owner_id)
+        single = AddWordUseCase(self.word_repo, self.group_repo, self.edge_repo, self.mistake_repo)
+
+        added: list[Word] = []
+        skipped: list[SkippedWordInput] = []
+        for index, data in enumerate(items):
+            try:
+                added.append(single._create(owner_id, group_id, data))
+            except ValidationError as error:
+                # A term the domain refuses (blank after stripping, say) is a
+                # property of that item, not of the batch.
+                skipped.append(SkippedWordInput(index, str(error) or "invalid_word"))
+        return AddWordsResult(added=tuple(added), skipped=tuple(skipped))
 
 
 _GRAPH_FIELDS = frozenset({"synonyms", "antonyms", "collocations", "topics"})
@@ -329,6 +406,87 @@ class GetWordUseCase:
 
     def execute(self, owner_id: int, word_id: int) -> Word:
         return _require_word_owner(self.word_repo, self.group_repo, word_id, owner_id)
+
+
+@dataclass(frozen=True, slots=True)
+class BulkFieldEdit:
+    """The fields a bulk edit may set. `None` means "leave alone".
+
+    Deliberately the same narrow set the REST schema allows: term and
+    translations are excluded because they are what makes a card that card,
+    and a bulk control able to overwrite forty terms with one value is a
+    mistake waiting to be made irreversibly.
+    """
+
+    cefr_level: str | None = None
+    part_of_speech: str | None = None
+    category: str | None = None
+    tags: list[str] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BulkEditResult:
+    updated: int
+    skipped: tuple[int, ...]
+
+
+class BulkEditWordsUseCase:
+    """Set the same fields on several cards at once.
+
+    Lifted out of the `PATCH /api/v1/words/bulk` route body (issue #347) so
+    the MCP tool exposing this capability and the REST route behind the web
+    UI run the *same* code rather than two implementations that agree until
+    one of them is edited. Words that are not this account's are skipped and
+    reported rather than failing the whole request.
+    """
+
+    # Only the AI-authored fields carry history; category and tags are
+    # organisational and were never model claims about the language.
+    _VERSIONED_FIELDS = frozenset({"cefr_level", "part_of_speech"})
+    _FIELDS = ("cefr_level", "part_of_speech", "category", "tags")
+
+    def __init__(self, word_repo: WordRepository, group_repo: GroupRepository, revision_repo=None):
+        self.word_repo = word_repo
+        self.group_repo = group_repo
+        self.revision_repo = revision_repo
+
+    def execute(self, owner_id: int, word_ids: list[int], edit: BulkFieldEdit) -> BulkEditResult:
+        updated = 0
+        skipped: list[int] = []
+        for word_id in word_ids:
+            try:
+                word = _require_word_owner(self.word_repo, self.group_repo, word_id, owner_id)
+            except (EntityNotFoundError, PermissionDeniedError):
+                skipped.append(word_id)
+                continue
+            if self._apply(word, edit):
+                self.word_repo.update(word)
+                updated += 1
+        return BulkEditResult(updated=updated, skipped=tuple(skipped))
+
+    def _apply(self, word: Word, edit: BulkFieldEdit) -> bool:
+        """Apply the set fields, recording each real change. Returns whether any."""
+        changed = False
+        for name in self._FIELDS:
+            new_value = getattr(edit, name)
+            # None means "leave alone", which is different from setting a
+            # field to empty — an edit that omitted a field must not clear it.
+            if new_value is None:
+                continue
+            old_value = getattr(word, name)
+            if old_value == new_value:
+                continue
+            setattr(word, name, new_value)
+            changed = True
+            if name in self._VERSIONED_FIELDS and self.revision_repo is not None:
+                self.revision_repo.record(
+                    word_id=word.id,
+                    field=name,
+                    before_value=old_value,
+                    after_value=new_value,
+                    source=EditSource.BULK.value,
+                )
+        return changed
 
 
 class SearchWordsUseCase:
