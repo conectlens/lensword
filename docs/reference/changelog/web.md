@@ -9,6 +9,26 @@ Status — Web Application: **unreleased**.
 
 Every entry states exactly what was verified — a passing automated test does not imply a platform was manually checked, and a manual check on one OS does not imply another. See [Verification levels](/reference/trust/verification-levels) for what each status means.
 
+<a id="weekly-report-action-feedback"></a>
+
+### Fixed: The weekly report's "Generate AI interpretation" and "Refresh factual snapshot" buttons now show a spinner while working and a visible message when they fail, instead of appearing to do nothing.
+
+*2026-08-09* — verification: automated tests: passed
+
+Pressing either button on the weekly report now gives immediate visible feedback, and a failure — most likely when generating the AI interpretation — is reported on screen with the report still readable, rather than silently doing nothing.
+
+<details><summary>Technical detail</summary>
+
+Both buttons in WeeklyReportPage.tsx called reportsApi.<...>().then(setReport) directly from onClick, with no loading state, no disabled state and no .catch, so a request in flight was invisible and a failed one produced an unhandled promise rejection with nothing rendered. Both now use Button's existing loading prop, which already renders a spinner and disables the control, so no new UI primitive was needed. A single pending-action state disables both buttons while either runs, since each replaces the whole report and racing them would leave whichever finished last silently winning. Action failures render inline through a separate actionError state, kept apart from the page-level error state that replaces the whole view — that is the right response to the report failing to load and the wrong one to a button failing. Retrying clears a previous failure.
+
+</details>
+
+**Known limitations:**
+- The interpretation is generated in one request rather than streamed, so the feedback is a spinner for the whole wait rather than progressive output.
+- Verified by component tests against a mocked reports API; the buttons were not exercised against a live AI provider.
+
+References: [#344](https://github.com/conectlens/lensword/issues/344)
+
 <a id="web-browser-notifications"></a>
 
 ### Added: The web app can now show browser notifications for due reviews, opted into from Settings. Permission is only ever requested when you click to turn it on, never on page load.
