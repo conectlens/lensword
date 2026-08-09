@@ -11,6 +11,7 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 
 | Date | Commit | Author | Subject | Changelog fragment |
 |---|---|---|---|---|
+| 2026-08-10 | [23cb415](https://github.com/conectlens/lensword/commit/23cb415aa953da2c7f91bc597c862b3c330dae69) | Ömer Faruk Coşkun | Make an invalid icon name a compile error (#340) (#355) | none (predates this system) |
 | 2026-08-09 | [a353a31](https://github.com/conectlens/lensword/commit/a353a31e1ca7d16ae36889b574bab4a32a3f80f2) | Ömer Faruk Coşkun | Draw dropdowns in the app's own theme instead of native popup chrome (#341) (#354) | none (predates this system) |
 | 2026-08-09 | [3533afc](https://github.com/conectlens/lensword/commit/3533afcf407e3d66e35cf6e47c78c528320c2849) | Ömer Faruk Coşkun | Give the weekly report's two actions loading and error feedback (#344) (#353) | none (predates this system) |
 | 2026-08-09 | [b555096](https://github.com/conectlens/lensword/commit/b555096f9f2dacaad6402d38a0a9f42dc87e9a9e) | Ömer Faruk Coşkun | Cache the per-user language profile instead of rescanning (#342) (#352) | none (predates this system) |
@@ -50,6 +51,5 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 | 2026-08-08 | [525f847](https://github.com/conectlens/lensword/commit/525f847b6bc262050599027fe93991cba40ddb20) | ÖMER FARUK COŞKUN | Redirect authenticated users away from login/register and update landing CTAs | none (predates this system) |
 | 2026-08-08 | [9bbe653](https://github.com/conectlens/lensword/commit/9bbe653ea19b27ecaa31eb83cc596db0928b1f18) | ÖMER FARUK COŞKUN | Default OPENAI_MODEL to the cost-optimized gpt-5.6-luna tier | none (predates this system) |
 | 2026-08-08 | [4494804](https://github.com/conectlens/lensword/commit/449480479e9563bc23d4a8b19057742a781c2ea6) | ÖMER FARUK COŞKUN | Regenerate changelog pages for the cloud AI provider adapters fragment | none (predates this system) |
-| 2026-08-08 | [fbd459c](https://github.com/conectlens/lensword/commit/fbd459ce85e6e2d99023d3f200a2091e0215916f) | ÖMER FARUK COŞKUN | Add changelog fragment for the cloud AI provider adapters | none (predates this system) |
 
 Generated from `git log -40 development` — 40 commits shown.
