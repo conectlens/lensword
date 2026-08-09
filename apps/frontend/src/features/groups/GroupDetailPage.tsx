@@ -11,6 +11,7 @@ import { Spinner } from '../../components/ui/Spinner'
 import { BulkEditBar } from '../words/BulkEditBar'
 import { StatusChip } from '../../components/ui/StatusChip'
 import { Modal } from '../../components/ui/Modal'
+import { Select } from '../../components/ui/Select'
 
 export function GroupDetailPage() {
   const { groupId } = useParams()
@@ -164,15 +165,17 @@ export function GroupDetailPage() {
         <Card className="overflow-hidden">
           <div className="flex items-center justify-between border-b border-white/10 p-4">
             <p className="font-display font-bold text-white">Word list</p>
-            <select
+            <Select
+              size="sm"
+              aria-label="Sort words"
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-              className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white"
-            >
-              <option value="strength">Sort: Strength</option>
-              <option value="term">Sort: A–Z</option>
-              <option value="next_review">Sort: Next review</option>
-            </select>
+              onValueChange={(next) => setSortBy(next as typeof sortBy)}
+              options={[
+                { value: 'strength', label: 'Sort: Strength' },
+                { value: 'term', label: 'Sort: A–Z' },
+                { value: 'next_review', label: 'Sort: Next review' },
+              ]}
+            />
           </div>
           {selectedIds.size > 0 && (
             <div className="px-4 pb-3">
