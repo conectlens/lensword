@@ -81,6 +81,13 @@ language — "Spanish Verbs," "Business English." Creating one asks for a
 name and a target language; nothing else is required before you can start
 adding words.
 
+The **Edit** button on a group card changes both its name and its target
+language after the fact, so a group created against the wrong language
+doesn't have to be deleted and rebuilt. Words already in the group keep the
+language they were added with — a word card records which language that
+word is in, and that stays true however the group is relabelled. The editor
+states this before you save when the group already holds words.
+
 ### Add or import words
 
 From a group page, **Add word** opens a form for the term, its

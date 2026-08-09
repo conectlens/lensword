@@ -14,6 +14,7 @@ export function GroupsPage() {
   const navigate = useNavigate()
   const [groups, setGroups] = useState<Group[] | null>(null)
   const [showCreate, setShowCreate] = useState(false)
+  const [editing, setEditing] = useState<Group | null>(null)
 
   function load() {
     groupsApi.list().then(setGroups)
@@ -50,9 +51,18 @@ export function GroupsPage() {
                     <h3 className="font-display text-xl font-semibold text-white">{g.name}</h3>
                     <p className="text-sm text-white/40">{g.target_language}</p>
                   </div>
-                  {g.due_count > 0 && (
-                    <span className="rounded-full bg-primary/20 px-2 py-1 text-xs font-medium text-primary">{g.due_count} due</span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {g.due_count > 0 && (
+                      <span className="rounded-full bg-primary/20 px-2 py-1 text-xs font-medium text-primary">{g.due_count} due</span>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon="edit"
+                      aria-label={`Edit ${g.name}`}
+                      onClick={() => setEditing(g)}
+                    />
+                  </div>
                 </div>
                 <div className="space-y-1 text-sm text-white/50">
                   <p>{g.word_count} words</p>
@@ -79,7 +89,94 @@ export function GroupsPage() {
           }}
         />
       )}
+
+      {editing && (
+        <EditGroupModal
+          group={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null)
+            load()
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+function EditGroupModal({
+  group,
+  onClose,
+  onSaved,
+}: {
+  group: Group
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [name, setName] = useState(group.name)
+  const [language, setLanguage] = useState<SupportedLanguage>(group.target_language)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const languageChanged = language !== group.target_language
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+    try {
+      await groupsApi.update(group.id, { name: name.trim(), target_language: language })
+      onSaved()
+    } catch {
+      setError('Could not save those changes.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Modal title="Edit group" onClose={onClose}>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <Input
+          label="Group name"
+          required
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <Select
+          label="Target language"
+          value={language}
+          onValueChange={(next) => setLanguage(next as SupportedLanguage)}
+          options={LANGUAGES.map((l) => ({ value: l, label: l }))}
+        />
+
+        {/* Said before saving, not after: words keep the language they were
+            added with, so a group holding vocabulary in the old language is
+            the expected outcome rather than a bug to discover later. */}
+        {languageChanged && group.word_count > 0 && (
+          <p className="text-sm text-white/50">
+            The {group.word_count} {group.word_count === 1 ? 'word' : 'words'} already in this group
+            stay marked as {group.target_language}. Only the group changes to {language}.
+          </p>
+        )}
+
+        {error && (
+          <p role="alert" className="text-sm text-red-300">
+            {error}
+          </p>
+        )}
+
+        <div className="mt-2 flex flex-col gap-3 sm:flex-row-reverse">
+          <Button type="submit" loading={loading} disabled={!name.trim()}>
+            Save changes
+          </Button>
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+        </div>
+      </form>
+    </Modal>
   )
 }
 

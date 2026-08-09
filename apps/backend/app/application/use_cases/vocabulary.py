@@ -117,14 +117,41 @@ class GetGroupDetailUseCase:
         return group, words
 
 
-class RenameGroupUseCase:
+class UpdateGroupUseCase:
+    """Group-level attribute changes: name, target language, or both (#337).
+
+    `None` means "leave this alone" rather than "clear it", so a caller that
+    only ever sent a name keeps the behavior it always had.
+    """
+
     def __init__(self, group_repo: GroupRepository):
         self.group_repo = group_repo
 
-    def execute(self, owner_id: int, group_id: int, new_name: str) -> Group:
+    def execute(
+        self,
+        owner_id: int,
+        group_id: int,
+        new_name: str | None = None,
+        target_language: SupportedLanguage | None = None,
+    ) -> Group:
         group = _require_group_owner(self.group_repo, group_id, owner_id)
-        group.rename(new_name)
-        return self.group_repo.update(group)
+
+        if new_name is not None:
+            group.rename(new_name)
+
+        language_changed = target_language is not None and target_language != group.target_language
+        if language_changed:
+            group.retarget(target_language)
+
+        updated = self.group_repo.update(group)
+
+        # Only a language change: the cached profile is derived from which
+        # languages this learner studies, so renaming "Spanish 1" to
+        # "Spanish Verbs" cannot alter it, and dropping the cache for that
+        # would be work with no effect to justify it.
+        if language_changed:
+            _invalidate_language_profile(owner_id)
+        return updated
 
 
 class DeleteGroupUseCase:
