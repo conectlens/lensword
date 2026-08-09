@@ -1,9 +1,57 @@
-:root { color-scheme: light; font: 14px system-ui, sans-serif; }
-body { width: 300px; margin: 0; color: #18202a; background: #f7f8fa; }
+/* Same token values as apps/frontend/tailwind.config.js and docs/learn/brand.md
+   — kept in sync by hand since this extension has no build step to share them. */
+:root {
+  color-scheme: dark;
+  font: 14px system-ui, sans-serif;
+  --accent: #ffde59;
+  --accent-dark: #f5c400;
+  --ink: #121212;
+  --canvas: #121212;
+  --surface: #1f1f1f;
+  --surface-raised: #262626;
+  --border: rgba(255, 255, 255, 0.1);
+  --text: #ffffff;
+  --text-muted: #9ca3af;
+  --danger: #ef4444;
+}
+body { width: 300px; margin: 0; color: var(--text); background: var(--canvas); }
 main { display: grid; gap: 12px; padding: 18px; }
-h1 { margin: 0 0 4px; font-size: 18px; }
+h1 { margin: 0 0 4px; font-size: 18px; font-weight: 800; }
+section { display: grid; gap: 12px; }
+/* `section { display: grid }` above beats the UA stylesheet's `[hidden] {
+   display: none }` — author styles always win over UA styles regardless of
+   specificity, so an explicit author-level rule is required to hide sections
+   again once JS sets the `hidden` attribute. */
+[hidden] { display: none !important; }
 label { display: grid; gap: 5px; font-weight: 600; }
-input { box-sizing: border-box; width: 100%; padding: 8px; border: 1px solid #b8c0ca; border-radius: 4px; font: inherit; }
-button { padding: 9px 12px; border: 0; border-radius: 4px; color: #fff; background: #1769aa; font-weight: 700; cursor: pointer; }
-#status { min-height: 18px; margin: 0; }
-.hint { margin: 0; color: #586575; font-size: 12px; line-height: 1.4; }
+input, select {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+}
+input:focus, select:focus, button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+button {
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 8px;
+  font-weight: 700;
+  cursor: pointer;
+  background: var(--accent);
+  color: var(--ink);
+}
+button:hover { background: var(--accent-dark); }
+button.secondary { background: var(--surface-raised); color: var(--text); }
+button.secondary:hover { background: var(--surface); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.account { margin: 0; color: var(--text-muted); font-size: 12px; word-break: break-all; }
+#status { min-height: 18px; margin: 0; font-size: 13px; }
+#status.error { color: var(--danger); }
+.hint { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.4; }

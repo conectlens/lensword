@@ -1,0 +1,10 @@
+{
+  "name": "lensword-browser-extension",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build:debug": "node build-config.mjs .env.local",
+    "build:release": "node build-config.mjs .env.production"
+  }
+}

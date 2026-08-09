@@ -28,6 +28,10 @@ apps/frontend/.env
 apps/frontend/tsconfig.tsbuildinfo
 apps/frontend/.wrangler/
 
+# Browser extension — generated from .env.local/.env.production, see
+# apps/browser/build-config.mjs
+apps/browser/config.js
+
 # Desktop shell
 # Both forms, for the same reason as the backend entries above.
 apps/desktop/target
