@@ -19,6 +19,28 @@ The shared backend (`apps/backend`) is not an independently released product —
 
 ## Latest changes, all products
 
+**Browser Extension**
+
+<a id="browser-extension-signin-flow"></a>
+
+### Changed: The browser extension popup now signs in with your LensWord email and password and lets you pick a group from a dropdown, instead of asking you to paste a raw access token and type a numeric group ID by hand.
+
+*2026-08-10* — verification: manual checks — macos: passed
+
+Anyone loading the extension now signs in with their LensWord account instead of hunting for a bearer token in DevTools and typing a group ID from a URL. An expired session now shows a distinct "sign in again" notification rather than a generic failure. Loading the extension for local development requires running `npm run build:debug` in apps/browser first — it previously worked with zero build step.
+
+<details><summary>Technical detail</summary>
+
+popup.js replaces the manual token/group-ID form with email+password sign-in against POST /api/v1/auth/login, followed by GET /api/v1/groups to populate a <select>. Only the resulting access token, chosen group ID, and email are persisted to chrome.storage.local; the password is sent once and never stored. service-worker.js now distinguishes a 401 (expired token) from other capture failures with its own notification and clears the stale token automatically. The API URL is no longer a popup field: it is a fixed value baked into a generated config.js at build time (build-config.mjs), sourced from apps/browser/.env.local (debug, http://localhost:18420) or .env.production (release, the hosted API) — both popup.js and service-worker.js import API_URL from it, so building config.js (npm run build:debug or build:release) is now a required step before loading the extension. Also fixes a CSS bug where `section { display: grid }` overrode the `hidden` attribute's default `display: none` (author styles beat UA styles regardless of specificity), which had made the signed-in and signed-out sections of the popup render simultaneously, and switches the popup's color scheme from a generic blue to the project's brand tokens (#ffde59/#f5c400/#121212).
+
+</details>
+
+**Known limitations:**
+- Sign-out only clears local extension storage; it does not revoke the access token server-side. Compromised-token concerns still require revoking the token from the account, same as before this change.
+- No password reset, 2FA, or "remember multiple accounts" support — one signed-in account at a time, same constraint the previous manual-token flow had.
+
+References: [PR #356](https://github.com/conectlens/lensword/pull/356)
+
 **Web Application, Desktop Application**
 
 <a id="weekly-report-action-feedback"></a>

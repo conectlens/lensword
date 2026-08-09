@@ -11,6 +11,9 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 
 | Date | Commit | Author | Subject | Changelog fragment |
 |---|---|---|---|---|
+| 2026-08-09 | [a353a31](https://github.com/conectlens/lensword/commit/a353a31e1ca7d16ae36889b574bab4a32a3f80f2) | Ömer Faruk Coşkun | Draw dropdowns in the app's own theme instead of native popup chrome (#341) (#354) | none (predates this system) |
+| 2026-08-09 | [3533afc](https://github.com/conectlens/lensword/commit/3533afcf407e3d66e35cf6e47c78c528320c2849) | Ömer Faruk Coşkun | Give the weekly report's two actions loading and error feedback (#344) (#353) | none (predates this system) |
+| 2026-08-09 | [b555096](https://github.com/conectlens/lensword/commit/b555096f9f2dacaad6402d38a0a9f42dc87e9a9e) | Ömer Faruk Coşkun | Cache the per-user language profile instead of rescanning (#342) (#352) | none (predates this system) |
 | 2026-08-09 | [fb067d5](https://github.com/conectlens/lensword/commit/fb067d5c674ffcee1e320c7f120d7b9374654ac9) | Ömer Faruk Coşkun | Add opt-in browser notifications to the web app (#345) (#351) | none (predates this system) |
 | 2026-08-09 | [2b87c52](https://github.com/conectlens/lensword/commit/2b87c528d57badaa1e8dee73d118af692c6a8374) | Ömer Faruk Coşkun | Cut MCP transport request amplification (#347) (#350) | none (predates this system) |
 | 2026-08-09 | [439a6df](https://github.com/conectlens/lensword/commit/439a6df615673db79ce5f634cd8ebf8289cca712) | Ömer Faruk Coşkun | Batch the remaining single-item MCP write tools (#348) (#349) | none (predates this system) |
@@ -48,8 +51,5 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 | 2026-08-08 | [9bbe653](https://github.com/conectlens/lensword/commit/9bbe653ea19b27ecaa31eb83cc596db0928b1f18) | ÖMER FARUK COŞKUN | Default OPENAI_MODEL to the cost-optimized gpt-5.6-luna tier | none (predates this system) |
 | 2026-08-08 | [4494804](https://github.com/conectlens/lensword/commit/449480479e9563bc23d4a8b19057742a781c2ea6) | ÖMER FARUK COŞKUN | Regenerate changelog pages for the cloud AI provider adapters fragment | none (predates this system) |
 | 2026-08-08 | [fbd459c](https://github.com/conectlens/lensword/commit/fbd459ce85e6e2d99023d3f200a2091e0215916f) | ÖMER FARUK COŞKUN | Add changelog fragment for the cloud AI provider adapters | none (predates this system) |
-| 2026-08-08 | [4bc0b69](https://github.com/conectlens/lensword/commit/4bc0b69ca94a344113d0c037c44e5aa1f69f08b7) | ÖMER FARUK COŞKUN | Document Gemini, Vertex AI, and OpenAI provider setup | none (predates this system) |
-| 2026-08-08 | [bf58863](https://github.com/conectlens/lensword/commit/bf58863b7ca7b4de865425d45411f2a106b18f7e) | ÖMER FARUK COŞKUN | Add Gemini, Vertex AI, and OpenAI adapters for the AIProvider port | none (predates this system) |
-| 2026-08-08 | [75d14b2](https://github.com/conectlens/lensword/commit/75d14b22a01d528b32dff4cccb145a3a3c3f9701) | ÖMER FARUK COŞKUN | Refactor OllamaProvider onto a shared Template Method base | none (predates this system) |
 
 Generated from `git log -40 development` — 40 commits shown.
