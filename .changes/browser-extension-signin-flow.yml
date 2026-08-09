@@ -9,14 +9,14 @@ summary: >-
 technical_summary: >-
   popup.js replaces the manual token/group-ID form with email+password
   sign-in against POST /api/v1/auth/login, followed by GET /api/v1/groups to
-  populate a <select>. Only the resulting access token, chosen group ID, and
+  populate a `&lt;select&gt;`. Only the resulting access token, chosen group ID, and
   email are persisted to chrome.storage.local; the password is sent once and
   never stored. service-worker.js now distinguishes a 401 (expired token)
   from other capture failures with its own notification and clears the
   stale token automatically. The API URL is no longer a popup field: it is a
   fixed value baked into a generated config.js at build time
   (build-config.mjs), sourced from apps/browser/.env.local (debug,
-  http://localhost:18420) or .env.production (release, the hosted API) —
+  `http://localhost:18420`) or .env.production (release, the hosted API) —
   both popup.js and service-worker.js import API_URL from it, so building
   config.js (npm run build:debug or build:release) is now a required step
   before loading the extension. Also fixes a CSS bug where
