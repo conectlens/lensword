@@ -167,6 +167,27 @@ rather than this page.
 
 ![Practice Lab with Conversation, Role-play, Writing, and Pronunciation tabs](../media/screenshots/web-practice-lab.webp)
 
+### Chat with the assistant
+
+**Assistant** (`/assistant`) is a chat surface for asking about anything you
+are learning, rather than working through a drill. It is off unless the AI
+companion is enabled for your account; when it is off the page says so
+instead of failing, and no chat is offered.
+
+Each conversation is stored as a durable companion session, which is the
+same record an external companion (for example a connected MCP client)
+reads and writes — so a conversation started in the app remains readable
+and exportable through those surfaces rather than being trapped in the web
+UI. Replies come from the same opt-in AI provider as MnemoLab and
+Conversation practice (see [Local AI / Ollama](/install/local-ai-ollama)):
+with no provider configured the assistant says it is unavailable and keeps
+your message on screen rather than discarding it. Replies arrive complete
+rather than streaming in word by word.
+
+This surface is covered by automated tests against a stubbed AI provider;
+a full conversation turn against a live model was not carried to completion
+in this verification pass, for the same reason as Practice Lab above.
+
 ### Use personalized learning paths
 
 **Paths** (`/paths`) generates a study plan from a goal you describe in

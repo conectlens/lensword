@@ -369,6 +369,7 @@ CROSS_TENANT_CASES = [
     # owner-scoped even though their identifiers are opaque strings.
     _case("GET", "/api/v1/companion/sessions/{companion_session}"),
     _case("POST", "/api/v1/companion/sessions/{companion_session}/turns", {"role": "user", "content": "hola"}),
+    _case("POST", "/api/v1/companion/sessions/{companion_session}/chat", {"content": "hola"}),
     _case("POST", "/api/v1/companion/sessions/{companion_session}/pause"),
     _case("POST", "/api/v1/companion/sessions/{companion_session}/resume"),
     _case("POST", "/api/v1/companion/sessions/{companion_session}/finish"),

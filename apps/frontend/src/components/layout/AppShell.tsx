@@ -12,6 +12,9 @@ const NAV_ITEMS = [
   // One entry, not four. Someone who wants to practise should not have to
   // know which of four places to go — the modes are tabs inside the lab.
   { to: '/lab', label: 'Practice Lab', icon: 'science' },
+  // Top level rather than a Practice Lab tab: this answers questions about
+  // anything, which is a different intent from working through a drill.
+  { to: '/assistant', label: 'Assistant', icon: 'auto_awesome' },
 ]
 
 export function AppShell({ children }: { children: ReactNode }) {
