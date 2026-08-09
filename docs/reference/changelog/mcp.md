@@ -52,6 +52,27 @@ Adds lensword_place_words_in_room, lensword_record_context_occurrences and lensw
 
 References: [#348](https://github.com/conectlens/lensword/issues/348)
 
+<a id="language-profile-cache"></a>
+
+### Performance: Repeated language-profile lookups no longer rescan the learner's entire vocabulary each time, so an assistant that checks the profile between actions stops paying a full collection scan per call.
+
+*2026-08-09* — verification: automated tests: passed
+
+No visible change in behaviour. Assistants and MCP clients that read the language profile repeatedly during a session get their answer without a repeated full scan of the learner's collection, which is most noticeable on larger vocabularies.
+
+<details><summary>Technical detail</summary>
+
+GetLanguageProfileUseCase.execute read every group and every word the learner owns to produce five counts and a language list, with no memoization, and is reachable through lensword_get_language_profile, which an agent may call before or after each word lookup or exercise. Adds PerUserTTLCache, a generic bounded LRU with a time-to-live in the shape ai_cache.py established (same 15-minute TTL and 500-entry bound; no provider/model in the key, since the value is derived from the database rather than sampled from a generator). The use case takes the cache as a constructor argument defaulting to a shared module-level instance, so execute's signature is unchanged and a caller needing live data can pass cache=None. The use cases that add or delete a word, or create or delete a group, invalidate the learner's entry themselves — the code performing a mutation is the only place that reliably knows one happened. A conftest fixture clears the shared instance between tests, following the existing isolate_coach_cache precedent, since ids restart from 1 in each test database.
+
+</details>
+
+**Known limitations:**
+- Answering a review moves known_word_count and active_word_count as repetitions and strength cross the mastery threshold, and that is not invalidated — it happens on the hot path of every single review, the drift is at most a few words, and the issue's own acceptance criterion allows the profile to catch up within one TTL window. Structural changes (adding or removing words, creating or deleting groups) are invalidated immediately.
+- Renaming a group is deliberately not invalidated, because no field of LanguageProfile depends on a group's name. If a group's language becomes editable, that change would need invalidating, since target_languages is derived from it.
+- The cache is per process and in-memory, so a deployment running several backend workers caches independently in each. That is the same trade ai_cache.py documents and is bounded by the same TTL.
+
+References: [#342](https://github.com/conectlens/lensword/issues/342)
+
 <a id="split-local-cli-package"></a>
 
 ### Changed: The Local CLI is now published from its own apps/cli package (lensword-cli), independently versioned from the MCP server, with a PyPI publish workflow in place — not yet triggered.
