@@ -5,13 +5,13 @@ import type { Group, Room } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
-import { Icon } from '../../components/ui/Icon'
+import { Icon, resolveIconName, type IconName } from '../../components/ui/Icon'
 import { Modal } from '../../components/ui/Modal'
 import { Select } from '../../components/ui/Select'
 import { Input } from '../../components/ui/Input'
 import { Spinner } from '../../components/ui/Spinner'
 
-const ROOM_ICONS = ['meeting_room', 'local_library', 'restaurant', 'science', 'bed', 'work', 'flight']
+const ROOM_ICONS: IconName[] = ['meeting_room', 'local_library', 'restaurant', 'science', 'bed', 'work', 'flight']
 
 export function RoomsPage() {
   const navigate = useNavigate()
@@ -61,7 +61,7 @@ export function RoomsPage() {
               <Card key={room.id} className="flex flex-col gap-4 p-6 transition-transform hover:scale-[1.02]">
                 <div className="flex items-center gap-4">
                   <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/20 text-primary">
-                    <Icon name={room.icon} />
+                    <Icon name={resolveIconName(room.icon)} />
                   </div>
                   <h2 className="font-display text-lg font-bold text-white">{room.name}</h2>
                 </div>
