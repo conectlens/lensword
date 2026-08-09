@@ -19,6 +19,30 @@ The shared backend (`apps/backend`) is not an independently released product —
 
 ## Latest changes, all products
 
+**Backend (API), MCP Server, Local CLI**
+
+<a id="mcp-transport-request-amplification"></a>
+
+### Performance: MCP tool calls now reuse a single network connection instead of opening a new one per request, subscribed resources are no longer refetched after every message, and bulk vocabulary imports and edits are a single call.
+
+*2026-08-09* — verification: automated tests: passed
+
+Importing or editing vocabulary through an MCP client is substantially faster, especially against a hosted backend where every call previously paid a fresh TLS handshake. Long-lived remote MCP servers no longer grow in memory as clients reconnect. Argument completion in an MCP host responds without a network round trip per keystroke.
+
+<details><summary>Technical detail</summary>
+
+Five compounding defects made a 100-word import cost roughly 300 HTTP requests over 300 separate TCP+TLS connections. BackendClient._request was built on urllib.request.urlopen, which supports neither keep-alive nor pooling; it now uses a lazily created, lock-guarded persistent http.client.HTTP(S)Connection that transparently reconnects and replays once when a peer closes an idle socket, keeping lensword-cli's zero-runtime-dependency guarantee and the BackendError contract unchanged. poll_subscriptions ran its coalesce check after the fetch, so the window suppressed only the notification while the request had already been paid for; both that guard and a new, separate minimum poll interval now sit above the fetch, and lensword://me/today and lensword://me/due are fetched once per pass rather than twice despite resolving to an identical backend call. The Streamable HTTP transport's session_ttl_seconds was assigned and never read, and _Session carried no timestamp to compute it from, so every reconnect without an explicit DELETE leaked a session for the process lifetime; sessions now carry last_seen, are evicted opportunistically under the existing lock, and have their pooled connection closed on eviction. Completion candidate lookups are cached per session instead of hitting the network per keystroke. Two bulk tools were added, lensword_add_words and lensword_update_words, the latter finally exposing the PATCH /api/v1/words/bulk capability that had existed since #140 without ever appearing on the MCP surface; both the tool and the REST route now run one shared BulkEditWordsUseCase rather than two implementations.
+
+</details>
+
+**Known limitations:**
+- The minimum poll interval means a subscribed resource's change can take up to that interval to be noticed. Delivery is unchanged — a material change still produces exactly one notification, and nothing is lost — but detection is no longer instantaneous on the very next processed message.
+- Subscription fingerprints still request a full 100-row page where they only need a count. Shrinking that page cannot be done without either making the count wrong beyond the page size or having the backend return a total, so it is deliberately left alone rather than traded for a fingerprint that silently misses changes.
+- Connection reuse is verified against a loopback HTTP server, which proves the connection count but not TLS-handshake savings against a real remote HTTPS backend.
+- The new CI job is not yet in the repository's required-status-check set, so a red run there will not block a merge until branch protection is updated.
+
+References: [#347](https://github.com/conectlens/lensword/issues/347)
+
 **Backend (API), MCP Server**
 
 <a id="mcp-batch-write-tools"></a>

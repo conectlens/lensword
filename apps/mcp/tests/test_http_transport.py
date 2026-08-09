@@ -140,10 +140,37 @@ def test_origin_allowlist_blocks_disallowed_browser_origins_but_allows_no_origin
 
 
 def test_oversized_request_body_is_rejected(running_server):
+    """The body must be refused, and the server must survive refusing it.
+
+    The handler deliberately does *not* read an oversized body before
+    answering — draining attacker-controlled bytes would defeat the limit —
+    so it sends 413 and closes the connection immediately. Whether the client
+    manages to read that 413 or has its own write fail first is a
+    socket-buffer race the operating system decides: on Linux a megabyte
+    usually fits in the send buffer and the response comes back, while on
+    macOS the close lands mid-write and urllib raises instead. Asserting on
+    only one of those made this test pass or fail by platform.
+
+    Both outcomes mean the same thing — the body was refused. What must never
+    happen is it being accepted, and what the follow-up request rules out is
+    the server having fallen over rather than rejected cleanly.
+    """
     _transport, url = running_server
     oversized = b"{" + b'"padding": "' + b"x" * (MAX_HTTP_BODY_BYTES + 1) + b'"}'
-    status, _, _ = _post(url, None, headers={"Authorization": "Bearer t", "Content-Type": "application/json"}, raw_body=oversized)
-    assert status == 413
+
+    try:
+        status, _, _ = _post(
+            url, None,
+            headers={"Authorization": "Bearer t", "Content-Type": "application/json"},
+            raw_body=oversized,
+        )
+    except urllib.error.URLError:
+        status = None
+    assert status in (413, None)
+
+    healthy, _, body = _initialize(url)
+    assert healthy == 200
+    assert body["result"]["protocolVersion"]
 
 
 def test_a_post_to_the_wrong_path_does_not_corrupt_the_next_request_on_the_same_connection(running_server):

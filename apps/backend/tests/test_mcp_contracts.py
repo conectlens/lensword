@@ -26,7 +26,10 @@ def test_contracts_are_versioned_bounded_and_classified():
     # generate_exercises_for_words. Each batches a tool that remains in the
     # registry beside it — the single-item forms stay correct for a one-off
     # call, and removing one would invalidate OAuth grants keyed on its name.
-    assert CONTRACT_VERSION == "1.0.0" and len(TOOL_CONTRACTS) == 41
+    # Plus 2 bulk vocabulary tools (#347 Bug 5): add_words, and update_words
+    # exposing the `PATCH /api/v1/words/bulk` capability that had existed in
+    # the backend since #140 without ever appearing on this surface.
+    assert CONTRACT_VERSION == "1.0.0" and len(TOOL_CONTRACTS) == 43
     for tool in TOOL_CONTRACTS:
         assert tool.schema_id.endswith(".schema.json")
         assert tool.input_schema["additionalProperties"] is False

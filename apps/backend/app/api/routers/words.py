@@ -19,6 +19,8 @@ from app.api.schemas.vocabulary import (
     WordVerificationResponse,
 )
 from app.application.use_cases.vocabulary import (
+    BulkEditWordsUseCase,
+    BulkFieldEdit,
     DeleteWordUseCase,
     GetWordUseCase,
     UpdateWordAssociationsUseCase,
@@ -216,45 +218,14 @@ def bulk_edit(
     discard the other thirty-nine, and a bulk edit that quietly did less than
     asked is worse than one that says so.
     """
-    updated = 0
-    skipped: list[int] = []
-    for word_id in payload.word_ids:
-        try:
-            word = GetWordUseCase(word_repo, group_repo).execute(current_user.id, word_id)
-        except (EntityNotFoundError, PermissionDeniedError):
-            skipped.append(word_id)
-            continue
-
-        changed = _apply_bulk_fields(word, payload, revision_repo)
-        if changed:
-            word_repo.update(word)
-            updated += 1
-
-    return BulkWordEditResponse(updated=updated, skipped=skipped)
-
-
-def _apply_bulk_fields(word, payload: BulkWordEditRequest, revision_repo) -> bool:
-    """Apply the set fields, recording each real change. Returns whether any."""
-    changed = False
-    for name in ("cefr_level", "part_of_speech", "category", "tags"):
-        new_value = getattr(payload, name)
-        # None means "leave alone", which is different from setting a field to
-        # empty — a bulk form that omitted a field must not clear it.
-        if new_value is None:
-            continue
-        old_value = getattr(word, name)
-        if old_value == new_value:
-            continue
-        setattr(word, name, new_value)
-        changed = True
-        # Only the AI-authored fields carry history; category and tags are
-        # organisational and were never model claims about the language.
-        if name in {"cefr_level", "part_of_speech"}:
-            revision_repo.record(
-                word_id=word.id,
-                field=name,
-                before_value=old_value,
-                after_value=new_value,
-                source=EditSource.BULK.value,
-            )
-    return changed
+    result = BulkEditWordsUseCase(word_repo, group_repo, revision_repo).execute(
+        current_user.id,
+        list(payload.word_ids),
+        BulkFieldEdit(
+            cefr_level=payload.cefr_level,
+            part_of_speech=payload.part_of_speech,
+            category=payload.category,
+            tags=payload.tags,
+        ),
+    )
+    return BulkWordEditResponse(updated=result.updated, skipped=list(result.skipped))

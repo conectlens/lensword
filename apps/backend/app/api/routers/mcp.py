@@ -15,7 +15,8 @@ from app.application.mcp.contracts import CONTRACT_VERSION, capabilities, valida
 from app.application.mcp.dispatcher import MCPDispatcher, UnboundMCPToolError, UnknownMCPToolError
 from app.application.mcp.idempotency import IdempotencyStore
 from app.application.mcp.bindings import (
-    add_word_handler, begin_learning_activity_handler, cancel_companion_task_handler, check_known_term_handler,
+    add_word_handler, add_words_handler, begin_learning_activity_handler,
+    cancel_companion_task_handler, check_known_term_handler,
     create_group_handler, create_room_handler, create_study_session_handler, delete_word_handler,
     due_reviews_handler, explain_evidence_handler, explain_for_user_handler,
     extract_vocabulary_handler, finish_companion_session_handler, finish_learning_activity_handler,
@@ -29,6 +30,7 @@ from app.application.mcp.bindings import (
     request_hint_handler, resume_companion_session_handler, search_words_handler,
     start_companion_session_handler, start_extraction_task_handler,
     submit_activity_response_handler, suggest_stretch_vocabulary_handler, update_word_handler,
+    update_words_handler,
 )
 from app.api.deps import (
     CompanionActivityRepo, CompanionSessionRepo, CompanionTaskRepo, DbSession, DiagnosisRepo, GroupRepo,
@@ -109,6 +111,8 @@ def _handlers(groups, words, sessions, exercises, provider, companion_sessions, 
         "lensword_generate_mnemonic": generate_mnemonic_handler(mnemonics, words, groups, provider),
         "lensword_get_word_map": get_word_map_handler(words, groups, edges),
         "lensword_add_word": add_word_handler(words, groups), "lensword_search_words": search_words_handler(words, groups),
+        "lensword_add_words": add_words_handler(words, groups),
+        "lensword_update_words": update_words_handler(words, groups, revisions),
         "lensword_get_due_reviews": due_reviews_handler(words), "lensword_create_study_session": create_study_session_handler(sessions, words),
         "lensword_generate_exercises": generate_exercises_handler(exercises, words, groups), "lensword_get_learning_progress": learning_progress_handler(sessions),
         "lensword_generate_exercises_for_words": generate_exercises_for_words_handler(exercises, words, groups),

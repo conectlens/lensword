@@ -165,6 +165,91 @@ def test_group_and_scenario_completion_are_account_scoped_through_the_backend():
     assert topic["result"]["completion"]["values"] == []
 
 
+class _CountingCompletionBackend(FakeBackend):
+    """Counts the two completion lookups that used to hit the network on
+    every keystroke (issue #347 Bug 3)."""
+
+    def __init__(self):
+        self.group_calls = 0
+        self.scenario_calls = 0
+        self.group_names = ["Spanish Basics", "Spanish Slang", "French"]
+
+    def groups(self):
+        self.group_calls += 1
+        return self.group_names
+
+    def scenarios(self):
+        self.scenario_calls += 1
+        return ["job_interview", "airport", "restaurant"]
+
+
+def _completing_server(backend):
+    server = MCPServer(backend)
+    server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-11-25"}})
+    server.handle({"jsonrpc": "2.0", "method": "notifications/initialized"})
+    return server
+
+
+def _complete(server, name, value, request_id=2):
+    return server.handle(
+        {
+            "jsonrpc": "2.0", "id": request_id, "method": "completion/complete",
+            "params": {"argument": {"name": name, "value": value}},
+        }
+    )
+
+
+def test_completion_lookups_are_fetched_once_per_session_not_once_per_keystroke():
+    """`completion/complete` is typically invoked per keystroke, and both
+    backed lookups were uncached — so typing a ten-character group name cost
+    ten authenticated round trips to list the same groups."""
+    backend = _CountingCompletionBackend()
+    server = _completing_server(backend)
+
+    for index, prefix in enumerate(("S", "Sp", "Spa", "Span", "Spani")):
+        result = _complete(server, "group", prefix, request_id=index + 2)
+        assert result["result"]["completion"]["values"] == ["Spanish Basics", "Spanish Slang"]
+    for index, prefix in enumerate(("a", "ai", "air")):
+        _complete(server, "scenario", prefix, request_id=index + 20)
+
+    assert backend.group_calls == 1
+    assert backend.scenario_calls == 1
+
+
+def test_a_failed_completion_lookup_is_not_cached():
+    """`groups()`/`scenarios()` already fail closed to an empty list.
+    Remembering that emptiness would turn one transient blip into a session
+    with no completions at all."""
+    backend = _CountingCompletionBackend()
+    backend.group_names = []
+    server = _completing_server(backend)
+
+    assert _complete(server, "group", "S")["result"]["completion"]["values"] == []
+    backend.group_names = ["Spanish Basics"]
+
+    assert _complete(server, "group", "S", request_id=3)["result"]["completion"]["values"] == [
+        "Spanish Basics"
+    ]
+    assert backend.group_calls == 2
+
+
+def test_each_session_has_its_own_completion_cache():
+    """The cache is per-`MCPServer`, and the HTTP transport builds one
+    `MCPServer` per session — so one account's group names can never be
+    completed for another's."""
+    first = _CountingCompletionBackend()
+    first.group_names = ["Alpha Group"]
+    second = _CountingCompletionBackend()
+    second.group_names = ["Beta Group"]
+
+    assert _complete(_completing_server(first), "group", "")["result"]["completion"]["values"] == [
+        "Alpha Group"
+    ]
+    assert _complete(_completing_server(second), "group", "")["result"]["completion"]["values"] == [
+        "Beta Group"
+    ]
+
+
 def test_resource_read_rejects_unbounded_or_unknown_uris():
     server = MCPServer(FakeBackend())
     server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-11-25"}})

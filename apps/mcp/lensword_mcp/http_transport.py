@@ -41,6 +41,7 @@ import hmac
 import json
 import logging
 import threading
+import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable
@@ -67,11 +68,25 @@ def _hash(value: str) -> str:
 
 
 class _Session:
-    __slots__ = ("mcp_server", "token_hash")
+    __slots__ = ("mcp_server", "token_hash", "last_seen")
 
-    def __init__(self, mcp_server: MCPServer, token_hash: str):
+    def __init__(self, mcp_server: MCPServer, token_hash: str, last_seen: float):
         self.mcp_server = mcp_server
         self.token_hash = token_hash
+        # Without this field the TTL was not merely unenforced, it could not
+        # be computed at all — see StreamableHTTPMCPServer's own note.
+        self.last_seen = last_seen
+
+    def close(self) -> None:
+        """Release the session's pooled backend socket, if it has one.
+
+        `BackendClient.close()` exists precisely so an evicted session does
+        not leave a connection open with nothing left to use it.
+        """
+        backend = getattr(self.mcp_server, "backend", None)
+        closer = getattr(backend, "close", None)
+        if callable(closer):
+            closer()
 
 
 class StreamableHTTPMCPServer:
@@ -87,7 +102,13 @@ class StreamableHTTPMCPServer:
         allowed_origins: frozenset[str] = frozenset(),
         # Safe timeouts (TODO 0): both the idle-connection timeout on the
         # socket and a session TTL so an abandoned session cannot pin memory
-        # forever.
+        # forever. The TTL is measured from a session's last authenticated
+        # request and enforced opportunistically on lookup and creation
+        # (`_evict_expired`); until issue #347 it was assigned here and never
+        # read anywhere, and `_Session` carried no timestamp to compute it
+        # from, so a client that reconnected without issuing a DELETE leaked
+        # one session — a whole MCPServer and BackendClient — per reconnect
+        # for the process lifetime. Zero or negative disables eviction.
         request_timeout_seconds: float = 30.0,
         session_ttl_seconds: float = 3600.0,
         # The backend's public URL — the OAuth *authorization server* for
@@ -119,15 +140,49 @@ class StreamableHTTPMCPServer:
 
     # -- session lifecycle, called from the request handler below --------
 
+    def _evict_expired(self, now: float) -> None:
+        """Drop sessions idle longer than the TTL. Caller must hold the lock.
+
+        Opportunistic rather than timer-driven: eviction runs on session
+        lookup and creation, so no background thread exists to reason about
+        or to keep a process alive. The scan is over sessions the server is
+        already holding in memory, and the paths that trigger it are the same
+        paths that would otherwise grow that set.
+        """
+        if self.session_ttl_seconds <= 0:
+            return
+        expired = [
+            session_id
+            for session_id, session in self._sessions.items()
+            if now - session.last_seen >= self.session_ttl_seconds
+        ]
+        for session_id in expired:
+            session = self._sessions.pop(session_id, None)
+            if session is not None:
+                session.close()
+
     def open_session(self, token: str) -> str:
         session_id = uuid.uuid4().hex
+        now = time.monotonic()
         with self._lock:
-            self._sessions[session_id] = _Session(MCPServer(self.backend_factory(token)), _hash(token))
+            self._evict_expired(now)
+            self._sessions[session_id] = _Session(
+                MCPServer(self.backend_factory(token)), _hash(token), now
+            )
         return session_id
 
     def session_for(self, session_id: str, token: str) -> MCPServer | None:
+        now = time.monotonic()
         with self._lock:
+            self._evict_expired(now)
             session = self._sessions.get(session_id)
+            if session is not None:
+                # Refreshed before the token check, but only for a session
+                # that exists: an expired id and an unknown id must remain
+                # indistinguishable to the caller, and a wrong token must not
+                # be able to keep someone else's session alive.
+                if hmac.compare_digest(session.token_hash, _hash(token)):
+                    session.last_seen = now
         if session is None:
             return None
         # Token-substitution protection (issue #196 TODO 4): a session is
@@ -141,7 +196,9 @@ class StreamableHTTPMCPServer:
 
     def close_session(self, session_id: str) -> None:
         with self._lock:
-            self._sessions.pop(session_id, None)
+            session = self._sessions.pop(session_id, None)
+        if session is not None:
+            session.close()
 
     def session_count(self) -> int:
         with self._lock:
