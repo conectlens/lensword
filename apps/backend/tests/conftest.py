@@ -130,6 +130,23 @@ def isolate_coach_cache():
     _coach_cache.clear()
 
 
+@pytest.fixture(autouse=True)
+def isolate_language_profile_cache():
+    """Every test starts with an empty language-profile cache (issue #342).
+
+    Exactly the hazard `isolate_coach_cache` above describes, and for exactly
+    the same reason: `LANGUAGE_PROFILE_CACHE` is a process-wide singleton
+    keyed by user id, and each test's database restarts ids from 1. Without a
+    reset, a test that adds words for user 1 could read the profile another
+    test had already cached for its own user 1.
+    """
+    from app.application.use_cases.mcp_dev_workflow import LANGUAGE_PROFILE_CACHE
+
+    LANGUAGE_PROFILE_CACHE.clear()
+    yield
+    LANGUAGE_PROFILE_CACHE.clear()
+
+
 @pytest.fixture(scope="session")
 def _postgres_engine():
     """One engine and one schema build for the whole Postgres run.

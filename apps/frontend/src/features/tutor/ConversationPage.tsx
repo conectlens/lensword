@@ -4,6 +4,7 @@ import type { Conversation, ConversationMessage, Difficulty } from '../../lib/ty
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { Spinner } from '../../components/ui/Spinner'
+import { Select } from '../../components/ui/Select'
 
 /**
  * Practising a conversation with corrections shown inline (issue #135).
@@ -140,34 +141,26 @@ export function ConversationPage() {
         <Card className="flex flex-wrap items-center gap-3 p-6">
           <label className="text-sm text-white/70">
             Language
-            <select
-              value={language}
-              onChange={(event) => setLanguage(event.target.value)}
+            <Select
+              size="sm"
+              className="ml-2"
               aria-label="Conversation language"
-              className="ml-2 rounded bg-white/10 p-2 text-white"
-            >
-              {languages.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
+              value={language}
+              onValueChange={setLanguage}
+              options={languages.map((value) => ({ value, label: value }))}
+            />
           </label>
 
           <label className="text-sm text-white/70">
             Level
-            <select
-              value={difficulty}
-              onChange={(event) => setDifficulty(event.target.value as Difficulty)}
+            <Select
+              size="sm"
+              className="ml-2"
               aria-label="Difficulty"
-              className="ml-2 rounded bg-white/10 p-2 text-white"
-            >
-              {DIFFICULTIES.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+              value={difficulty}
+              onValueChange={(next) => setDifficulty(next as Difficulty)}
+              options={DIFFICULTIES.map((option) => ({ value: option.value, label: option.label }))}
+            />
           </label>
 
           <Button loading={busy} disabled={!language} onClick={() => void start()}>

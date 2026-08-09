@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 import { ConversationPage } from './ConversationPage'
 import { conversationsApi, groupsApi } from '../../lib/api'
+import { selectOption } from '../../test/selectOption'
 
 vi.mock('../../lib/api', () => ({
   conversationsApi: { start: vi.fn(), send: vi.fn() },
@@ -132,15 +133,20 @@ describe('ConversationPage', () => {
   it('offers named difficulty levels rather than numbers', async () => {
     render(<ConversationPage />)
 
-    const select = await screen.findByLabelText('Difficulty')
-    expect(select).toHaveTextContent('Gentle')
-    expect(select).toHaveTextContent('Stretch me')
+    // The names now live in the listbox rather than in the closed trigger,
+    // so the assertion opens it — which is also what a user must do to see
+    // them.
+    const trigger = await screen.findByRole('combobox', { name: 'Difficulty' })
+    fireEvent.keyDown(trigger, { key: 'Enter' })
+    const listbox = await screen.findByRole('listbox')
+    expect(within(listbox).getByRole('option', { name: 'Gentle' })).toBeInTheDocument()
+    expect(within(listbox).getByRole('option', { name: 'Stretch me' })).toBeInTheDocument()
   })
 
   it('passes the chosen difficulty when starting', async () => {
     render(<ConversationPage />)
-    await screen.findByLabelText('Difficulty')
-    fireEvent.change(screen.getByLabelText('Difficulty'), { target: { value: 'stretch' } })
+    await screen.findByRole('combobox', { name: 'Difficulty' })
+    await selectOption('Difficulty', 'Stretch me')
     fireEvent.click(screen.getByRole('button', { name: 'Start talking' }))
 
     // Two arguments: the client defaults the scenario, which #136 will use.

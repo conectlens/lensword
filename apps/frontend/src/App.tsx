@@ -30,6 +30,7 @@ import { OAuthAuthorizePage } from './features/mcp/OAuthAuthorizePage'
 import { useAuth } from './context/AuthContext'
 import { useDesktopNotifications } from './lib/useDesktopNotifications'
 import { useOfflineSync } from './lib/useOfflineSync'
+import { useWebNotifications } from './lib/useWebNotifications'
 import { useTraySync } from './lib/useTraySync'
 
 export default function App() {
@@ -39,6 +40,10 @@ export default function App() {
   const { user } = useAuth()
   const navigate = useNavigate()
   useDesktopNotifications(user !== null)
+  // The web counterpart (issue #345). It never asks for permission — it only
+  // polls once the user has granted it from Settings, and it stands down
+  // inside the desktop shell so a reminder is not shown twice.
+  useWebNotifications(user !== null)
   useOfflineSync(user !== null)
   useTraySync({ enabled: user !== null, isAdmin: user?.role === 'admin', navigate })
 

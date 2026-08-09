@@ -3,6 +3,7 @@ import { aiCredentialsApi, ApiRequestError } from '../../lib/api'
 import type { ByokProvider, UserAICredentialSummary } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
+import { Select } from '../../components/ui/Select'
 
 /**
  * Bring-Your-Own-Key AI credentials.
@@ -145,18 +146,13 @@ export function ByokCredentialsCard() {
       <div className="mt-5 flex flex-col gap-3 border-t border-white/10 pt-5">
         <label className="flex flex-col gap-1 text-sm text-white/70">
           Provider
-          <select
+          <Select
+            size="sm"
             aria-label="BYOK provider"
             value={provider}
-            onChange={(event) => setProvider(event.target.value as ByokProvider)}
-            className="rounded-lg bg-white/5 px-3 py-2 text-white"
-          >
-            {PROVIDERS.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
-          </select>
+            onValueChange={(next) => setProvider(next as ByokProvider)}
+            options={PROVIDERS.map((p) => ({ value: p.id, label: p.label }))}
+          />
         </label>
 
         {provider === 'vertex' ? (

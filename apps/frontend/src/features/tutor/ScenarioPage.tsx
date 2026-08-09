@@ -7,8 +7,10 @@ import type {
 } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
+import { Icon } from '../../components/ui/Icon'
 import { Spinner } from '../../components/ui/Spinner'
 import { ScenarioVocabulary } from './ScenarioVocabulary'
+import { Select } from '../../components/ui/Select'
 
 /**
  * Role-play with a scored summary at the end (issue #136).
@@ -78,8 +80,9 @@ function Evaluation({ attempt }: { attempt: ScenarioAttempt }) {
           {attempt.scenario.goals.map((goal) => {
             const met = evaluation.goals_met.includes(goal)
             return (
-              <li key={goal} className={met ? 'text-emerald-300' : 'text-white/50'}>
-                {met ? '✓' : '○'} {goal}
+              <li key={goal} className="flex items-center gap-1.5">
+                <Icon name={met ? 'check' : 'circle'} className={met ? 'text-emerald-300' : 'text-white/50'} />
+                <span className={met ? 'text-emerald-300' : 'text-white/50'}>{goal}</span>
               </li>
             )
           })}
@@ -176,18 +179,14 @@ export function ScenarioPage() {
 
         <label className="text-sm text-white/70">
           Language
-          <select
-            value={language}
-            onChange={(event) => setLanguage(event.target.value)}
+          <Select
+            size="sm"
+            className="ml-2"
             aria-label="Role-play language"
-            className="ml-2 rounded bg-white/10 p-2 text-white"
-          >
-            {languages.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
+            value={language}
+            onValueChange={setLanguage}
+            options={languages.map((value) => ({ value, label: value }))}
+          />
         </label>
 
         <div className="grid gap-3 sm:grid-cols-2">

@@ -121,8 +121,8 @@ describe('ScenarioPage', () => {
 
     expect(await screen.findByText('How it went')).toBeInTheDocument()
     expect(screen.getByText('Vocabulary')).toBeInTheDocument()
-    expect(screen.getByText('✓ Order food and drink')).toBeInTheDocument()
-    expect(screen.getByText('○ Ask for the bill')).toBeInTheDocument()
+    expect(screen.getByText('Order food and drink')).toBeInTheDocument()
+    expect(screen.getByText('Ask for the bill')).toBeInTheDocument()
   })
 
   it('hides the message box once the attempt is finished', async () => {

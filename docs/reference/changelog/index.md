@@ -19,6 +19,145 @@ The shared backend (`apps/backend`) is not an independently released product —
 
 ## Latest changes, all products
 
+**Web Application, Desktop Application**
+
+<a id="weekly-report-action-feedback"></a>
+
+### Fixed: The weekly report's "Generate AI interpretation" and "Refresh factual snapshot" buttons now show a spinner while working and a visible message when they fail, instead of appearing to do nothing.
+
+*2026-08-09* — verification: automated tests: passed
+
+Pressing either button on the weekly report now gives immediate visible feedback, and a failure — most likely when generating the AI interpretation — is reported on screen with the report still readable, rather than silently doing nothing.
+
+<details><summary>Technical detail</summary>
+
+Both buttons in WeeklyReportPage.tsx called reportsApi.<...>().then(setReport) directly from onClick, with no loading state, no disabled state and no .catch, so a request in flight was invisible and a failed one produced an unhandled promise rejection with nothing rendered. Both now use Button's existing loading prop, which already renders a spinner and disables the control, so no new UI primitive was needed. A single pending-action state disables both buttons while either runs, since each replaces the whole report and racing them would leave whichever finished last silently winning. Action failures render inline through a separate actionError state, kept apart from the page-level error state that replaces the whole view — that is the right response to the report failing to load and the wrong one to a button failing. Retrying clears a previous failure.
+
+</details>
+
+**Known limitations:**
+- The interpretation is generated in one request rather than streamed, so the feedback is a spinner for the whole wait rather than progressive output.
+- Verified by component tests against a mocked reports API; the buttons were not exercised against a live AI provider.
+
+References: [#344](https://github.com/conectlens/lensword/issues/344)
+
+**Web Application**
+
+<a id="web-browser-notifications"></a>
+
+### Added: The web app can now show browser notifications for due reviews, opted into from Settings. Permission is only ever requested when you click to turn it on, never on page load.
+
+*2026-08-09* — verification: automated tests: passed
+
+Users of the web app can opt in to browser notifications for due reviews from Settings, per browser. Nothing changes for anyone who does not opt in: no prompt appears on page load, and reminders continue to build up in the app as before. Browsers that block notifications, do not support them, or are served over plain HTTP now say so in Settings instead of presenting a switch that silently does nothing.
+
+<details><summary>Technical detail</summary>
+
+Adds lib/webNotifications.ts (support detection, permission, per-browser opt-in, show), lib/useWebNotifications.ts (a 30s outbox poll mirroring useDesktopNotifications) and a WebNotificationsCard settings section, which is the only caller of Notification.requestPermission() anywhere in the app. The collect/show/acknowledge loop was extracted from desktopNotifications.ts into lib/notificationOutbox.ts so both clients share one implementation; only show and ensurePermission were ever platform-specific, and desktopNotifications.ts re-exports the moved symbols so existing importers are unaffected. No backend change and no migration: the existing /api/v1/desktop-notifications outbox is client-agnostic despite its name, and recall_delivery.py's channel and quiet-hours policy still decides whether a notification is owed at all. The per-browser opt-in is stored in localStorage rather than on the account because notification permission is granted per browser profile — an account-level flag would claim notifications were on in Safari because they were granted in Chrome. The card renders nothing inside the Tauri shell, which raises OS notifications itself, so a reminder cannot be shown twice.
+
+</details>
+
+**Known limitations:**
+- Notifications are delivered only while LensWord is open in a tab. There is no service worker or push subscription, so nothing arrives with the app closed. That is the same trade the desktop client documents — the backend durably records what is owed, so a missed poll costs latency and nothing else — and a push transport would add a reconnect story, a second auth path, and a server-side subscription registry.
+- Clicking a notification focuses the tab but does not record a start_session action or navigate to the review, as the desktop shell's action buttons do. Routing from a notification is a separate change.
+- The opt-in is per browser profile and does not follow the account to another browser or device, which is inherent to how browsers grant notification permission.
+- Verified by unit and component tests against a stubbed Notification API; no notification was observed being raised by a real browser.
+
+References: [#345](https://github.com/conectlens/lensword/issues/345)
+
+**Web Application, Desktop Application**
+
+<a id="themed-select-component"></a>
+
+### Fixed: Dropdowns now open in the app's own dark styling instead of the browser's white system popup, and every dropdown in the app uses the same control.
+
+*2026-08-09* — verification: automated tests: passed
+
+Opening any dropdown in dark mode now shows a dark, app-styled list instead of a white system popup. Keyboard and screen-reader operation is preserved, and dropdowns look and behave identically everywhere in the app rather than varying by screen.
+
+<details><summary>Technical detail</summary>
+
+components/ui/Select.tsx wrapped a native `<select>` and styled its `<option>` elements, which browsers very largely ignore because the open dropdown is OS-level chrome rather than part of the page — so the popup kept rendering light against the app's dark surface no matter what CSS was applied. Rebuilt on @radix-ui/react-select, an unstyled accessible listbox primitive, so the open list is ordinary markup the app themes itself. Radix was chosen over a hand-rolled listbox because the parts that are easy to get wrong are the ones nobody notices until someone depends on them: roving focus, typeahead, aria-activedescendant, returning focus to the trigger on close. All 16 raw `<select>` elements across 11 files were migrated to the shared component, along with the 4 existing call sites, so the audit the issue asked for is complete rather than partial. The API is value/onValueChange rather than a native change event, and gained a size variant for the compact inline dropdowns several toolbars use. Radix reserves the empty string for "nothing selected", so filters offering "Any" or "Leave unchanged" use an exported ANY_OPTION sentinel that call sites map back themselves. Test setup gained the jsdom stubs the primitive needs (hasPointerCapture, ResizeObserver, DOMRect) and a shared selectOption helper that drives the control by keyboard.
+
+</details>
+
+**Known limitations:**
+- Visual QA across light and dark themes was not performed. The change is verified by unit tests asserting the open list is rendered by the app rather than as native popup chrome, which is the structural cause of the bug, but no dropdown was observed in a real browser in either theme.
+- Adds a runtime dependency (@radix-ui/react-select) to a frontend that previously had only React, the router and the icon library. The bundle grows accordingly. The issue names this trade explicitly, on the grounds that a hand-rolled listbox trades bundle size for accessibility risk.
+- The desktop shell's Content-Security-Policy was read and does permit the inline styles the primitive uses for positioning (style-src 'self' 'unsafe-inline'), but this was not confirmed by running the packaged desktop build.
+
+References: [#341](https://github.com/conectlens/lensword/issues/341)
+
+**Backend (API), MCP Server, Local CLI**
+
+<a id="mcp-transport-request-amplification"></a>
+
+### Performance: MCP tool calls now reuse a single network connection instead of opening a new one per request, subscribed resources are no longer refetched after every message, and bulk vocabulary imports and edits are a single call.
+
+*2026-08-09* — verification: automated tests: passed
+
+Importing or editing vocabulary through an MCP client is substantially faster, especially against a hosted backend where every call previously paid a fresh TLS handshake. Long-lived remote MCP servers no longer grow in memory as clients reconnect. Argument completion in an MCP host responds without a network round trip per keystroke.
+
+<details><summary>Technical detail</summary>
+
+Five compounding defects made a 100-word import cost roughly 300 HTTP requests over 300 separate TCP+TLS connections. BackendClient._request was built on urllib.request.urlopen, which supports neither keep-alive nor pooling; it now uses a lazily created, lock-guarded persistent http.client.HTTP(S)Connection that transparently reconnects and replays once when a peer closes an idle socket, keeping lensword-cli's zero-runtime-dependency guarantee and the BackendError contract unchanged. poll_subscriptions ran its coalesce check after the fetch, so the window suppressed only the notification while the request had already been paid for; both that guard and a new, separate minimum poll interval now sit above the fetch, and lensword://me/today and lensword://me/due are fetched once per pass rather than twice despite resolving to an identical backend call. The Streamable HTTP transport's session_ttl_seconds was assigned and never read, and _Session carried no timestamp to compute it from, so every reconnect without an explicit DELETE leaked a session for the process lifetime; sessions now carry last_seen, are evicted opportunistically under the existing lock, and have their pooled connection closed on eviction. Completion candidate lookups are cached per session instead of hitting the network per keystroke. Two bulk tools were added, lensword_add_words and lensword_update_words, the latter finally exposing the PATCH /api/v1/words/bulk capability that had existed since #140 without ever appearing on the MCP surface; both the tool and the REST route now run one shared BulkEditWordsUseCase rather than two implementations.
+
+</details>
+
+**Known limitations:**
+- The minimum poll interval means a subscribed resource's change can take up to that interval to be noticed. Delivery is unchanged — a material change still produces exactly one notification, and nothing is lost — but detection is no longer instantaneous on the very next processed message.
+- Subscription fingerprints still request a full 100-row page where they only need a count. Shrinking that page cannot be done without either making the count wrong beyond the page size or having the backend return a total, so it is deliberately left alone rather than traded for a fingerprint that silently misses changes.
+- Connection reuse is verified against a loopback HTTP server, which proves the connection count but not TLS-handshake savings against a real remote HTTPS backend.
+- The new CI job is not yet in the repository's required-status-check set, so a red run there will not block a merge until branch protection is updated.
+
+References: [#347](https://github.com/conectlens/lensword/issues/347)
+
+**Backend (API), MCP Server**
+
+<a id="mcp-batch-write-tools"></a>
+
+### Performance: Three MCP tools gained batched siblings, so placing words in a memory-palace room, recording a passage's word encounters, or generating exercises for a set of words is one call instead of one call per word.
+
+*2026-08-09* — verification: automated tests: passed
+
+Populating a memory palace or recording vocabulary met while reading is noticeably faster over MCP, and a single bad word id no longer discards the valid work alongside it: unusable items come back listed with a reason while the rest still apply.
+
+<details><summary>Technical detail</summary>
+
+Adds lensword_place_words_in_room, lensword_record_context_occurrences and lensword_generate_exercises_for_words, each bounded at 100 items and returning the {applied, skipped} partial-success shape BulkWordEditResponse already established. PlaceWordsUseCase is the substantive one: the previous path loaded, mutated and saved the same Room aggregate once per placement, so N placements meant N ownership checks, N reads, N writes and N windows for a lost update. It now resolves and ownership-checks the room once, lists the room's group once to obtain the placeable words, applies every placement to that single aggregate and persists once — three repository calls regardless of batch size. Batched record_context_occurrences derives a per-item operation id from the call's request_id so a retried, partially-applied batch converges instead of deduping the whole batch against its first item. The contract validator was extended to check array items recursively; it previously understood only string items, so an array of integers or of objects passed through unvalidated. Single-item tools are retained — removing one would invalidate OAuth grants keyed on its name — and each batch is registered under the same scope as the tool it batches.
+
+</details>
+
+**Known limitations:**
+- lensword_delete_word is deliberately not batched; bulk-destructive confirmation semantics need their own decision.
+- record_answer, begin_learning_activity, submit_activity_response and request_hint remain single-item by design — each call depends on the previous call's result, so batching them would be semantically wrong.
+- The batched exercise generator eliminates round trips only. Unlike room placement it has no shared aggregate, so it still performs one ownership check per word.
+
+References: [#348](https://github.com/conectlens/lensword/issues/348)
+
+**Backend (API), MCP Server**
+
+<a id="language-profile-cache"></a>
+
+### Performance: Repeated language-profile lookups no longer rescan the learner's entire vocabulary each time, so an assistant that checks the profile between actions stops paying a full collection scan per call.
+
+*2026-08-09* — verification: automated tests: passed
+
+No visible change in behaviour. Assistants and MCP clients that read the language profile repeatedly during a session get their answer without a repeated full scan of the learner's collection, which is most noticeable on larger vocabularies.
+
+<details><summary>Technical detail</summary>
+
+GetLanguageProfileUseCase.execute read every group and every word the learner owns to produce five counts and a language list, with no memoization, and is reachable through lensword_get_language_profile, which an agent may call before or after each word lookup or exercise. Adds PerUserTTLCache, a generic bounded LRU with a time-to-live in the shape ai_cache.py established (same 15-minute TTL and 500-entry bound; no provider/model in the key, since the value is derived from the database rather than sampled from a generator). The use case takes the cache as a constructor argument defaulting to a shared module-level instance, so execute's signature is unchanged and a caller needing live data can pass cache=None. The use cases that add or delete a word, or create or delete a group, invalidate the learner's entry themselves — the code performing a mutation is the only place that reliably knows one happened. A conftest fixture clears the shared instance between tests, following the existing isolate_coach_cache precedent, since ids restart from 1 in each test database.
+
+</details>
+
+**Known limitations:**
+- Answering a review moves known_word_count and active_word_count as repetitions and strength cross the mastery threshold, and that is not invalidated — it happens on the hot path of every single review, the drift is at most a few words, and the issue's own acceptance criterion allows the profile to catch up within one TTL window. Structural changes (adding or removing words, creating or deleting groups) are invalidated immediately.
+- Renaming a group is deliberately not invalidated, because no field of LanguageProfile depends on a group's name. If a group's language becomes editable, that change would need invalidating, since target_languages is derived from it.
+- The cache is per process and in-memory, so a deployment running several backend workers caches independently in each. That is the same trade ai_cache.py documents and is bounded by the same TTL.
+
+References: [#342](https://github.com/conectlens/lensword/issues/342)
+
 **MCP Server, Local CLI**
 
 <a id="split-local-cli-package"></a>

@@ -5,6 +5,7 @@ calls to application use cases only—repositories never cross this boundary.
 """
 from __future__ import annotations
 from dataclasses import dataclass
+from typing import Any
 from app.domain.services.companion_activities import ActivityType
 from app.domain.services.mcp_policy import AccessClass
 
@@ -159,8 +160,19 @@ TOOL_DOCS: dict[str, tuple[str, str]] = {
         "Add Vocabulary Word",
         "Add one vocabulary word to a specific group in the learner's collection, "
         "optionally with its translations. Use when the learner names a word they "
-        "want to study. For pulling many words out of a passage at once, use "
-        "Extract Vocabulary from Text instead.",
+        "want to study. To add several words the learner has already chosen, use "
+        "Add Vocabulary Words — one call, not one per word. For pulling many words "
+        "out of a passage at once, use Extract Vocabulary from Text instead.",
+    ),
+    "lensword_add_words": (
+        "Add Vocabulary Words",
+        "Add up to 100 vocabulary words to one group in a single call, each "
+        "optionally with its translations. Every word joins the same group and is "
+        "recorded in that group's language, so use this for a list the learner has "
+        "already decided on — Extract Vocabulary from Text is still the right tool "
+        "for finding candidate words inside a passage. Words that cannot be added "
+        "are returned in `skipped` with their position and a reason; the rest are "
+        "still saved.",
     ),
     "lensword_search_words": (
         "Search Vocabulary",
@@ -194,7 +206,16 @@ TOOL_DOCS: dict[str, tuple[str, str]] = {
         "Generate Practice Exercises",
         "Generate practice exercises for one saved word — translation recall, "
         "definition matching, or cloze (fill-in-the-blank). Use when the learner "
-        "wants to drill a specific word rather than run a scheduled review.",
+        "wants to drill a specific word rather than run a scheduled review. To "
+        "drill several words, use Generate Practice Exercises For Words instead.",
+    ),
+    "lensword_generate_exercises_for_words": (
+        "Generate Practice Exercises For Words",
+        "Generate practice exercises of one kind — translation recall, definition "
+        "matching, or cloze — for up to 100 saved words in a single call. Use when "
+        "the learner wants to drill a set of words rather than run a scheduled "
+        "review. Words that cannot be drilled are returned in `skipped` with a "
+        "reason; the rest still produce exercises.",
     ),
     "lensword_get_learning_progress": (
         "Get Learning Progress",
@@ -283,10 +304,23 @@ TOOL_DOCS: dict[str, tuple[str, str]] = {
     ),
     "lensword_record_context_occurrence": (
         "Record Word Encounter in Context",
-        "Record that the learner met a saved word in real use — in conversation, "
+        "Record that the learner met one saved word in real use — in conversation, "
         "reading, or an exercise — and whether they handled it correctly. This is "
         "evidence that informs future scheduling, so record only genuine "
-        "encounters. Requires explicit confirmation before it is persisted.",
+        "encounters. Requires explicit confirmation before it is persisted. When "
+        "one passage contained several known words, use Record Word Encounters in "
+        "Context instead.",
+    ),
+    "lensword_record_context_occurrences": (
+        "Record Word Encounters in Context",
+        "Record that the learner met up to 100 saved words in one and the same "
+        "real-use context — a single conversation, passage, or exercise — and "
+        "whether they handled them correctly. The context kind, the outcome and "
+        "the confirmation describe that shared context and apply to every word, so "
+        "use this only when they genuinely do; record a word handled differently "
+        "with its own call. This is evidence that informs future scheduling, so "
+        "record only genuine encounters. Words that cannot be recorded are "
+        "returned in `skipped` with a reason; the rest still apply.",
     ),
     "lensword_begin_learning_activity": (
         "Begin Learning Activity",
@@ -352,7 +386,18 @@ TOOL_DOCS: dict[str, tuple[str, str]] = {
         "Correct a saved word's translations, example sentence, or mnemonic, or "
         "move it to another group, keeping its review history intact. Use this "
         "rather than deleting and re-adding, which would reset the word's "
-        "spaced-repetition schedule to new.",
+        "spaced-repetition schedule to new. To set the same level, part of "
+        "speech, category, or tags across several words, use Update Vocabulary "
+        "Words instead.",
+    ),
+    "lensword_update_words": (
+        "Update Vocabulary Words",
+        "Set the same CEFR level, part of speech, category, or tags on up to 100 "
+        "saved words at once. Only fields you supply are changed; an omitted field "
+        "is left alone rather than cleared. Term and translations deliberately "
+        "cannot be set this way — they are what makes a card that card, and one "
+        "value cannot be right for a hundred of them. Words that are not this "
+        "account's are reported in `skipped`. Review history is untouched.",
     ),
     "lensword_delete_word": (
         "Delete Vocabulary Word",
@@ -376,10 +421,22 @@ TOOL_DOCS: dict[str, tuple[str, str]] = {
     ),
     "lensword_place_word_in_room": (
         "Place Word In Room",
-        "Place a word at a position on its group's memory-palace room canvas, as a "
-        "method-of-loci anchor. Coordinates are percentages of the canvas, 0 to "
+        "Place one word at a position on its group's memory-palace room canvas, as "
+        "a method-of-loci anchor. Coordinates are percentages of the canvas, 0 to "
         "100. The word must belong to the room's own group. Placing an "
-        "already-placed word moves it rather than duplicating it.",
+        "already-placed word moves it rather than duplicating it. To place "
+        "several words, use Place Words In Room instead — it is a single call "
+        "and updates the room atomically.",
+    ),
+    "lensword_place_words_in_room": (
+        "Place Words In Room",
+        "Place up to 100 words on one memory-palace room canvas in a single call. "
+        "Prefer this over repeating Place Word In Room: every placement is applied "
+        "to one loaded room and saved once, so a set of anchors cannot be half "
+        "written by two calls racing each other. Each placement gives a word_id and "
+        "canvas percentages 0 to 100, and every word must belong to the room's own "
+        "group. Words that cannot be placed are returned in `skipped` with a "
+        "reason; the rest still apply.",
     ),
     # --- MnemoLab ---------------------------------------------------------
     "lensword_get_mnemonics": (
@@ -407,11 +464,42 @@ TOOL_DOCS: dict[str, tuple[str, str]] = {
 
 TOOL_CONTRACTS = tuple(ToolContract(name, f"https://lensword.app/mcp/{CONTRACT_VERSION}/{name}.schema.json", access, schema) for name, access, schema in (
     ("lensword_add_word", AccessClass.WRITE, _schema({"group_id": {"type":"integer", "minimum":1}, "term":{"type":"string","minLength":1,"maxLength":255}, "target_language":{"type":"string"}, "translations":{"type":"array","maxItems":20,"items":{"type":"string","maxLength":255}}}, ["group_id","term","target_language"], write=True)),
+    # Bulk vocabulary write (issue #347 Bug 5). `group_id` and
+    # `target_language` stay top-level: an import lands in one group, and a
+    # group has one language, so repeating them per item would invite a batch
+    # that disagreed with itself. That shape is also what lets the group's
+    # ownership be checked once for the whole call.
+    ("lensword_add_words", AccessClass.WRITE, _schema({
+        "group_id": {"type":"integer","minimum":1},
+        "target_language": {"type":"string"},
+        "items": {
+            "type":"array","minItems":1,"maxItems":MAX_PAGE_SIZE,
+            "items": {
+                "type":"object","additionalProperties":False,
+                "properties": {
+                    "term": {"type":"string","minLength":1,"maxLength":255},
+                    "translations": {"type":"array","maxItems":20,"items":{"type":"string","maxLength":255}},
+                },
+                "required":["term"],
+            },
+        },
+    }, ["group_id","target_language","items"], write=True)),
+    # The backend has had `PATCH /api/v1/words/bulk` since #140 but never
+    # exposed it here, so an agent editing forty cards had to issue forty
+    # `update_word` calls to reach a capability that already existed.
+    ("lensword_update_words", AccessClass.WRITE, _schema({
+        "word_ids": {"type":"array","minItems":1,"maxItems":MAX_PAGE_SIZE,"items":{"type":"integer","minimum":1}},
+        "cefr_level": {"type":"string","maxLength":8},
+        "part_of_speech": {"type":"string","maxLength":64},
+        "category": {"type":"string","maxLength":128},
+        "tags": {"type":"array","maxItems":50,"items":{"type":"string","maxLength":64}},
+    }, ["word_ids"], write=True)),
     ("lensword_search_words", AccessClass.READ, _schema({"query":{"type":"string","maxLength":255}, "limit":{"type":"integer","minimum":1,"maximum":100}, "cursor":{"type":"string","maxLength":256}})),
     ("lensword_extract_vocabulary", AccessClass.WRITE, _schema({"group_id":{"type":"integer","minimum":1}, "text":{"type":"string","minLength":1,"maxLength":20000}, "target_language":{"type":"string"}, "max_items":{"type":"integer","minimum":1,"maximum":50}}, ["group_id","text","target_language"], write=True)),
     ("lensword_get_due_reviews", AccessClass.READ, _schema({"group_id":{"type":"integer","minimum":1}, "limit":{"type":"integer","minimum":1,"maximum":100}, "cursor":{"type":"string","maxLength":256}})),
     ("lensword_create_study_session", AccessClass.WRITE, _schema({"group_id":{"type":"integer","minimum":1}, "limit":{"type":"integer","minimum":1,"maximum":100}}, write=True)),
     ("lensword_generate_exercises", AccessClass.WRITE, _schema({"word_id":{"type":"integer","minimum":1}, "kind":{"enum":["translation","definition","cloze"]}}, ["word_id"], write=True)),
+    ("lensword_generate_exercises_for_words", AccessClass.WRITE, _schema({"word_ids":{"type":"array","minItems":1,"maxItems":MAX_PAGE_SIZE,"items":{"type":"integer","minimum":1}}, "kind":{"enum":["translation","definition","cloze"]}}, ["word_ids"], write=True)),
     ("lensword_get_learning_progress", AccessClass.READ, _schema({"week":{"type":"string","maxLength":32, "description":"ISO-8601 week, e.g. '2026-W32'. Omit for the current week."}})),
     ("lensword_record_answer", AccessClass.WRITE, _schema({"session_id":{"type":"integer","minimum":1}, "word_id":{"type":"integer","minimum":1}, "outcome":{"enum":["correct","incorrect","skipped"]}}, ["session_id","word_id","outcome"], write=True)),
     # Companion task tools (#197 TODO 2): genuinely long-running work only.
@@ -458,6 +546,11 @@ TOOL_CONTRACTS = tuple(ToolContract(name, f"https://lensword.app/mcp/{CONTRACT_V
     ("lensword_explain_for_user", AccessClass.READ, _schema({"word_id":{"type":"integer","minimum":1}}, ["word_id"])),
     ("lensword_suggest_stretch_vocabulary", AccessClass.READ, _schema({"group_id":{"type":"integer","minimum":1}, "limit":{"type":"integer","minimum":1,"maximum":50}})),
     ("lensword_record_context_occurrence", AccessClass.WRITE, _schema({"word_id":{"type":"integer","minimum":1}, "context_kind":{"enum":list(CONTEXT_KINDS)}, "outcome":{"enum":["correct","incorrect"]}, "confirmed":{"type":"boolean"}}, ["word_id","context_kind","outcome","confirmed"], write=True)),
+    # One passage usually contains several known words, which is the very
+    # situation the single-item tool above exists to record. `context_kind`,
+    # `outcome` and `confirmed` describe the passage, not the word, so they
+    # stay scalar and only `word_ids` becomes an array.
+    ("lensword_record_context_occurrences", AccessClass.WRITE, _schema({"word_ids":{"type":"array","minItems":1,"maxItems":MAX_PAGE_SIZE,"items":{"type":"integer","minimum":1}}, "context_kind":{"enum":list(CONTEXT_KINDS)}, "outcome":{"enum":["correct","incorrect"]}, "confirmed":{"type":"boolean"}}, ["word_ids","context_kind","outcome","confirmed"], write=True)),
     # Measurable companion activities and companion action tools (issue
     # #194 TODO 1). `begin_learning_activity` fixes `expected_evaluation`
     # once, and nothing here — not even `submit_activity_response` — can
@@ -550,6 +643,27 @@ TOOL_CONTRACTS = tuple(ToolContract(name, f"https://lensword.app/mcp/{CONTRACT_V
         "x_percent": {"type":"number","minimum":0,"maximum":100},
         "y_percent": {"type":"number","minimum":0,"maximum":100},
     }, ["room_id","word_id","x_percent","y_percent"], write=True)),
+    # Batched siblings (issue #348). The single-item tools above stay: they
+    # are correct for a one-off call, and removing one would invalidate the
+    # OAuth grants already keyed on its name. `room_id` stays a top-level
+    # field on the batch because only the coordinates vary per item — which
+    # is precisely what lets the handler resolve and ownership-check the
+    # room once and rewrite the aggregate once, instead of N times.
+    ("lensword_place_words_in_room", AccessClass.WRITE, _schema({
+        "room_id": {"type":"integer","minimum":1},
+        "placements": {
+            "type":"array","minItems":1,"maxItems":MAX_PAGE_SIZE,
+            "items": {
+                "type":"object","additionalProperties":False,
+                "properties": {
+                    "word_id": {"type":"integer","minimum":1},
+                    "x_percent": {"type":"number","minimum":0,"maximum":100},
+                    "y_percent": {"type":"number","minimum":0,"maximum":100},
+                },
+                "required":["word_id","x_percent","y_percent"],
+            },
+        },
+    }, ["room_id","placements"], write=True)),
     # MnemoLab. Reading mnemonics is the one place a `mnemonic` string is
     # the point of the call rather than an incidental leak, so these two are
     # the deliberate exception to the redaction rule bindings.py documents.
@@ -608,35 +722,69 @@ def validate_payload(contract: ToolContract, payload: dict) -> str | None:
     for name, value in payload.items():
         if name == "request_id" and name not in properties:
             continue
-        rules = properties[name]
-        if "enum" in rules and value not in rules["enum"]:
-            return f"invalid value for {name}"
-        expected = rules.get("type")
-        if expected == "string":
-            if not isinstance(value, str): return f"{name} must be a string"
-            if len(value) < rules.get("minLength", 0) or len(value) > rules.get("maxLength", float("inf")):
-                return f"{name} has an invalid length"
-        elif expected == "integer" and (not isinstance(value, int) or isinstance(value, bool)):
-            return f"{name} must be an integer"
-        elif expected == "integer" and not rules.get("minimum", float("-inf")) <= value <= rules.get("maximum", float("inf")):
+        error = _check_value(name, value, properties[name])
+        if error is not None:
+            return error
+    return None
+
+
+def _check_value(name: str, value: Any, rules: dict) -> str | None:
+    """Validate one value against one property's rules, recursively.
+
+    Split out of `validate_payload` so array items are held to the same
+    standard as top-level fields. Before the batch tools (issue #348) the
+    only item type this validator understood was `string`; an array of
+    integers or of objects therefore passed through entirely unvalidated,
+    which is the same silent gap the `number` branch below was added to
+    close. A schema the registry publishes but does not enforce is worse
+    than no schema, because the handler behind it is written trusting it.
+    """
+    if "enum" in rules and value not in rules["enum"]:
+        return f"invalid value for {name}"
+    expected = rules.get("type")
+    if expected == "string":
+        if not isinstance(value, str): return f"{name} must be a string"
+        if len(value) < rules.get("minLength", 0) or len(value) > rules.get("maxLength", float("inf")):
+            return f"{name} has an invalid length"
+    elif expected == "integer" and (not isinstance(value, int) or isinstance(value, bool)):
+        return f"{name} must be an integer"
+    elif expected == "integer" and not rules.get("minimum", float("-inf")) <= value <= rules.get("maximum", float("inf")):
+        return f"{name} is out of range"
+    elif expected == "number":
+        # Room placement coordinates are the first fractional inputs in
+        # the registry. Without this branch a "number" property matched
+        # no case at all and passed through entirely unvalidated, which
+        # would have made this validator quietly weaker than the schema
+        # it publishes. `bool` is excluded for the same reason as above:
+        # it is an `int` subclass in Python and is never a coordinate.
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return f"{name} must be a number"
+        if not rules.get("minimum", float("-inf")) <= value <= rules.get("maximum", float("inf")):
             return f"{name} is out of range"
-        elif expected == "number":
-            # Room placement coordinates are the first fractional inputs in
-            # the registry. Without this branch a "number" property matched
-            # no case at all and passed through entirely unvalidated, which
-            # would have made this validator quietly weaker than the schema
-            # it publishes. `bool` is excluded for the same reason as above:
-            # it is an `int` subclass in Python and is never a coordinate.
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
-                return f"{name} must be a number"
-            if not rules.get("minimum", float("-inf")) <= value <= rules.get("maximum", float("inf")):
-                return f"{name} is out of range"
-        elif expected == "array":
-            if not isinstance(value, list): return f"{name} must be an array"
-            if len(value) > rules.get("maxItems", float("inf")): return f"{name} has too many items"
-            item_rules = rules.get("items", {})
-            if item_rules.get("type") == "string" and any(not isinstance(item, str) or len(item) > item_rules.get("maxLength", float("inf")) for item in value):
-                return f"{name} contains an invalid item"
-        elif expected == "boolean" and not isinstance(value, bool):
-            return f"{name} must be a boolean"
+    elif expected == "array":
+        if not isinstance(value, list): return f"{name} must be an array"
+        if len(value) < rules.get("minItems", 0): return f"{name} has too few items"
+        if len(value) > rules.get("maxItems", float("inf")): return f"{name} has too many items"
+        item_rules = rules.get("items", {})
+        if item_rules:
+            for index, item in enumerate(value):
+                error = _check_value(f"{name}[{index}]", item, item_rules)
+                if error is not None:
+                    return error
+    elif expected == "object" and "properties" in rules:
+        # Only schemas that describe their shape are checked. A bare
+        # `{"type": "object"}` — `begin_learning_activity`'s
+        # `expected_evaluation` is one — stays deliberately free-form.
+        if not isinstance(value, dict): return f"{name} must be an object"
+        item_properties = rules["properties"]
+        unknown = sorted(set(value) - set(item_properties))
+        if unknown: return f"{name} has an unsupported field: {unknown[0]}"
+        missing = [field for field in rules.get("required", []) if field not in value]
+        if missing: return f"{name} is missing required field: {missing[0]}"
+        for field, item_value in value.items():
+            error = _check_value(f"{name}.{field}", item_value, item_properties[field])
+            if error is not None:
+                return error
+    elif expected == "boolean" and not isinstance(value, bool):
+        return f"{name} must be a boolean"
     return None

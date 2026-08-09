@@ -3,7 +3,9 @@ import { groupsApi, learningPathsApi } from '../../lib/api'
 import type { Group, LearningPath, PathMilestone } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
+import { Icon } from '../../components/ui/Icon'
 import { Spinner } from '../../components/ui/Spinner'
+import { Select } from '../../components/ui/Select'
 
 /**
  * Turning a stated goal into milestones you can tell you have finished
@@ -25,7 +27,7 @@ function MilestoneCard({ milestone, isNext }: { milestone: PathMilestone; isNext
     <Card className={`p-4 ${isNext ? 'border-primary/40' : ''}`}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <span className="font-semibold text-white">
-          {milestone.complete && <span className="mr-2 text-emerald-300">✓</span>}
+          {milestone.complete && <Icon name="check" className="mr-2 text-emerald-300" />}
           {milestone.title}
         </span>
         <span className="text-sm text-white/50">
@@ -156,18 +158,14 @@ export function LearningPathsPage() {
         <div className="flex flex-wrap items-center gap-3">
           <label className="text-sm text-white/70">
             Language
-            <select
-              value={language}
-              onChange={(event) => setLanguage(event.target.value)}
+            <Select
+              size="sm"
+              className="ml-2"
               aria-label="Target language"
-              className="ml-2 rounded bg-white/10 p-2 text-white"
-            >
-              {[...new Set(groups.map((group) => group.target_language))].map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
+              value={language}
+              onValueChange={setLanguage}
+              options={[...new Set(groups.map((group) => group.target_language))].map((value) => ({ value, label: value }))}
+            />
           </label>
           <Button loading={busy} disabled={!goal.trim() || !language} onClick={() => void generate()}>
             Generate a path

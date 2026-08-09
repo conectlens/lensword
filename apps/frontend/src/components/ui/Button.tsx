@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import { Icon } from './Icon'
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger'
 type Size = 'sm' | 'md' | 'lg'
@@ -32,9 +33,9 @@ export function Button({ variant = 'primary', size = 'md', icon, loading, childr
       {...rest}
     >
       {loading ? (
-        <span className="msi animate-spin text-base leading-none">progress_activity</span>
+        <Icon name="progress_activity" className="animate-spin text-base" />
       ) : icon ? (
-        <span className="msi text-base leading-none">{icon}</span>
+        <Icon name={icon} className="text-base" />
       ) : null}
       {children}
     </button>

@@ -20,10 +20,14 @@ from app.application.use_cases.mcp_dev_workflow import (
     ExplainWordForUserUseCase,
     GetLanguageProfileUseCase,
     RecordContextOccurrenceUseCase,
+    RecordContextOccurrencesUseCase,
     SuggestStretchVocabularyUseCase,
 )
 from app.application.use_cases.vocabulary import AddWordUseCase, SearchWordsUseCase, WordInput
 from app.application.use_cases.vocabulary import (
+    AddWordsUseCase,
+    BulkEditWordsUseCase,
+    BulkFieldEdit,
     CreateGroupUseCase,
     CreateRoomUseCase,
     DeleteWordUseCase,
@@ -31,6 +35,8 @@ from app.application.use_cases.vocabulary import (
     GetRoomDetailUseCase,
     ListGroupsUseCase,
     ListRoomsUseCase,
+    PlacementInput,
+    PlaceWordsUseCase,
     PlaceWordUseCase,
     UpdateWordUseCase,
     _require_group_owner,
@@ -44,7 +50,7 @@ from app.application.use_cases.review import (
     SubmitAnswerUseCase,
     SuggestMnemonicUseCase,
 )
-from app.application.use_cases.practice import GenerateExerciseUseCase
+from app.application.use_cases.practice import GenerateExerciseUseCase, GenerateExercisesUseCase
 from app.application.use_cases.extract import ExtractVocabularyUseCase
 from app.application.use_cases.companion_tasks import (
     CancelCompanionTaskUseCase,
@@ -163,6 +169,43 @@ def add_word_handler(words: WordRepository, groups: GroupRepository):
     return handle
 
 
+def add_words_handler(words: WordRepository, groups: GroupRepository):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        language = _language(payload["target_language"])
+        result = AddWordsUseCase(words, groups).execute(
+            user_id,
+            int(payload["group_id"]),
+            [
+                WordInput(
+                    term=str(item["term"]), target_language=language,
+                    translations=[str(value) for value in item.get("translations", [])],
+                )
+                for item in payload["items"]
+            ],
+        )
+        return {
+            "added": [word_to_response(word).model_dump(mode="json") for word in result.added],
+            "skipped": [{"index": item.index, "reason": item.reason} for item in result.skipped],
+        }
+    return handle
+
+
+def update_words_handler(words: WordRepository, groups: GroupRepository, revisions):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        result = BulkEditWordsUseCase(words, groups, revisions).execute(
+            user_id,
+            [int(word_id) for word_id in payload["word_ids"]],
+            BulkFieldEdit(
+                cefr_level=payload.get("cefr_level"),
+                part_of_speech=payload.get("part_of_speech"),
+                category=payload.get("category"),
+                tags=[str(tag) for tag in payload["tags"]] if payload.get("tags") is not None else None,
+            ),
+        )
+        return {"updated": result.updated, "skipped": list(result.skipped)}
+    return handle
+
+
 def due_reviews_handler(words: WordRepository):
     def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         limit = min(int(payload.get("limit", 20)), 100)
@@ -202,6 +245,23 @@ def generate_exercises_handler(exercises: PracticeExerciseRepository, words: Wor
         word = _require_word_owner(words, groups, int(payload["word_id"]), user_id)
         exercise = GenerateExerciseUseCase(exercises, words).execute(user_id, word, str(payload.get("kind", "translation")))
         return {"id": exercise.id, "word_id": exercise.word_id, "kind": exercise.kind, "prompt": exercise.prompt, "options": exercise.options}
+    return handle
+
+
+def generate_exercises_for_words_handler(exercises: PracticeExerciseRepository, words: WordRepository, groups: GroupRepository):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        result = GenerateExercisesUseCase(exercises, words, groups).execute(
+            user_id,
+            [int(word_id) for word_id in payload["word_ids"]],
+            str(payload.get("kind", "translation")),
+        )
+        return {
+            "applied": [
+                {"id": item.id, "word_id": item.word_id, "kind": item.kind, "prompt": item.prompt, "options": item.options}
+                for item in result.applied
+            ],
+            "skipped": [{"word_id": item.word_id, "reason": item.reason} for item in result.skipped],
+        }
     return handle
 
 
@@ -465,6 +525,36 @@ def record_context_occurrence_handler(
             "observation_id": result.observation_id, "word_id": result.word_id,
             "context_source": result.context_source, "outcome": result.outcome,
             "recorded_at": result.recorded_at.isoformat(),
+        }
+    return handle
+
+
+def record_context_occurrences_handler(
+    words: WordRepository, groups: GroupRepository, observations: LearningObservationRepository
+):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        result = RecordContextOccurrencesUseCase(words, groups, observations).execute(
+            user_id,
+            word_ids=[int(word_id) for word_id in payload["word_ids"]],
+            context_kind=str(payload["context_kind"]),
+            outcome=str(payload["outcome"]),
+            confirmed=bool(payload["confirmed"]),
+            # One request_id per call, but observations dedupe individually —
+            # the use case derives a per-item operation id from this so a
+            # retried partial batch converges instead of duplicating or
+            # silently skipping the items after the first.
+            operation_id=payload.get("request_id"),
+        )
+        return {
+            "applied": [
+                {
+                    "observation_id": item.observation_id, "word_id": item.word_id,
+                    "context_source": item.context_source, "outcome": item.outcome,
+                    "recorded_at": item.recorded_at.isoformat(),
+                }
+                for item in result.applied
+            ],
+            "skipped": [{"word_id": item.word_id, "reason": item.reason} for item in result.skipped],
         }
     return handle
 
@@ -843,6 +933,42 @@ def place_word_in_room_handler(rooms: RoomRepository, words: WordRepository):
             "x_percent": placement.x_percent if placement else None,
             "y_percent": placement.y_percent if placement else None,
             "placed_count": len(room.placements),
+        }
+    return handle
+
+
+def place_words_in_room_handler(rooms: RoomRepository, words: WordRepository, groups: GroupRepository):
+    def handle(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        # PlaceWordsUseCase holds the same invariants the single-item path
+        # does — the word must belong to the room's own group, coordinates
+        # are percentages in 0..100 — but applies them all to one loaded
+        # Room and saves it once, and reports rather than drops the
+        # placements it could not make.
+        result = PlaceWordsUseCase(rooms, words, groups).execute(
+            user_id,
+            int(payload["room_id"]),
+            [
+                PlacementInput(
+                    word_id=int(item["word_id"]),
+                    x_percent=float(item["x_percent"]),
+                    y_percent=float(item["y_percent"]),
+                )
+                for item in payload["placements"]
+            ],
+        )
+        placed = {item.word_id: item for item in result.room.placements}
+        return {
+            "room_id": result.room.id,
+            "applied": [
+                {
+                    "word_id": word_id,
+                    "x_percent": placed[word_id].x_percent if word_id in placed else None,
+                    "y_percent": placed[word_id].y_percent if word_id in placed else None,
+                }
+                for word_id in result.applied
+            ],
+            "skipped": [{"word_id": item.word_id, "reason": item.reason} for item in result.skipped],
+            "placed_count": len(result.room.placements),
         }
     return handle
 

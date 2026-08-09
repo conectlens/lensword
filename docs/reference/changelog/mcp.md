@@ -9,6 +9,70 @@ Status — MCP Server: **unreleased**.
 
 Every entry states exactly what was verified — a passing automated test does not imply a platform was manually checked, and a manual check on one OS does not imply another. See [Verification levels](/reference/trust/verification-levels) for what each status means.
 
+<a id="mcp-transport-request-amplification"></a>
+
+### Performance: MCP tool calls now reuse a single network connection instead of opening a new one per request, subscribed resources are no longer refetched after every message, and bulk vocabulary imports and edits are a single call.
+
+*2026-08-09* — verification: automated tests: passed
+
+Importing or editing vocabulary through an MCP client is substantially faster, especially against a hosted backend where every call previously paid a fresh TLS handshake. Long-lived remote MCP servers no longer grow in memory as clients reconnect. Argument completion in an MCP host responds without a network round trip per keystroke.
+
+<details><summary>Technical detail</summary>
+
+Five compounding defects made a 100-word import cost roughly 300 HTTP requests over 300 separate TCP+TLS connections. BackendClient._request was built on urllib.request.urlopen, which supports neither keep-alive nor pooling; it now uses a lazily created, lock-guarded persistent http.client.HTTP(S)Connection that transparently reconnects and replays once when a peer closes an idle socket, keeping lensword-cli's zero-runtime-dependency guarantee and the BackendError contract unchanged. poll_subscriptions ran its coalesce check after the fetch, so the window suppressed only the notification while the request had already been paid for; both that guard and a new, separate minimum poll interval now sit above the fetch, and lensword://me/today and lensword://me/due are fetched once per pass rather than twice despite resolving to an identical backend call. The Streamable HTTP transport's session_ttl_seconds was assigned and never read, and _Session carried no timestamp to compute it from, so every reconnect without an explicit DELETE leaked a session for the process lifetime; sessions now carry last_seen, are evicted opportunistically under the existing lock, and have their pooled connection closed on eviction. Completion candidate lookups are cached per session instead of hitting the network per keystroke. Two bulk tools were added, lensword_add_words and lensword_update_words, the latter finally exposing the PATCH /api/v1/words/bulk capability that had existed since #140 without ever appearing on the MCP surface; both the tool and the REST route now run one shared BulkEditWordsUseCase rather than two implementations.
+
+</details>
+
+**Known limitations:**
+- The minimum poll interval means a subscribed resource's change can take up to that interval to be noticed. Delivery is unchanged — a material change still produces exactly one notification, and nothing is lost — but detection is no longer instantaneous on the very next processed message.
+- Subscription fingerprints still request a full 100-row page where they only need a count. Shrinking that page cannot be done without either making the count wrong beyond the page size or having the backend return a total, so it is deliberately left alone rather than traded for a fingerprint that silently misses changes.
+- Connection reuse is verified against a loopback HTTP server, which proves the connection count but not TLS-handshake savings against a real remote HTTPS backend.
+- The new CI job is not yet in the repository's required-status-check set, so a red run there will not block a merge until branch protection is updated.
+
+References: [#347](https://github.com/conectlens/lensword/issues/347)
+
+<a id="mcp-batch-write-tools"></a>
+
+### Performance: Three MCP tools gained batched siblings, so placing words in a memory-palace room, recording a passage's word encounters, or generating exercises for a set of words is one call instead of one call per word.
+
+*2026-08-09* — verification: automated tests: passed
+
+Populating a memory palace or recording vocabulary met while reading is noticeably faster over MCP, and a single bad word id no longer discards the valid work alongside it: unusable items come back listed with a reason while the rest still apply.
+
+<details><summary>Technical detail</summary>
+
+Adds lensword_place_words_in_room, lensword_record_context_occurrences and lensword_generate_exercises_for_words, each bounded at 100 items and returning the {applied, skipped} partial-success shape BulkWordEditResponse already established. PlaceWordsUseCase is the substantive one: the previous path loaded, mutated and saved the same Room aggregate once per placement, so N placements meant N ownership checks, N reads, N writes and N windows for a lost update. It now resolves and ownership-checks the room once, lists the room's group once to obtain the placeable words, applies every placement to that single aggregate and persists once — three repository calls regardless of batch size. Batched record_context_occurrences derives a per-item operation id from the call's request_id so a retried, partially-applied batch converges instead of deduping the whole batch against its first item. The contract validator was extended to check array items recursively; it previously understood only string items, so an array of integers or of objects passed through unvalidated. Single-item tools are retained — removing one would invalidate OAuth grants keyed on its name — and each batch is registered under the same scope as the tool it batches.
+
+</details>
+
+**Known limitations:**
+- lensword_delete_word is deliberately not batched; bulk-destructive confirmation semantics need their own decision.
+- record_answer, begin_learning_activity, submit_activity_response and request_hint remain single-item by design — each call depends on the previous call's result, so batching them would be semantically wrong.
+- The batched exercise generator eliminates round trips only. Unlike room placement it has no shared aggregate, so it still performs one ownership check per word.
+
+References: [#348](https://github.com/conectlens/lensword/issues/348)
+
+<a id="language-profile-cache"></a>
+
+### Performance: Repeated language-profile lookups no longer rescan the learner's entire vocabulary each time, so an assistant that checks the profile between actions stops paying a full collection scan per call.
+
+*2026-08-09* — verification: automated tests: passed
+
+No visible change in behaviour. Assistants and MCP clients that read the language profile repeatedly during a session get their answer without a repeated full scan of the learner's collection, which is most noticeable on larger vocabularies.
+
+<details><summary>Technical detail</summary>
+
+GetLanguageProfileUseCase.execute read every group and every word the learner owns to produce five counts and a language list, with no memoization, and is reachable through lensword_get_language_profile, which an agent may call before or after each word lookup or exercise. Adds PerUserTTLCache, a generic bounded LRU with a time-to-live in the shape ai_cache.py established (same 15-minute TTL and 500-entry bound; no provider/model in the key, since the value is derived from the database rather than sampled from a generator). The use case takes the cache as a constructor argument defaulting to a shared module-level instance, so execute's signature is unchanged and a caller needing live data can pass cache=None. The use cases that add or delete a word, or create or delete a group, invalidate the learner's entry themselves — the code performing a mutation is the only place that reliably knows one happened. A conftest fixture clears the shared instance between tests, following the existing isolate_coach_cache precedent, since ids restart from 1 in each test database.
+
+</details>
+
+**Known limitations:**
+- Answering a review moves known_word_count and active_word_count as repetitions and strength cross the mastery threshold, and that is not invalidated — it happens on the hot path of every single review, the drift is at most a few words, and the issue's own acceptance criterion allows the profile to catch up within one TTL window. Structural changes (adding or removing words, creating or deleting groups) are invalidated immediately.
+- Renaming a group is deliberately not invalidated, because no field of LanguageProfile depends on a group's name. If a group's language becomes editable, that change would need invalidating, since target_languages is derived from it.
+- The cache is per process and in-memory, so a deployment running several backend workers caches independently in each. That is the same trade ai_cache.py documents and is bounded by the same TTL.
+
+References: [#342](https://github.com/conectlens/lensword/issues/342)
+
 <a id="split-local-cli-package"></a>
 
 ### Changed: The Local CLI is now published from its own apps/cli package (lensword-cli), independently versioned from the MCP server, with a PyPI publish workflow in place — not yet triggered.

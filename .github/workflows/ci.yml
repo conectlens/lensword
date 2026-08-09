@@ -99,6 +99,41 @@ jobs:
           TEST_DATABASE_URL: postgresql+psycopg://lensword:lensword@localhost:5432/lensword_test
         run: python -m pytest -v
 
+  # The MCP server and the Local CLI ship as their own Python packages and
+  # were, until issue #347, the only source trees in this repository with
+  # tests that CI never ran — the backend job's working-directory is
+  # apps/backend, so `apps/mcp/tests` and `apps/cli/tests` were simply never
+  # collected. That mattered most for exactly the code #347 touches: its
+  # regression tests assert how many HTTP requests and connections a flow
+  # costs, and an unrun assertion about request counts is not a guarantee.
+  #
+  # Both are installed from source together because neither is on PyPI yet
+  # and lensword-mcp depends on lensword-cli (issue #311's package split).
+  mcp-cli:
+    name: MCP server and Local CLI (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install both packages from source
+        run: pip install -e apps/cli -e apps/mcp pytest
+
+      - name: Run Local CLI tests
+        working-directory: apps/cli
+        run: python -m pytest -v
+
+      - name: Run MCP server tests
+        working-directory: apps/mcp
+        run: python -m pytest -v
+
   frontend:
     name: Frontend (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest

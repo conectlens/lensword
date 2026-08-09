@@ -3,6 +3,7 @@ import { groupsApi, practiceApi } from '../../lib/api'
 import type { Word } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
+import { Select } from '../../components/ui/Select'
 
 /**
  * Writing a sentence and having it corrected (issue #144).
@@ -69,18 +70,14 @@ export function WritingPractice() {
       <Card className="flex flex-col gap-3 p-6">
         <label className="text-sm text-white/70">
           Practise using
-          <select
-            value={wordId ?? ''}
-            onChange={(event) => setWordId(Number(event.target.value))}
+          <Select
+            size="sm"
+            className="ml-2"
             aria-label="Word to practise"
-            className="ml-2 rounded bg-white/10 p-2 text-white"
-          >
-            {words.map((word) => (
-              <option key={word.id} value={word.id}>
-                {word.term}
-              </option>
-            ))}
-          </select>
+            value={wordId ? String(wordId) : undefined}
+            onValueChange={(next) => setWordId(Number(next))}
+            options={words.map((word) => ({ value: String(word.id), label: word.term }))}
+          />
         </label>
 
         <textarea
