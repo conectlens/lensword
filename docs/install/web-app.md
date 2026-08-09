@@ -151,6 +151,15 @@ param on `/review`), not five separate implementations — see
 | Night wind-down | `/review?mode=night` | Multiple-choice, a short session (3 words) before sleep |
 | Study break | `/review?mode=break` | Multiple-choice, a very short session (2 words) between study blocks |
 
+**Flashcards** (`/flashcards`) practises the same due words a different
+way: tap a card to flip it, then mark it known or not known by swiping,
+pressing the buttons, or using the left/right arrow keys. The controls stay
+disabled until the card is flipped, so a word is never marked known while
+its answer is still hidden. It submits through the same review-session
+endpoints as every other mode — the schedule doesn't know or care which
+interaction you used — and the multiple-choice and typed modes above are
+unaffected.
+
 **Review my mistakes** (`/review?mode=mistakes`) re-tests words you got
 wrong. If you haven't missed anything yet, it says so plainly rather than
 showing an empty, ambiguous screen:

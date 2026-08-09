@@ -44,6 +44,30 @@ Adds lib/speech.ts (a Record<SupportedLanguage, string | null> mapping each stor
 
 References: [#335](https://github.com/conectlens/lensword/issues/335)
 
+**Web Application, Desktop Application**
+
+<a id="flashcard-swipe-practice"></a>
+
+### Added: A Flashcards option on the dashboard practises due words by flipping a card and marking it known or not known, by swipe, button, or arrow key.
+
+*2026-08-10* — verification: automated tests: passed
+
+Due words can be practised by flipping a card and swiping instead of typing an answer, for people who want to skim rather than be tested. The existing multiple-choice and typed review modes are untouched, and both feed the same schedule. Answers cannot be recorded until the card is flipped, so a word is never marked known while its answer is hidden.
+
+<details><summary>Technical detail</summary>
+
+Adds FlashcardStack and FlashcardSessionPage at /flashcards, plus a Flashcards button on the dashboard beside the existing review CTA. It is a separate route rather than a sixth SessionMode: SessionMode is a backend enum describing when a session is taken (walking, night, study break), and flashcards are a way of answering that is orthogonal to all of them. The route starts an ordinary standard session and submits through the existing POST /api/v1/review/sessions/{id}/answers path via queueableRequest, so scheduling, streaks and summaries are the ones the existing mode already produces and no scheduling logic is added client-side. Known/not-known map onto the existing correct/incorrect outcomes rather than introducing new outcome states. Per-card state is reset by keying FlashcardStack on word.id — a remount — rather than an effect, so the next card cannot paint the previous card's answer.
+
+</details>
+
+**Known limitations:**
+- Swipe is a pointer gesture only; the same two decisions are always available as buttons and as the left/right arrow keys, which is what keyboard and screen-reader users operate.
+- There is no undo for a card already marked, and no way to reshuffle or revisit a card within a session.
+- The session always requests 20 standard-mode due words; group scoping is available via a ?group= query parameter but has no UI entry point yet.
+- Not verified in a browser with a real touch device — the gesture is covered by tests driving synthetic pointer events, which cannot confirm how the drag feels on hardware.
+
+References: [#338](https://github.com/conectlens/lensword/issues/338)
+
 **Web Application, Desktop Application, Backend (API)**
 
 <a id="edit-group-language"></a>

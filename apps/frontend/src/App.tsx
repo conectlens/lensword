@@ -11,6 +11,7 @@ import { RoomsPage } from './features/rooms/RoomsPage'
 import { RoomDetailPage } from './features/rooms/RoomDetailPage'
 import { ReviewSessionPage } from './features/review/ReviewSessionPage'
 import { AcquisitionSessionPage } from './features/review/AcquisitionSessionPage'
+import { FlashcardSessionPage } from './features/review/FlashcardSessionPage'
 import { MnemoLabPage } from './features/mnemolab/MnemoLabPage'
 import { LearningPathsPage } from './features/paths/LearningPathsPage'
 import { ConversationPage } from './features/tutor/ConversationPage'
@@ -83,6 +84,7 @@ export default function App() {
 
       <Route path="/review" element={<ProtectedRoute><ReviewSessionPage /></ProtectedRoute>} />
       <Route path="/stabilize" element={<ProtectedRoute><AcquisitionSessionPage /></ProtectedRoute>} />
+      <Route path="/flashcards" element={<ProtectedRoute><FlashcardSessionPage /></ProtectedRoute>} />
 
       <Route path="/paths" element={<ProtectedRoute><LearningPathsPage /></ProtectedRoute>} />
       <Route path="/tutor" element={<ProtectedRoute><ConversationPage /></ProtectedRoute>} />
