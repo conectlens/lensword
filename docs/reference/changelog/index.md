@@ -19,6 +19,30 @@ The shared backend (`apps/backend`) is not an independently released product —
 
 ## Latest changes, all products
 
+**Web Application**
+
+<a id="web-browser-notifications"></a>
+
+### Added: The web app can now show browser notifications for due reviews, opted into from Settings. Permission is only ever requested when you click to turn it on, never on page load.
+
+*2026-08-09* — verification: automated tests: passed
+
+Users of the web app can opt in to browser notifications for due reviews from Settings, per browser. Nothing changes for anyone who does not opt in: no prompt appears on page load, and reminders continue to build up in the app as before. Browsers that block notifications, do not support them, or are served over plain HTTP now say so in Settings instead of presenting a switch that silently does nothing.
+
+<details><summary>Technical detail</summary>
+
+Adds lib/webNotifications.ts (support detection, permission, per-browser opt-in, show), lib/useWebNotifications.ts (a 30s outbox poll mirroring useDesktopNotifications) and a WebNotificationsCard settings section, which is the only caller of Notification.requestPermission() anywhere in the app. The collect/show/acknowledge loop was extracted from desktopNotifications.ts into lib/notificationOutbox.ts so both clients share one implementation; only show and ensurePermission were ever platform-specific, and desktopNotifications.ts re-exports the moved symbols so existing importers are unaffected. No backend change and no migration: the existing /api/v1/desktop-notifications outbox is client-agnostic despite its name, and recall_delivery.py's channel and quiet-hours policy still decides whether a notification is owed at all. The per-browser opt-in is stored in localStorage rather than on the account because notification permission is granted per browser profile — an account-level flag would claim notifications were on in Safari because they were granted in Chrome. The card renders nothing inside the Tauri shell, which raises OS notifications itself, so a reminder cannot be shown twice.
+
+</details>
+
+**Known limitations:**
+- Notifications are delivered only while LensWord is open in a tab. There is no service worker or push subscription, so nothing arrives with the app closed. That is the same trade the desktop client documents — the backend durably records what is owed, so a missed poll costs latency and nothing else — and a push transport would add a reconnect story, a second auth path, and a server-side subscription registry.
+- Clicking a notification focuses the tab but does not record a start_session action or navigate to the review, as the desktop shell's action buttons do. Routing from a notification is a separate change.
+- The opt-in is per browser profile and does not follow the account to another browser or device, which is inherent to how browsers grant notification permission.
+- Verified by unit and component tests against a stubbed Notification API; no notification was observed being raised by a real browser.
+
+References: [#345](https://github.com/conectlens/lensword/issues/345)
+
 **Backend (API), MCP Server, Local CLI**
 
 <a id="mcp-transport-request-amplification"></a>
