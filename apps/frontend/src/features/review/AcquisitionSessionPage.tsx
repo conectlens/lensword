@@ -5,6 +5,7 @@ import type { AcquisitionState, ReviewOutcome, Word } from '../../lib/types'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { Icon } from '../../components/ui/Icon'
+import { PronunciationButton } from '../../components/ui/PronunciationButton'
 import { Spinner } from '../../components/ui/Spinner'
 
 type Item = { state: AcquisitionState; word: Word }
@@ -100,7 +101,10 @@ export function AcquisitionSessionPage() {
       <div className="w-full text-center text-sm font-medium uppercase tracking-wide text-white/40">Stabilize this word</div>
       <Card className="flex w-full flex-col gap-6 p-6 text-center sm:p-10">
         <div>
-          <h1 className="font-display text-4xl font-bold text-white sm:text-5xl">{current.word.term}</h1>
+          <div className="flex items-center justify-center gap-2">
+            <h1 className="font-display text-4xl font-bold text-white sm:text-5xl">{current.word.term}</h1>
+            <PronunciationButton term={current.word.term} language={current.word.target_language} />
+          </div>
           <p className="mt-2 text-lg text-white/50">{current.word.target_language}</p>
         </div>
         {(entryReasonLabel || handoff) && (

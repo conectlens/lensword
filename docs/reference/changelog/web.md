@@ -9,6 +9,117 @@ Status — Web Application: **unreleased**.
 
 Every entry states exactly what was verified — a passing automated test does not imply a platform was manually checked, and a manual check on one OS does not imply another. See [Verification levels](/reference/trust/verification-levels) for what each status means.
 
+<a id="pronunciation-playback"></a>
+
+### Added: Review and stabilization cards now have a speaker button that reads the word aloud in its own language.
+
+*2026-08-10* — verification: automated tests: passed
+
+A word can be heard in the language it is stored in while reviewing it, rather than read by whatever default voice the browser picked. Where playback isn't possible — no speech support, no installed voice for that language, or the "Other" language placeholder — the button stays visible and disabled with the reason on it, instead of silently doing nothing.
+
+<details><summary>Technical detail</summary>
+
+Adds lib/speech.ts (a Record<SupportedLanguage, string | null> mapping each stored language label to a BCP-47 tag, plus voice matching), lib/useSpeech.ts (a hook over window.speechSynthesis that subscribes to voiceschanged, because getVoices() is empty on first call in most browsers), and components/ui/PronunciationButton.tsx, wired into ReviewSessionPage and AcquisitionSessionPage. Voice selection prefers an exact locale match and falls back to any voice sharing the primary subtag, so a device carrying only es-MX still speaks Spanish. The issue described SupportedLanguage as free text with a KNOWN_LANGUAGES suggestion list; it is in fact a closed enum of ten values and KNOWN_LANGUAGES does not exist, so the mapping is exhaustive by type rather than open-ended. The pre-existing speechSynthesis call in PracticePage set no lang at all and now resolves one through the same layer. Adds a volume_up entry to the type-safe icon registry.
+
+</details>
+
+**Known limitations:**
+- Playback uses the browser's own speech engine, so which voices exist and how good they sound is a property of the user's device and operating system, not of LensWord.
+- The "Other" language stores no locale and cannot be spoken; the control is disabled and says so.
+- Only one regional variant is preferred per language (for example pt-PT for Portuguese); a device with only the other variant installed falls back to it via primary-subtag matching, but the variant is not user-selectable.
+- The button is on the review and stabilization cards only; the word list and MnemoLab card do not have it yet.
+- Not verified with real audio output in a browser — the speech API is covered by tests against a mocked speechSynthesis, which cannot confirm how a voice actually sounds.
+
+References: [#335](https://github.com/conectlens/lensword/issues/335)
+
+<a id="mind-palace-3d"></a>
+
+### Changed: Mind Palace rooms are now a navigable 3D space: orbit the room, select a word and click the floor to place it. The flat board remains available.
+
+*2026-08-10* — verification: automated tests: passed; artifact build: passed
+
+A room can be orbited and viewed as a space rather than a flat board, which is the point of a memory palace. Words already placed keep their positions and need no re-placing. A browser without WebGL gets the flat board and a message saying why, instead of an empty screen; the flat board is also still reachable by choice on browsers that do support 3D.
+
+<details><summary>Technical detail</summary>
+
+Adds three, @react-three/fiber and @react-three/drei, imported only by RoomScene3D, which RoomDetailPage loads through React.lazy. The build splits it into its own ~990 kB chunk; the main bundle is unchanged at ~516 kB. Placements keep the existing x_percent/y_percent contract — lib/roomSpace.ts reads them as coordinates on a square floor, which is what they already describe — so no migration is needed, no endpoint changed, and placements made before this feature appear in the 3D room as they are. floorToPercent applies the same 2-98 clamp as the 2D board so both views can store identical positions, and rounds to two decimals because unrounded round-tripping rewrote 2 as 2.0000000000000018 on every place-reload cycle. WebGL support is probed before mounting rather than caught after, since a failed context is a blank canvas that reads as an empty room. The renderer is disposed on unmount.
+
+</details>
+
+**Known limitations:**
+- Not verified by looking at the rendered scene. jsdom has no WebGL, so the automated tests cover the coordinate mapping, the round-trip and the WebGL fallback decision — not whether the room actually looks right, which needs a person with a browser.
+- Placements remain two-dimensional. Words sit on the floor plane; there is no height axis, because nothing stores one and adding it would be a schema change for an interaction that does not exist yet.
+- The camera orbits and zooms but does not pan or walk, so the room is something you look around rather than move through.
+- Words are placed by selecting one and clicking the floor. Dragging from the sidebar still works in the flat view only, since a drag has no meaning against a 3D surface.
+- The 3D chunk is roughly 990 kB and is fetched the first time a room is opened in 3D.
+
+References: [#339](https://github.com/conectlens/lensword/issues/339)
+
+<a id="flashcard-swipe-practice"></a>
+
+### Added: A Flashcards option on the dashboard practises due words by flipping a card and marking it known or not known, by swipe, button, or arrow key.
+
+*2026-08-10* — verification: automated tests: passed
+
+Due words can be practised by flipping a card and swiping instead of typing an answer, for people who want to skim rather than be tested. The existing multiple-choice and typed review modes are untouched, and both feed the same schedule. Answers cannot be recorded until the card is flipped, so a word is never marked known while its answer is hidden.
+
+<details><summary>Technical detail</summary>
+
+Adds FlashcardStack and FlashcardSessionPage at /flashcards, plus a Flashcards button on the dashboard beside the existing review CTA. It is a separate route rather than a sixth SessionMode: SessionMode is a backend enum describing when a session is taken (walking, night, study break), and flashcards are a way of answering that is orthogonal to all of them. The route starts an ordinary standard session and submits through the existing POST /api/v1/review/sessions/{id}/answers path via queueableRequest, so scheduling, streaks and summaries are the ones the existing mode already produces and no scheduling logic is added client-side. Known/not-known map onto the existing correct/incorrect outcomes rather than introducing new outcome states. Per-card state is reset by keying FlashcardStack on word.id — a remount — rather than an effect, so the next card cannot paint the previous card's answer.
+
+</details>
+
+**Known limitations:**
+- Swipe is a pointer gesture only; the same two decisions are always available as buttons and as the left/right arrow keys, which is what keyboard and screen-reader users operate.
+- There is no undo for a card already marked, and no way to reshuffle or revisit a card within a session.
+- The session always requests 20 standard-mode due words; group scoping is available via a ?group= query parameter but has no UI entry point yet.
+- Not verified in a browser with a real touch device — the gesture is covered by tests driving synthetic pointer events, which cannot confirm how the drag feels on hardware.
+
+References: [#338](https://github.com/conectlens/lensword/issues/338)
+
+<a id="edit-group-language"></a>
+
+### Added: A group's name and target language can both be edited after creation, from an Edit button on the group card.
+
+*2026-08-10* — verification: automated tests: passed
+
+A group created with the wrong target language no longer has to be deleted and rebuilt. Words already in the group keep the language they were added with — the editor says so before saving, rather than leaving it to be discovered afterwards.
+
+<details><summary>Technical detail</summary>
+
+PATCH /api/v1/groups/{group_id} previously accepted only `name` (GroupRenameRequest) and no UI called it. The body is now GroupUpdateRequest, where `name` and `target_language` are each optional and an omitted field means "leave it alone", so the rename-only body existing callers send is unchanged; a body with neither field is a 422 rather than a silent no-op. RenameGroupUseCase becomes UpdateGroupUseCase, applying group-level attribute changes, and Group gains a `retarget` method alongside `rename`. A language change invalidates the cached per-user language profile (issue #342) because that cache is derived from which languages the learner studies; a rename deliberately does not, since it cannot affect the profile. Frontend replaces the unused groupsApi.rename with groupsApi.update and adds an EditGroupModal to GroupsPage.
+
+</details>
+
+**Known limitations:**
+- Existing words are not offered a bulk language change; retargeting a group that already holds vocabulary leaves those words marked with their original language by design, and changing them is still a per-word edit.
+- The edit affordance is on the group card in /groups only; GroupDetailPage has no group-level edit control yet.
+- Not exercised in a browser; covered by backend API tests and a component test for the modal.
+
+References: [#337](https://github.com/conectlens/lensword/issues/337)
+
+<a id="companion-chat-assistant"></a>
+
+### Added: A chat assistant is available from the main navigation on web and desktop. Conversations are saved to the account and can be picked up from any connected companion.
+
+*2026-08-10* — verification: automated tests: passed
+
+Users can hold a conversation with the assistant inside the app on web and desktop instead of only through an external MCP client. A provider that is switched off or temporarily down shows an explanatory message and never discards what was typed; when the companion feature is off for the account, the screen explains that rather than failing.
+
+<details><summary>Technical detail</summary>
+
+Adds POST /api/v1/companion/sessions/{id}/chat, which records the user's turn, asks the configured AIProvider via converse(), and records the answer — both as ordinary companion turns, so an in-app conversation stays readable, exportable and resumable through every existing companion route rather than living in a parallel store. The pre-existing POST /turns only records a turn an external MCP companion already produced and never calls a provider, so no endpoint could answer an in-app message before this. The user's turn is stored before the provider is called, and operation_id makes a retried send idempotent (the assistant half is keyed off the same id) so a retry returns the stored exchange instead of prompting the model twice. Frontend adds CompanionChatPage at /assistant, gated on the ai_companion_enabled recall setting, which is now exposed on the frontend RecallSettings type.
+
+</details>
+
+**Known limitations:**
+- Replies are returned whole rather than streamed; the UI shows a "Thinking…" indicator for the duration of the call instead of incremental text.
+- Sessions are not listed or resumable from the UI yet — ending a chat starts a fresh one next time, though the finished session remains readable through the existing companion export route.
+- Corrections returned by the shared converse() contract are parsed but not displayed here; the conversation tutor at /tutor remains the surface that shows them.
+- Not exercised against a live AI provider in a running deployment; the provider interaction is covered by tests using a stubbed provider.
+
+References: [#343](https://github.com/conectlens/lensword/issues/343)
+
 <a id="weekly-report-action-feedback"></a>
 
 ### Fixed: The weekly report's "Generate AI interpretation" and "Refresh factual snapshot" buttons now show a spinner while working and a visible message when they fail, instead of appearing to do nothing.

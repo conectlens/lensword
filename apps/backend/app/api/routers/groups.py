@@ -4,7 +4,7 @@ from app.api.deps import CurrentUser, GroupRepo, KnowledgeEdgeRepo, MistakeEvent
 from app.api.mappers import group_summary_to_response, word_to_response
 from app.api.schemas.vocabulary import (
     GroupCreateRequest,
-    GroupRenameRequest,
+    GroupUpdateRequest,
     GroupResponse,
     WordCreateRequest,
     WordResponse,
@@ -15,7 +15,7 @@ from app.application.use_cases.vocabulary import (
     DeleteGroupUseCase,
     GetGroupDetailUseCase,
     ListGroupsUseCase,
-    RenameGroupUseCase,
+    UpdateGroupUseCase,
     WordInput,
 )
 from app.domain.exceptions import EntityNotFoundError, PermissionDeniedError
@@ -95,15 +95,17 @@ def add_word_to_group(
 
 
 @router.patch("/{group_id}", response_model=GroupResponse)
-def rename_group(
+def update_group(
     group_id: int,
-    payload: GroupRenameRequest,
+    payload: GroupUpdateRequest,
     current_user: CurrentUser,
     group_repo: GroupRepo,
     word_repo: WordRepo,
 ) -> GroupResponse:
     try:
-        RenameGroupUseCase(group_repo).execute(current_user.id, group_id, payload.name)
+        UpdateGroupUseCase(group_repo).execute(
+            current_user.id, group_id, payload.name, payload.target_language
+        )
     except EntityNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except PermissionDeniedError as exc:

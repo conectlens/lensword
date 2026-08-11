@@ -81,6 +81,13 @@ language — "Spanish Verbs," "Business English." Creating one asks for a
 name and a target language; nothing else is required before you can start
 adding words.
 
+The **Edit** button on a group card changes both its name and its target
+language after the fact, so a group created against the wrong language
+doesn't have to be deleted and rebuilt. Words already in the group keep the
+language they were added with — a word card records which language that
+word is in, and that stays true however the group is relabelled. The editor
+states this before you save when the group already holds words.
+
 ### Add or import words
 
 From a group page, **Add word** opens a form for the term, its
@@ -123,6 +130,15 @@ to regenerate it yourself; both scripts are documented inline. Static
 fallback:
 ![Forced-recall review session prompting for the translation of "hablar"](../media/screenshots/web-review-session.webp)
 
+A speaker button beside the word reads it aloud in the language the word is
+stored in, using your browser's own speech engine — so which voices are
+available, and how natural they sound, depends on your device and operating
+system rather than on LensWord. When playback isn't possible (no speech
+support in the browser, no installed voice for that language, or a word
+filed under the "Other" language, which carries no locale to speak it with)
+the button stays visible but disabled and states the reason, rather than
+looking live and producing silence.
+
 Five presentation modes share this same session mechanic (`mode` query
 param on `/review`), not five separate implementations — see
 [Architecture § One `ReviewSessionPage`, not five](/learn/architecture):
@@ -135,6 +151,15 @@ param on `/review`), not five separate implementations — see
 | Night wind-down | `/review?mode=night` | Multiple-choice, a short session (3 words) before sleep |
 | Study break | `/review?mode=break` | Multiple-choice, a very short session (2 words) between study blocks |
 
+**Flashcards** (`/flashcards`) practises the same due words a different
+way: tap a card to flip it, then mark it known or not known by swiping,
+pressing the buttons, or using the left/right arrow keys. The controls stay
+disabled until the card is flipped, so a word is never marked known while
+its answer is still hidden. It submits through the same review-session
+endpoints as every other mode — the schedule doesn't know or care which
+interaction you used — and the multiple-choice and typed modes above are
+unaffected.
+
 **Review my mistakes** (`/review?mode=mistakes`) re-tests words you got
 wrong. If you haven't missed anything yet, it says so plainly rather than
 showing an empty, ambiguous screen:
@@ -144,10 +169,18 @@ showing an empty, ambiguous screen:
 ### Use Mind Palace rooms and spatial anchors
 
 **Mind Palace** in the top nav lists your memory rooms. Creating one asks
-for a name, which group's words it draws from, and an icon. Inside a room,
-drag a word from the sidebar list onto the canvas to place it as a spatial
-anchor (the method-of-loci technique) — a placed word shows as a small
-marker at the position you dropped it.
+for a name, which group's words it draws from, and an icon.
+
+Inside a room, words are placed as spatial anchors (the method-of-loci
+technique). The default view is a 3D room you can orbit and zoom: pick a
+word from the sidebar, then click the floor to place it, and click a marker
+to remove it. A **Flat view** button switches to the original
+drag-and-drop board, and browsers without WebGL get that board
+automatically with a message explaining why the 3D view isn't offered.
+
+Both views read and write the same placement, so a word placed in one
+appears in the same spot in the other, and rooms built before the 3D view
+existed keep their layout.
 
 ![Mind Palace room canvas with a word placed as a spatial anchor](../media/screenshots/web-mind-palace.webp)
 
@@ -166,6 +199,27 @@ by [docs/reference/ai-model-verification.md](/reference/ai-model-verification)
 rather than this page.
 
 ![Practice Lab with Conversation, Role-play, Writing, and Pronunciation tabs](../media/screenshots/web-practice-lab.webp)
+
+### Chat with the assistant
+
+**Assistant** (`/assistant`) is a chat surface for asking about anything you
+are learning, rather than working through a drill. It is off unless the AI
+companion is enabled for your account; when it is off the page says so
+instead of failing, and no chat is offered.
+
+Each conversation is stored as a durable companion session, which is the
+same record an external companion (for example a connected MCP client)
+reads and writes — so a conversation started in the app remains readable
+and exportable through those surfaces rather than being trapped in the web
+UI. Replies come from the same opt-in AI provider as MnemoLab and
+Conversation practice (see [Local AI / Ollama](/install/local-ai-ollama)):
+with no provider configured the assistant says it is unavailable and keeps
+your message on screen rather than discarding it. Replies arrive complete
+rather than streaming in word by word.
+
+This surface is covered by automated tests against a stubbed AI provider;
+a full conversation turn against a live model was not carried to completion
+in this verification pass, for the same reason as Practice Lab above.
 
 ### Use personalized learning paths
 

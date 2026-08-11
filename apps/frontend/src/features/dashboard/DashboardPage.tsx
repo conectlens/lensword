@@ -46,6 +46,19 @@ export function DashboardPage() {
           <Button size="lg" icon="bolt" onClick={startQuickReview} disabled={dueCount === 0}>
             Start review session
           </Button>
+          {/* The same due words, answered by flipping rather than typing
+              (issue #338). Sits beside the standard session rather than
+              replacing it: which one suits depends on whether someone wants
+              to be tested or to skim. */}
+          <Button
+            size="lg"
+            variant="secondary"
+            icon="style"
+            onClick={() => navigate('/flashcards')}
+            disabled={dueCount === 0}
+          >
+            Flashcards
+          </Button>
           {/* Always enabled: whether anything is outstanding depends on the
               mistake log, not on the due count this page happens to know. The
               session itself says when there is nothing left to review, which

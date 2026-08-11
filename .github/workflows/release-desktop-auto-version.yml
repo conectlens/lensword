@@ -1,0 +1,72 @@
+name: Auto-version Desktop (tag)
+
+# Automatic release cadence for apps/desktop, mirroring apps/cli's
+# publish-cli-auto-version.yml: every push to `main` that touches the
+# desktop shell or the frontend it embeds computes the next desktop-v*
+# patch version and pushes that tag. release.yml already listens for
+# desktop-v* tag pushes, so the tag alone is what kicks off a real,
+# versioned release build.
+#
+# Unlike the CLI version, this workflow does NOT commit a version bump to
+# apps/desktop/Cargo.toml or tauri.conf.json on `main`. The `main` branch
+# ruleset's required_status_checks rule rejects a direct push from the
+# default GITHUB_TOKEN (github-actions[bot] is not one of the ruleset's
+# bypass actors) — which is exactly why publish-cli-auto-version.yml has
+# never successfully tagged a release; every run of it fails at `git push
+# origin HEAD:main` with "push declined due to repository rule
+# violations". Tags live under refs/tags/, outside a ruleset whose target
+# is "branch" and whose ref_name condition is the default branch only, so
+# pushing a tag from this token works where pushing a commit does not.
+#
+# build-desktop-installers.yml patches tauri.conf.json's and Cargo.toml's
+# version to match the tag inside its own (unpushed) checkout before
+# building, so the shipped installer's version metadata still matches the
+# tag even though nothing on `main` itself ever changes.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/desktop/**"
+      - "apps/frontend/**"
+
+permissions:
+  contents: write
+
+concurrency:
+  # Serializes version computation so two pushes landing close together
+  # can't both read the same "latest tag" and try to push the same next
+  # tag. A losing run's tag push simply fails (tag already exists) rather
+  # than corrupting anything, but serializing avoids that failure outright.
+  group: desktop-auto-version
+  cancel-in-progress: false
+
+jobs:
+  tag-next-version:
+    name: Compute and push the next desktop-v tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Compute the next desktop-v patch version
+        id: bump
+        run: |
+          latest=$(git tag -l 'desktop-v*' | grep -E '^desktop-v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)
+          if [ -z "$latest" ]; then
+            next="0.1.0"
+          else
+            version="${latest#desktop-v}"
+            IFS='.' read -r major minor patch <<< "$version"
+            next="$major.$minor.$((patch + 1))"
+          fi
+          echo "next=$next" >> "$GITHUB_OUTPUT"
+          echo "Next desktop version: $next (previous tag: ${latest:-none})"
+
+      - name: Push the version tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEXT: ${{ steps.bump.outputs.next }}
+        run: |
+          git tag "desktop-v$NEXT"
+          git push origin "desktop-v$NEXT"

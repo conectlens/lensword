@@ -1,6 +1,6 @@
 import type {
   AdminStats, AcquisitionState, Group, McpAuthorizeDecision, McpAuthorizePreview, McpAuthorizeRequest, McpConnection, MnemonicNote, ProfileOverview, RecallSettings, Room,
-  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile, CefrProgress, Prerequisites, RelatedWord, WordRevision, AiState, OllamaProbe, LearningPath, GeneratePathResult, Conversation, ConversationMessage, SendMessageResult, Difficulty, Scenario, ScenarioAttempt, ScenarioVocabulary, ObservationHistoryResponse, ObservationCorrection, ObservationCorrectionReason, QueuedOperation, SyncOperationResult, SyncConflict, EfficacyEstimate, ModalityPreference, ByokProvider, UserAICredentialSummary,
+  SessionMode, SessionSummary, SupportedLanguage, User, Word, ReviewOutcome, AISettings, WordEnrichment, DailySession, PracticeExercise, WeeklyLearningReport, PendingDesktopNotifications, NotificationActionId, NotificationActionResult, WeaknessProfile, CefrProgress, Prerequisites, RelatedWord, WordRevision, AiState, OllamaProbe, LearningPath, GeneratePathResult, Conversation, ConversationMessage, SendMessageResult, Difficulty, Scenario, ScenarioAttempt, ScenarioVocabulary, ObservationHistoryResponse, ObservationCorrection, ObservationCorrectionReason, QueuedOperation, SyncOperationResult, SyncConflict, EfficacyEstimate, ModalityPreference, ByokProvider, UserAICredentialSummary, CompanionSession, CompanionChatResult,
 } from './types'
 import { resolveApiBase } from './runtimeConfig'
 
@@ -144,6 +144,28 @@ export const conversationsApi = {
   end: (id: number) => request<Conversation>(`/api/v1/conversations/${id}/end`, { method: 'POST' }),
 }
 
+// The in-app chat assistant (issue #343). Deliberately the same durable
+// companion sessions an external MCP companion drives, so a conversation
+// started in the app stays readable, exportable and resumable everywhere
+// else — rather than a parallel chat store that only this UI understands.
+export const companionApi = {
+  start: (goal: string | null, language: string | null) =>
+    request<CompanionSession>('/api/v1/companion/sessions', {
+      method: 'POST',
+      body: JSON.stringify({ connection_id: 'lensword-app', client_id: 'in-app-chat', goal, language }),
+    }),
+  get: (id: string) => request<CompanionSession>(`/api/v1/companion/sessions/${id}`),
+  // operation_id makes a retried send idempotent: the backend returns the
+  // original exchange instead of asking the model the same thing twice.
+  chat: (id: string, content: string, operation_id?: string) =>
+    request<CompanionChatResult>(`/api/v1/companion/sessions/${id}/chat`, {
+      method: 'POST',
+      body: JSON.stringify({ content, operation_id: operation_id ?? null }),
+    }),
+  finish: (id: string) =>
+    request<{ session: CompanionSession }>(`/api/v1/companion/sessions/${id}/finish`, { method: 'POST' }),
+}
+
 export const scenariosApi = {
   list: () => request<Scenario[]>('/api/v1/scenarios'),
   attempts: () => request<ScenarioAttempt[]>('/api/v1/scenarios/attempts'),
@@ -161,8 +183,11 @@ export const groupsApi = {
   list: () => request<Group[]>('/api/v1/groups'),
   create: (name: string, target_language: SupportedLanguage) =>
     request<Group>('/api/v1/groups', { method: 'POST', body: JSON.stringify({ name, target_language }) }),
-  rename: (groupId: number, name: string) =>
-    request<Group>(`/api/v1/groups/${groupId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+  // Group-level attribute changes (issue #337). An omitted field means
+  // "leave it alone" server-side, so a name-only call behaves exactly as
+  // the previous rename-only helper did.
+  update: (groupId: number, changes: { name?: string; target_language?: SupportedLanguage }) =>
+    request<Group>(`/api/v1/groups/${groupId}`, { method: 'PATCH', body: JSON.stringify(changes) }),
   remove: (groupId: number) => request<void>(`/api/v1/groups/${groupId}`, { method: 'DELETE' }),
   words: (groupId: number) => request<Word[]>(`/api/v1/groups/${groupId}/words`),
   addWord: (groupId: number, input: WordInput) =>
