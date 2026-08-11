@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { LANGUAGE_LOCALES, localeFor, voiceFor } from './speech'
+import { LANGUAGE_LOCALES, localeFor, localeForText, voiceFor } from './speech'
 import { LANGUAGES } from './types'
 
 function voice(lang: string): SpeechSynthesisVoice {
@@ -28,6 +28,24 @@ describe('localeFor', () => {
     // "Other" means "not one of the listed languages", so there is no
     // honest locale — callers disable the control rather than mispronounce.
     expect(localeFor('Other')).toBeNull()
+  })
+})
+
+describe('localeForText', () => {
+  it('guesses a locale from a term written in Cyrillic script', () => {
+    // The reported case: a Russian word stored under "Other" (Russian isn't
+    // one of the nine listed languages), which localeFor('Other') cannot
+    // help with — the text itself is the only signal available.
+    expect(localeForText('меня зовут')).toBe('ru')
+  })
+
+  it('guesses a locale from other non-Latin scripts', () => {
+    expect(localeForText('مرحبا')).toBe('ar')
+    expect(localeForText('你好')).toBe('zh')
+  })
+
+  it('returns null for Latin-script text with no script to guess from', () => {
+    expect(localeForText('xyzzy')).toBeNull()
   })
 })
 

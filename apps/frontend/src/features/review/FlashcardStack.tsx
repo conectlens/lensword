@@ -87,7 +87,7 @@ export function FlashcardStack({
   const committing = Math.abs(dragX) >= SWIPE_THRESHOLD
 
   return (
-    <div className="flex w-full flex-col items-center gap-6">
+    <div className="flex w-full flex-col items-center gap-6 animate-card-enter">
       <p className="text-sm font-medium uppercase tracking-wide text-white/40" role="status">
         Card {position} of {total}
       </p>
@@ -105,23 +105,28 @@ export function FlashcardStack({
       >
         {/* The card itself is the flip control: a button rather than a div
             with a click handler, so it is reachable by Tab and operable with
-            Enter/Space without reimplementing either. */}
+            Enter/Space without reimplementing either. The button element
+            itself never remounts (keyboard focus survives a flip) — only
+            the content span below does, keyed on `revealed`, purely to
+            restart the flip animation. */}
         <button
           type="button"
           className="flex w-full flex-col items-center gap-3"
           aria-pressed={revealed}
           onClick={() => setRevealed((value) => !value)}
         >
-          <span className="font-display text-4xl font-bold text-white sm:text-5xl">{word.term}</span>
-          <span className="text-sm text-white/40">{word.target_language}</span>
+          <span key={revealed ? 'back' : 'front'} className="flex w-full flex-col items-center gap-3 animate-card-flip">
+            <span className="font-display text-4xl font-bold text-white sm:text-5xl">{word.term}</span>
+            <span className="text-sm text-white/40">{word.target_language}</span>
 
-          {revealed ? (
-            <span className="mt-4 border-t border-white/10 pt-4 text-2xl text-primary">
-              {word.translations.join(', ') || 'No translation saved'}
-            </span>
-          ) : (
-            <span className="mt-4 text-sm text-white/40">Tap to reveal the translation</span>
-          )}
+            {revealed ? (
+              <span className="mt-4 border-t border-white/10 pt-4 text-2xl text-primary">
+                {word.translations.join(', ') || 'No translation saved'}
+              </span>
+            ) : (
+              <span className="mt-4 text-sm text-white/40">Tap to reveal the translation</span>
+            )}
+          </span>
         </button>
 
         <PronunciationButton term={word.term} language={word.target_language} />
