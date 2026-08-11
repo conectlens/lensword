@@ -92,27 +92,22 @@ setup it still needs). No tag of any kind had been pushed against this
 repository until `desktop-v0.1.0`; see [Releases](/reference/releases/) for
 the current record.
 
-## Release channels (desktop)
+## Release channel (desktop)
 
-Two distinct channels produce desktop installers, both via
-`.github/workflows/build-desktop-installers.yml` (shared packaging/signing
-logic, so they can't silently drift apart):
+Desktop installers are produced by pushing a `desktop-v*` tag
+(`.github/workflows/release.yml`, packaging/signing logic in
+`.github/workflows/build-desktop-installers.yml`) — a specific,
+deliberately cut version, published as a GitHub Releases **draft** so a
+tag never publishes installers without someone looking first.
 
-- **Tagged releases** (`.github/workflows/release.yml`, triggered by
-  pushing a `desktop-v*` tag) — a specific, deliberately cut version.
-  Published as a GitHub Releases **draft** so a tag never publishes
-  installers without someone looking first.
-- **Continuous build** (`.github/workflows/release-continuous.yml`,
-  triggered by every push to `main` that touches the desktop shell or
-  frontend) — always reflects the current tip of `main`. Published
-  immediately (not a draft) under a fixed rolling tag,
-  `desktop-continuous`, replacing the previous build's release and assets
-  each time; marked `prerelease: true` so it's visually distinct from a
-  real release in GitHub's own UI. This is what "download and try what's
-  on `main` right now" means for this project — it is explicitly **not**
-  a stable or reviewed release, and its own release notes say so.
+There used to be a second channel, a "continuous build" rebuilt and
+republished automatically on every push to `main` under a fixed rolling
+`desktop-continuous` tag. It was removed: nothing gated what it
+published — it replaced itself on the very next push with no review
+step — so it produced installers nobody had actually vetted, the
+opposite of what the tagged channel exists to guarantee.
 
-Both channels bake the hosted production endpoints in as the
+The tagged channel bakes the hosted production endpoint in as the
 zero-configuration default (`apps/desktop/api-config/src/lib.rs`'s
 `DEFAULT_API_BASE`, set at compile time via `LENSWORD_RELEASE_API_BASE` —
 see that file's doc comment): the backend at
