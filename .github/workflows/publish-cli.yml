@@ -9,6 +9,14 @@ name: Publish Local CLI (PyPI)
 # publish-cli-auto-version.yml pushing a `cli-v*` tag on every apps/cli
 # change that reaches main; a manual `cli-v*` tag push or workflow_dispatch
 # also works.
+#
+# apps/cli/pyproject.toml's checked-in version never changes on `main` —
+# publish-cli-auto-version.yml only pushes a tag, it doesn't commit a bump
+# (see that workflow's comment for why: the `main` branch ruleset rejects a
+# direct push from github-actions[bot]). So the "verify tag matches
+# pyproject.toml" step below instead syncs pyproject.toml's version to the
+# tag in this ephemeral checkout, right before building — nothing here is
+# committed or pushed back.
 on:
   push:
     tags:
@@ -36,22 +44,23 @@ jobs:
         with:
           python-version: "3.12"
 
-      # Cheap guard against publishing a mismatched build: the pushed tag
-      # names the version that should be released, and it must agree with
-      # what apps/cli/pyproject.toml actually declares. Only meaningful for
-      # a real tag push — a workflow_dispatch run (used to test this
-      # workflow before the first cli-v* tag exists) has no tag to compare
-      # against.
-      - name: Verify tag matches apps/cli/pyproject.toml's version
+      # apps/cli/pyproject.toml's checked-in version is static — this makes
+      # the built package's version match the tag that triggered this run.
+      # Only meaningful for a real tag push — a workflow_dispatch run (used
+      # to test this workflow before the first cli-v* tag exists) has no
+      # tag to sync from, so pyproject.toml's checked-in version is used
+      # as-is.
+      - name: Sync apps/cli/pyproject.toml's version to the release tag
         if: github.event_name == 'push'
         run: |
           tag_version="${GITHUB_REF_NAME#cli-v}"
-          pkg_version=$(python -c "import tomllib; print(tomllib.load(open('apps/cli/pyproject.toml', 'rb'))['project']['version'])")
-          if [ "$tag_version" != "$pkg_version" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME (version $tag_version) does not match apps/cli/pyproject.toml's version ($pkg_version)."
+          if ! [[ "$tag_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME is not a plain x.y.z version after stripping 'cli-v'; refusing to publish a mismatched version."
             exit 1
           fi
-          echo "Tag version $tag_version matches apps/cli/pyproject.toml."
+          sed -i.bak "s/^version = \"[^\"]*\"/version = \"$tag_version\"/" apps/cli/pyproject.toml
+          rm -f apps/cli/pyproject.toml.bak
+          echo "Publishing as version $tag_version (from tag $GITHUB_REF_NAME); not committed back to main."
 
       - name: Install build tooling
         run: python -m pip install --upgrade pip build twine

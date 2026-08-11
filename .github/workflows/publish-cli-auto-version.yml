@@ -2,15 +2,24 @@ name: Auto-version Local CLI (PyPI)
 
 # Fully automatic release cadence for apps/cli (issue #311's split from
 # apps/mcp, see docs/reference/trust/release-process.md): every push to
-# `main` that touches apps/cli bumps the patch version in
-# apps/cli/pyproject.toml, commits that bump, and pushes a matching
-# `cli-v*` tag. The tag push is what actually triggers publish-cli.yml's
+# `main` that touches apps/cli computes the next cli-v* patch version and
+# pushes that tag. The tag push is what actually triggers publish-cli.yml's
 # build/check/publish — this workflow only decides the next version number
 # and cuts the tag.
 #
-# Loop guard: the bump commit's message is tagged [auto-version]; the job
-# is skipped when the triggering commit already carries that tag, since
-# without that a bump commit's own push to main would trigger another bump.
+# Does NOT commit a version bump to apps/cli/pyproject.toml on `main`. The
+# `main` branch ruleset's required_status_checks rule rejects a direct push
+# from the default GITHUB_TOKEN (github-actions[bot] is not one of the
+# ruleset's bypass actors) — every prior run of the old commit-then-tag
+# version of this workflow failed at `git push origin HEAD:main` with
+# "push declined due to repository rule violations", so no cli-v* tag was
+# ever created and nothing ever reached PyPI. Tags live under refs/tags/,
+# outside a ruleset whose target is "branch" and whose ref_name condition
+# is the default branch only, so pushing a tag from this token works where
+# pushing a commit does not. publish-cli.yml now syncs pyproject.toml's
+# version to match the tag inside its own (unpushed) checkout before
+# building, so the published package's version still matches the tag even
+# though nothing on `main` itself ever changes.
 on:
   push:
     branches: [main]
@@ -20,38 +29,41 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  # Serializes version computation so two pushes landing close together
+  # can't both read the same "latest tag" and try to push the same next
+  # tag. A losing run's tag push simply fails (tag already exists) rather
+  # than corrupting anything, but serializing avoids that failure outright.
+  group: cli-auto-version
+  cancel-in-progress: false
+
 jobs:
-  bump-and-tag:
-    name: Bump patch version and tag
+  tag-next-version:
+    name: Compute and push the next cli-v tag
     runs-on: ubuntu-latest
-    if: ${{ !contains(github.event.head_commit.message, '[auto-version]') }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-
-      - name: Bump patch version in apps/cli/pyproject.toml
+      - name: Compute the next cli-v patch version
         id: bump
         run: |
-          current=$(python -c "import tomllib; print(tomllib.load(open('apps/cli/pyproject.toml', 'rb'))['project']['version'])")
-          IFS='.' read -r major minor patch <<< "$current"
-          next="$major.$minor.$((patch + 1))"
-          sed -i "s/^version = \"$current\"/version = \"$next\"/" apps/cli/pyproject.toml
-          echo "current=$current" >> "$GITHUB_OUTPUT"
+          latest=$(git tag -l 'cli-v*' | grep -E '^cli-v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)
+          if [ -z "$latest" ]; then
+            next="0.1.0"
+          else
+            version="${latest#cli-v}"
+            IFS='.' read -r major minor patch <<< "$version"
+            next="$major.$minor.$((patch + 1))"
+          fi
           echo "next=$next" >> "$GITHUB_OUTPUT"
+          echo "Next CLI version: $next (previous tag: ${latest:-none})"
 
-      - name: Commit and tag
+      - name: Push the version tag
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NEXT: ${{ steps.bump.outputs.next }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add apps/cli/pyproject.toml
-          git commit -m "chore(cli): auto-bump version to $NEXT [auto-version]"
           git tag "cli-v$NEXT"
-          git push origin HEAD:main
           git push origin "cli-v$NEXT"

@@ -69,6 +69,31 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # apps/desktop/src-tauri/tauri.conf.json and apps/desktop/Cargo.toml
+      # carry a static checked-in version (0.1.0) — this patches it, in this
+      # ephemeral checkout only, to match the tag that triggered a real
+      # versioned release, so the built installer's own version metadata
+      # (filenames, About dialog, tauri.conf.json's "version") isn't stuck
+      # at 0.1.0 forever. Nothing here is committed or pushed back to main:
+      # see release-desktop-auto-version.yml for why a bump commit to main
+      # isn't viable (the branch ruleset rejects a direct push from
+      # github-actions[bot]). Skipped for rolling/continuous builds, whose
+      # tag_name ("desktop-continuous") isn't a real version.
+      - name: Sync app version to the release tag
+        if: startsWith(inputs.tag_name, 'desktop-v')
+        shell: bash
+        run: |
+          version="${{ inputs.tag_name }}"
+          version="${version#desktop-v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::tag_name '${{ inputs.tag_name }}' is not a plain x.y.z version after stripping 'desktop-v'; refusing to bundle a mismatched version."
+            exit 1
+          fi
+          sed -i.bak "s/\"version\": \"[^\"]*\"/\"version\": \"$version\"/" apps/desktop/src-tauri/tauri.conf.json
+          sed -i.bak "s/^version = \"[^\"]*\"/version = \"$version\"/" apps/desktop/Cargo.toml
+          rm -f apps/desktop/src-tauri/tauri.conf.json.bak apps/desktop/Cargo.toml.bak
+          echo "Building as version $version (from tag ${{ inputs.tag_name }})"
+
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -199,6 +224,14 @@ jobs:
   publish:
     name: Publish release
     needs: build
+    # A single failing matrix leg (e.g. macOS) makes the `build` job's own
+    # conclusion "failure" even with fail-fast: false, which would normally
+    # skip this job too — losing the installers every other platform did
+    # produce. `!cancelled()` runs publish for any outcome except an actual
+    # cancellation, so a release still goes out with whichever platforms
+    # succeeded; the run as a whole still shows red from the failed leg, so
+    # the broken platform doesn't go unnoticed.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: Download every platform's installers
@@ -206,7 +239,46 @@ jobs:
         with:
           pattern: desktop-installer-*
           path: dist
-          merge-multiple: true
+          # No merge-multiple: keep each platform's artifact in its own
+          # dist/desktop-installer-<platform>/ subdirectory so a missing
+          # platform (failed build, nothing uploaded) is detectable below,
+          # instead of a flattened dist/ that hides which one is absent.
+
+      - name: Note any platform missing from this release
+        id: missing
+        run: |
+          missing=""
+          for platform in macos-latest ubuntu-latest windows-latest; do
+            if [ ! -d "dist/desktop-installer-$platform" ]; then
+              missing="$missing $platform"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "Missing platform installers:$missing"
+            echo "note=**Note:** this build is missing installers for:$missing — that platform's build failed. See the Actions run for this tag/commit for details. Other platforms are unaffected." >> "$GITHUB_OUTPUT"
+          else
+            echo "note=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fail if no platform produced an installer
+        run: |
+          if [ -z "$(find dist -type f 2>/dev/null)" ]; then
+            echo "::error::No platform produced an installer; nothing to publish."
+            exit 1
+          fi
+
+      - name: Build the release notes
+        env:
+          BODY: ${{ inputs.release_body }}
+          MISSING_NOTE: ${{ steps.missing.outputs.note }}
+        run: |
+          {
+            echo "$BODY"
+            if [ -n "$MISSING_NOTE" ]; then
+              echo ""
+              echo "$MISSING_NOTE"
+            fi
+          } > release-notes.md
 
       - name: Create the release and attach every installer
         env:
@@ -216,7 +288,7 @@ jobs:
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
             --title "${{ inputs.release_name }}" \
-            --notes "${{ inputs.release_body }}" \
+            --notes-file release-notes.md \
             ${{ inputs.release_draft && '--draft' || '' }} \
             ${{ inputs.prerelease && '--prerelease' || '' }} \
-            dist/*
+            dist/*/*
