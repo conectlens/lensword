@@ -1,9 +1,13 @@
 name: Build desktop installers (reusable)
 
-# Shared by release.yml (tag-triggered, stable/versioned releases) and
-# release-continuous.yml (push-to-main-triggered, rolling "latest" builds)
-# so the signing/packaging logic — the part that's actually easy to get
-# subtly wrong — exists in exactly one place.
+# Called by release.yml (tag-triggered, stable/versioned releases) — kept
+# as its own reusable workflow rather than inlined so the signing/packaging
+# logic, the part that's actually easy to get subtly wrong, stays testable
+# in isolation. Previously also shared with release-continuous.yml's
+# push-to-main rolling builds; that channel was removed (it wasn't useful
+# in practice — no reviewed gate before publishing, and the rolling
+# `desktop-continuous` release/tag it produced just got replaced on every
+# push with no one looking at it), so this is release.yml's alone now.
 #
 # Two-stage: `build` produces installers per platform as workflow artifacts
 # only (no GitHub Release interaction); `publish` runs once after all three
@@ -15,7 +19,7 @@ on:
   workflow_call:
     inputs:
       tag_name:
-        description: "Git tag the publish job attaches installers to (must already exist for a real tag release; a synthetic non-pushed value is fine for a rolling release — gh release create will cut it from the build commit)"
+        description: "Git tag the publish job attaches installers to — must already exist"
         required: true
         type: string
       display_version:

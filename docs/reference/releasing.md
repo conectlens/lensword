@@ -18,15 +18,13 @@ The release is a draft on purpose. Whether a given run was signed is not
 visible from the workflow's green tick, so a tag should never publish
 installers without someone looking at them first.
 
-**A second, separate channel** (`.github/workflows/release-continuous.yml`)
-rebuilds and republishes installers automatically on every push to `main`,
-under a fixed rolling `desktop-continuous` tag — not draft, marked
-prerelease. Both channels share the actual packaging/signing logic
-(`.github/workflows/build-desktop-installers.yml`), so everything below
-applies to either one equally. See
-[Release process § Release channels](/reference/trust/release-process#release-channels-desktop)
-for the full comparison, including the production API endpoint both
-channels bake in by default.
+There used to be a second, separate channel that rebuilt and republished
+installers automatically on every push to `main` under a fixed rolling
+`desktop-continuous` tag. It was removed — nothing gated what it
+published, so it produced installers nobody had actually vetted. This
+tagged channel is the only one now. See
+[Release process § Release channel](/reference/trust/release-process#release-channel-desktop)
+for the production API endpoint it bakes in by default.
 
 ## Signing
 

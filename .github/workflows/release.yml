@@ -1,9 +1,12 @@
 name: Release
 
 # Phase 3.3 (#16): produce desktop installers for all three platforms on a
-# tagged release. Packaging logic lives in build-desktop-installers.yml
-# (shared with release-continuous.yml's rolling builds) — this file is now
-# just the tag-triggered channel's own trigger + release metadata.
+# tagged release. Packaging logic lives in build-desktop-installers.yml —
+# this file is just the tag-triggered channel's own trigger + release
+# metadata. There used to be a second, push-to-main "continuous build"
+# channel (release-continuous.yml); it was removed for producing no real
+# value — an unreviewed rolling prerelease nobody looked at before it
+# replaced itself on the next push. This tagged channel is the only one now.
 #
 # This workflow's job is to produce installers at all. It does not satisfy
 # ADR 0001's release gate on its own: that gate requires *signed* builds, and
