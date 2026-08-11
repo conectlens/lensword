@@ -9,6 +9,20 @@ Status — Desktop Application: **unreleased**.
 
 Every entry states exactly what was verified — a passing automated test does not imply a platform was manually checked, and a manual check on one OS does not imply another. See [Verification levels](/reference/trust/verification-levels) for what each status means.
 
+<a id="remove-desktop-continuous-build"></a>
+
+### Removed: The "Continuous Build" desktop release channel (the rolling desktop-continuous GitHub prerelease, rebuilt on every push to main) has been removed.
+
+*2026-08-11* — verification: not verified
+
+No effect on any published release — the removed channel had never actually produced a build anyone could rely on as reviewed. Anyone who had previously downloaded an installer from the rolling desktop-continuous release will find it gone from Releases; the tagged desktop-v* releases are the supported way to get an installer going forward.
+
+<details><summary>Technical detail</summary>
+
+Deletes .github/workflows/release-continuous.yml entirely. It was added by desktop-production-default-and-continuous-release as a second channel alongside release.yml's tagged releases, sharing packaging/signing logic via build-desktop-installers.yml. Unlike the tagged channel it published immediately on every push with no review step (release.yml's own release is a draft specifically so a human looks at it first) — it never produced a real, deliberately reviewed release, since its whole purpose was to always reflect main's current tip and self-replace on the next push. Removed the workflow file, its references from build-desktop-installers.yml's and release.yml's header comments, the live desktop-continuous release/tag on GitHub, and the "second channel" sections in docs/reference/trust/release-process.md, docs/reference/releasing.md, and docs/install/desktop-app.md. The tagged desktop-v* channel (release.yml) is unaffected and is now the only desktop release channel.
+
+</details>
+
 <a id="other-language-pronunciation-fallback"></a>
 
 ### Fixed: The pronunciation speaker button now works for words whose target language is "Other" (for example Russian, Arabic, or Chinese), instead of always being disabled.

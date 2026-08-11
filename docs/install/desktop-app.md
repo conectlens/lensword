@@ -30,7 +30,7 @@ README:
 - **Tauri version:** `2.11.5` (`apps/desktop/Cargo.lock`), API surface `tauri = { version = "2", features = ["tray-icon"] }`.
 - **Frontend embedding:** the shell's `beforeBuildCommand` builds `apps/frontend` and Tauri's `frontendDist` points at `../../frontend/dist` — the desktop app ships the exact same web build as the browser surface, not a separate UI.
 - **Backend mode:** remote-only, no bundled database or Python runtime ([ADR 0002](../reference/adr/0002-desktop-backend-mode.md)).
-- **Endpoint resolution order:** `LENSWORD_API_URL` env var, then an `api-endpoint` file in the OS application-config directory, then a compiled-in default. Must be loopback or `https://` — plain HTTP to a remote host is refused at the Rust layer, not just discouraged. The compiled-in default is `http://127.0.0.1:8000` for a local build (`cargo tauri dev`/`cargo build`); a CI-built release installer (either channel below) instead defaults to the hosted production API, `https://lensword-api.conectlens.com` — set at *compile* time (`apps/desktop/api-config/src/lib.rs`'s `DEFAULT_API_BASE`), not something the running app reads from its environment. Either way, the two runtime layers above still take precedence, so a downloaded installer remains fully usable against a self-hosted backend.
+- **Endpoint resolution order:** `LENSWORD_API_URL` env var, then an `api-endpoint` file in the OS application-config directory, then a compiled-in default. Must be loopback or `https://` — plain HTTP to a remote host is refused at the Rust layer, not just discouraged. The compiled-in default is `http://127.0.0.1:8000` for a local build (`cargo tauri dev`/`cargo build`); a CI-built release installer (see below) instead defaults to the hosted production API, `https://lensword-api.conectlens.com` — set at *compile* time (`apps/desktop/api-config/src/lib.rs`'s `DEFAULT_API_BASE`), not something the running app reads from its environment. Either way, the two runtime layers above still take precedence, so a downloaded installer remains fully usable against a self-hosted backend.
 - **Credential storage:** the `keyring` crate (`apps/desktop/src-tauri/Cargo.toml`) — OS Keychain on macOS, Credential Manager on Windows, Secret Service on Linux — not webview `localStorage`.
 - **Notifications:** polled from the backend and raised as native toasts via `tauri-plugin-notification`/`notify-rust`/`tauri-winrt-notification`, with Start / Remind later / Skip today actions.
 - **Auto-update:** not configured. `tauri.conf.json` has no updater plugin entry — there is no in-app update mechanism; a new version means downloading a new installer once releases exist.
@@ -38,26 +38,19 @@ README:
 
 ## Install
 
-Two GitHub Actions channels build installers for all three platforms —
+A GitHub Actions workflow builds installers for all three platforms —
 `.dmg` for macOS, `.msi`/`.exe` for Windows, `.deb`/`.AppImage` for Linux —
-and attach them to a GitHub release (see
-[Release process § Release channels](/reference/trust/release-process#release-channels-desktop)
-for how they differ):
+and attaches them to a GitHub release as a **draft** whenever a
+`desktop-v*` tag is pushed, a specific, deliberately cut version (see
+[Release process § Release channel](/reference/trust/release-process#release-channel-desktop)).
+There used to be a second "continuous build" channel that republished
+installers automatically on every push to `main`; it was removed for
+publishing without any review step.
 
-- **Tagged releases** (`desktop-v*` tag) — a specific, deliberately cut
-  version, published as a draft.
-- **Continuous build** — rebuilt on every push to `main`, published
-  immediately under the rolling `desktop-continuous` tag, marked
-  prerelease. This is "what's on `main` right now," not a reviewed release.
-
-> **Neither channel has actually produced a release from this repository
-> yet** — confirmed via `git tag -l` and `gh release list`, both empty at
-> the time this was written; the workflows exist but this is a
-> point-in-time repository-state claim, not a promise either has run. Until
-> one has, every platform means building from source below. Whichever
-> channel a downloaded installer comes from, its artifacts are **unsigned**
-> unless the repository's signing secrets are configured — macOS will show
-> a Gatekeeper warning and Windows a SmartScreen one. See
+> Until a release has been published from a draft, every platform means
+> building from source below. A downloaded installer's artifacts are
+> **unsigned** unless the repository's signing secrets are configured —
+> macOS will show a Gatekeeper warning and Windows a SmartScreen one. See
 > [Releasing & compatibility](/reference/releasing).
 
 All three need a Rust toolchain ([rustup](https://rustup.rs)) and the

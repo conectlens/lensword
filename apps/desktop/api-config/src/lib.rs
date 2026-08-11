@@ -140,9 +140,8 @@ pub struct Resolved {
 /// documented development port — *unless* `LENSWORD_RELEASE_API_BASE` was
 /// set at compile time (`option_env!`, evaluated by rustc and baked into
 /// the binary; not `std::env::var`, which reads at runtime and would do
-/// nothing here). Only the release-build CI jobs
-/// (.github/workflows/release.yml, release-continuous.yml) set that
-/// variable, pointing a downloaded installer at the hosted production API
+/// nothing here). Only the release-build CI job (.github/workflows/release.yml)
+/// sets that variable, pointing a downloaded installer at the hosted production API
 /// by default. `cargo build`/`cargo tauri dev` never set it, so local
 /// development is unaffected, and `LENSWORD_API_URL` (runtime) and the
 /// `api-endpoint` config file both still outrank this constant either way
