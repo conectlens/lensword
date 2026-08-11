@@ -20,14 +20,30 @@ name: Auto-version Local CLI (PyPI)
 # version to match the tag inside its own (unpushed) checkout before
 # building, so the published package's version still matches the tag even
 # though nothing on `main` itself ever changes.
+#
+# Pushing the tag is NOT enough on its own to start publish-cli.yml, even
+# though it's configured to trigger on a `cli-v*` tag push: GitHub does
+# not run other workflows off an event caused by the default GITHUB_TOKEN
+# (anti-recursion guard, documented under "Triggering a workflow from a
+# workflow" — the same guard that, on the desktop side, left a real
+# desktop-v0.1.1 tag sitting untouched with no build ever starting for
+# it). So this workflow explicitly dispatches publish-cli.yml itself, via
+# the `gh workflow run` step below, which is an ordinary API call rather
+# than a cascading event and is unaffected by that guard.
 on:
   push:
     branches: [main]
     paths:
       - "apps/cli/**"
+  workflow_dispatch: {}
 
 permissions:
   contents: write
+  # actions: write is what lets the "Trigger the PyPI publish" step below
+  # call `gh workflow run` — declaring any `permissions:` block at all
+  # resets every unlisted scope to `none` (not to the repo default), so
+  # this has to be listed explicitly or that step gets a 403.
+  actions: write
 
 concurrency:
   # Serializes version computation so two pushes landing close together
@@ -67,3 +83,9 @@ jobs:
         run: |
           git tag "cli-v$NEXT"
           git push origin "cli-v$NEXT"
+
+      - name: Trigger the PyPI publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEXT: ${{ steps.bump.outputs.next }}
+        run: gh workflow run publish-cli.yml --repo "${{ github.repository }}" --ref "cli-v$NEXT"

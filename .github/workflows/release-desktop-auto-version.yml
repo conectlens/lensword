@@ -22,15 +22,31 @@ name: Auto-version Desktop (tag)
 # version to match the tag inside its own (unpushed) checkout before
 # building, so the shipped installer's version metadata still matches the
 # tag even though nothing on `main` itself ever changes.
+#
+# Pushing the tag is NOT enough on its own to start release.yml, even
+# though release.yml is configured to trigger on a `desktop-v*` tag push:
+# GitHub does not run other workflows off an event caused by the default
+# GITHUB_TOKEN (anti-recursion guard, documented under "Triggering a
+# workflow from a workflow"). Confirmed by a real run — this workflow
+# pushed desktop-v0.1.1 successfully, and release.yml never started for
+# it. So this workflow explicitly dispatches release.yml itself, via the
+# `gh workflow run` step below, which is an ordinary API call rather than
+# a cascading event and is unaffected by that guard.
 on:
   push:
     branches: [main]
     paths:
       - "apps/desktop/**"
       - "apps/frontend/**"
+  workflow_dispatch: {}
 
 permissions:
   contents: write
+  # actions: write is what lets the "Trigger the release build" step below
+  # call `gh workflow run` — declaring any `permissions:` block at all
+  # resets every unlisted scope to `none` (not to the repo default), so
+  # this has to be listed explicitly or that step gets a 403.
+  actions: write
 
 concurrency:
   # Serializes version computation so two pushes landing close together
@@ -70,3 +86,9 @@ jobs:
         run: |
           git tag "desktop-v$NEXT"
           git push origin "desktop-v$NEXT"
+
+      - name: Trigger the release build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEXT: ${{ steps.bump.outputs.next }}
+        run: gh workflow run release.yml --repo "${{ github.repository }}" --ref "desktop-v$NEXT"

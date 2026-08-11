@@ -17,6 +17,14 @@ name: Publish Local CLI (PyPI)
 # pyproject.toml" step below instead syncs pyproject.toml's version to the
 # tag in this ephemeral checkout, right before building — nothing here is
 # committed or pushed back.
+#
+# publish-cli-auto-version.yml triggers this via `gh workflow run
+# publish-cli.yml --ref cli-vX.Y.Z` (a real tag push from GITHUB_TOKEN
+# does not cascade into starting this workflow — GitHub's anti-recursion
+# guard — so it has to ask explicitly). That run's github.event_name is
+# "workflow_dispatch", not "push", even though github.ref does point at
+# the tag; the version-sync step below keys off github.ref_type instead
+# of the event name so both a real tag push and this dispatch path work.
 on:
   push:
     tags:
@@ -30,11 +38,18 @@ jobs:
   publish:
     name: Build, check, and publish to PyPI
     runs-on: ubuntu-latest
-    # A GitHub Environment, not just a job name — lets the repo owner attach
-    # required-reviewer protection to `pypi` later (Settings -> Environments)
-    # so a tag push pauses for approval before anything reaches PyPI, and is
-    # where the PYPI_API_TOKEN secret below must be added.
-    environment: pypi
+    # Was pinned to a dedicated `pypi` Environment (see comment history) so
+    # the repo owner could later attach required-reviewer protection here
+    # without touching the token's placement. In practice no `pypi`
+    # Environment was ever created and PYPI_API_TOKEN was set on
+    # `production` instead — every run of this job silently saw an empty
+    # secrets.PYPI_API_TOKEN and would have failed PyPI auth at the last
+    # step (confirmed: `gh api .../environments` lists only `github-pages`
+    # and `production`; no `pypi`). Pointing at `production`, where the
+    # token actually is, fixes that. If dedicated protection for PyPI
+    # publishes is wanted later, create a `pypi` Environment, move
+    # PYPI_API_TOKEN onto it, and change this back.
+    environment: production
     permissions:
       contents: read
     steps:
@@ -46,12 +61,12 @@ jobs:
 
       # apps/cli/pyproject.toml's checked-in version is static — this makes
       # the built package's version match the tag that triggered this run.
-      # Only meaningful for a real tag push — a workflow_dispatch run (used
-      # to test this workflow before the first cli-v* tag exists) has no
-      # tag to sync from, so pyproject.toml's checked-in version is used
-      # as-is.
+      # Only meaningful when the ref is actually a tag — a workflow_dispatch
+      # run against a branch (used to test this workflow before the first
+      # cli-v* tag exists) has no tag to sync from, so pyproject.toml's
+      # checked-in version is used as-is.
       - name: Sync apps/cli/pyproject.toml's version to the release tag
-        if: github.event_name == 'push'
+        if: github.ref_type == 'tag'
         run: |
           tag_version="${GITHUB_REF_NAME#cli-v}"
           if ! [[ "$tag_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
