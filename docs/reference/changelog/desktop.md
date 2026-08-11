@@ -9,6 +9,48 @@ Status — Desktop Application: **unreleased**.
 
 Every entry states exactly what was verified — a passing automated test does not imply a platform was manually checked, and a manual check on one OS does not imply another. See [Verification levels](/reference/trust/verification-levels) for what each status means.
 
+<a id="other-language-pronunciation-fallback"></a>
+
+### Fixed: The pronunciation speaker button now works for words whose target language is "Other" (for example Russian, Arabic, or Chinese), instead of always being disabled.
+
+*2026-08-11* — verification: automated tests: passed
+
+A flashcard or review card in a language outside the fixed nine-language list (Russian, Arabic, Chinese, and others sharing those scripts) can now be heard, the same as any listed language, wherever a matching voice is installed. Where no matching voice exists, or the term's script isn't one of the ones recognized, the button stays visible and disabled with the reason on it, exactly as before.
+
+<details><summary>Technical detail</summary>
+
+SupportedLanguage is a closed nine-language enum; any word outside it (Russian, Arabic, Chinese, ...) is stored with target_language "Other", and localeFor('Other') correctly returns null since there is no honest locale to guess from that label alone (see speech.ts's own comment on why). PronunciationButton took that null as final and disabled itself unconditionally for every "Other" word, permanently — reported live against a Russian flashcard at lensword.conectlens.com/flashcards ("меня зовут") whose speaker button produced no sound. Added localeForText in speech.ts: a fallback that guesses a BCP-47 primary subtag from the term's own Unicode script (Cyrillic, Arabic, Hebrew, Greek, Devanagari, Han, Thai) — real evidence localeFor never had access to, since it only ever saw the "Other" label. PronunciationButton now tries this fallback only when the language label itself has no answer, and only ever overrides the disabled state, never a real language's own preferred locale.
+
+</details>
+
+**Known limitations:**
+- Script coverage is Cyrillic, Arabic, Hebrew, Greek, Devanagari, Han, and Thai — an "Other" word in a language using a script outside this list (or written in Latin script, e.g. Vietnamese or Indonesian) still gets no locale to speak with and the button stays disabled.
+- A script can span multiple languages (Han covers Chinese, Japanese kanji, and more); the guess picks one representative locale per script rather than distinguishing further.
+- Not verified with real audio output in a browser — covered by tests against a mocked speechSynthesis, which cannot confirm how a voice actually sounds.
+
+References: [#335](https://github.com/conectlens/lensword/issues/335), [PR #364](https://github.com/conectlens/lensword/pull/364)
+
+<a id="flashcard-animations"></a>
+
+### Changed: Flashcards now animate: each new card fades and slides in, and flipping a card plays a short flip animation instead of swapping the answer in instantly.
+
+*2026-08-11* — verification: automated tests: passed
+
+Flashcard practice at /flashcards feels less like an instant content swap and more like handling a physical deck. No change to what information is shown, when answers are gradable, or any keyboard/swipe behavior.
+
+<details><summary>Technical detail</summary>
+
+Adds card-enter and card-flip keyframes/utilities to tailwind.config.js and applies them in FlashcardStack.tsx — no new dependency. card-enter is applied to the whole stack, which already remounts per word via key={word.id} in FlashcardSessionPage, so the remount restarts the animation for every new card with no extra state. The flip is a scaleX pinch (1 -> 0 -> 1) rather than a true two-sided rotateY flip: a real 3D flip needs both faces present in the DOM at once (the back face hidden only via backface-visibility), but FlashcardStack.test.tsx asserts the hidden translation is genuinely absent from the DOM before reveal, not merely visually hidden, so both faces coexisting would regress that guarantee. The pinch swaps the single face's content at its narrowest point instead, keyed on `revealed` so only the content span remounts — the flip button itself never remounts, so keyboard focus survives a flip. Both animations are neutralized for anyone with prefers-reduced-motion: reduce via the existing global rule in index.css.
+
+</details>
+
+**Known limitations:**
+- The flip is a horizontal pinch, not a literal 3D card flip, for the DOM-presence reason above.
+- There is no exit animation when a card is answered and the next one appears; the outgoing card is unmounted immediately. The existing FlashcardStack.test.tsx suite asserts onAnswer fires synchronously on answer, and animating the exit would require deferring that call.
+- Not verified visually in a real browser — covered by the existing component tests, which run in jsdom and do not execute CSS animation timelines.
+
+References: [#338](https://github.com/conectlens/lensword/issues/338), [PR #364](https://github.com/conectlens/lensword/pull/364)
+
 <a id="pronunciation-playback"></a>
 
 ### Added: Review and stabilization cards now have a speaker button that reads the word aloud in its own language.
