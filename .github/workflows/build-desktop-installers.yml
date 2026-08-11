@@ -284,6 +284,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # A shallow glob (dist/*/*) breaks once a platform nests its
+          # installers more than one level deep (e.g. Windows producing
+          # dist/desktop-installer-windows-latest/msi/*.msi and .../nsis/*.exe)
+          # — gh release create then tries to upload the intermediate
+          # directory itself and fails ("read dist/msi: is a directory",
+          # observed on a real run). find -type f only ever lists actual
+          # files, regardless of nesting depth.
+          mapfile -t assets < <(find dist -type f)
           gh release create "${{ inputs.tag_name }}" \
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
@@ -291,4 +299,4 @@ jobs:
             --notes-file release-notes.md \
             ${{ inputs.release_draft && '--draft' || '' }} \
             ${{ inputs.prerelease && '--prerelease' || '' }} \
-            dist/*/*
+            "${assets[@]}"
