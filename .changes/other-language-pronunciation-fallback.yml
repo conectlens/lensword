@@ -1,0 +1,74 @@
+id: other-language-pronunciation-fallback
+products:
+  - web
+  - desktop
+type: fixed
+summary: >-
+  The pronunciation speaker button now works for words whose target
+  language is "Other" (for example Russian, Arabic, or Chinese), instead
+  of always being disabled.
+technical_summary: >-
+  SupportedLanguage is a closed nine-language enum; any word outside it
+  (Russian, Arabic, Chinese, ...) is stored with target_language "Other",
+  and localeFor('Other') correctly returns null since there is no honest
+  locale to guess from that label alone (see speech.ts's own comment on
+  why). PronunciationButton took that null as final and disabled itself
+  unconditionally for every "Other" word, permanently — reported live
+  against a Russian flashcard at lensword.conectlens.com/flashcards
+  ("меня зовут") whose speaker button produced no sound. Added
+  localeForText in speech.ts: a fallback that guesses a BCP-47 primary
+  subtag from the term's own Unicode script (Cyrillic, Arabic, Hebrew,
+  Greek, Devanagari, Han, Thai) — real evidence localeFor never had
+  access to, since it only ever saw the "Other" label. PronunciationButton
+  now tries this fallback only when the language label itself has no
+  answer, and only ever overrides the disabled state, never a real
+  language's own preferred locale.
+user_impact: >-
+  A flashcard or review card in a language outside the fixed nine-language
+  list (Russian, Arabic, Chinese, and others sharing those scripts) can
+  now be heard, the same as any listed language, wherever a matching voice
+  is installed. Where no matching voice exists, or the term's script isn't
+  one of the ones recognized, the button stays visible and disabled with
+  the reason on it, exactly as before.
+release_status: unreleased
+breaking: false
+migration: none
+known_limitations:
+  - Script coverage is Cyrillic, Arabic, Hebrew, Greek, Devanagari, Han,
+    and Thai — an "Other" word in a language using a script outside this
+    list (or written in Latin script, e.g. Vietnamese or Indonesian) still
+    gets no locale to speak with and the button stays disabled.
+  - A script can span multiple languages (Han covers Chinese, Japanese
+    kanji, and more); the guess picks one representative locale per
+    script rather than distinguishing further.
+  - Not verified with real audio output in a browser — covered by tests
+    against a mocked speechSynthesis, which cannot confirm how a voice
+    actually sounds.
+compatibility:
+  requires:
+    server_api: null
+verification:
+  automated_tests:
+    status: passed
+    commands:
+      - cd apps/frontend && npx vitest run src/lib/speech.test.ts src/components/ui/PronunciationButton.test.tsx
+      - cd apps/frontend && npx tsc --noEmit
+      - cd apps/frontend && npm run lint
+      - cd apps/frontend && npm run build
+    workflow_url: null
+  artifact_build:
+    status: not_run
+    artifacts: []
+  manual_platform_checks:
+    macos: not_run
+    windows: not_run
+    linux: not_run
+  production_observation:
+    status: not_observed
+security_impact: none
+documentation_required: false
+date: '2026-08-11'
+references:
+  issues: [335]
+  pull_requests: [364]
+  commits: []
