@@ -44,6 +44,33 @@ export function localeFor(language: SupportedLanguage): string | null {
   return LANGUAGE_LOCALES[language] ?? null
 }
 
+/**
+ * Best-effort BCP-47 primary subtag guessed from a term's own Unicode
+ * script, for words stored under the "Other" placeholder — languages
+ * outside the fixed nine-language list (e.g. Russian, Arabic, Chinese) all
+ * land there today, and `localeFor('Other')` has no label to work from. The
+ * term's script is a much stronger signal than the placeholder label: a
+ * word actually written in Cyrillic script almost certainly wants a
+ * Cyrillic-reading voice, which is a real inference rather than the "no
+ * honest locale to guess" case `localeFor` documents. Scripts already
+ * covered by a real `SupportedLanguage` entry (Latin, Hiragana/Katakana,
+ * Hangul) are deliberately omitted so this never second-guesses a label
+ * that already answered the question.
+ */
+const SCRIPT_LOCALES: readonly { pattern: RegExp; locale: string }[] = [
+  { pattern: /[Ѐ-ӿ]/, locale: 'ru' }, // Cyrillic
+  { pattern: /[؀-ۿ]/, locale: 'ar' }, // Arabic
+  { pattern: /[֐-׿]/, locale: 'he' }, // Hebrew
+  { pattern: /[Ͱ-Ͽ]/, locale: 'el' }, // Greek
+  { pattern: /[ऀ-ॿ]/, locale: 'hi' }, // Devanagari
+  { pattern: /[一-鿿]/, locale: 'zh' }, // Han (Chinese)
+  { pattern: /[฀-๿]/, locale: 'th' }, // Thai
+]
+
+export function localeForText(text: string): string | null {
+  return SCRIPT_LOCALES.find(({ pattern }) => pattern.test(text))?.locale ?? null
+}
+
 /** The primary subtag: `es-ES` → `es`. */
 function primarySubtag(locale: string): string {
   return locale.split('-')[0]!.toLowerCase()

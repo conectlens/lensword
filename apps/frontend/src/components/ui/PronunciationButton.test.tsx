@@ -71,12 +71,36 @@ describe('PronunciationButton', () => {
     expect(button).toBeDisabled()
   })
 
-  it('is disabled and says why for the unmappable "Other" language', () => {
+  it('is disabled and says why for "Other" text with no script to guess from', () => {
     withSpeech([voice('en-US')])
 
     render(<PronunciationButton term="xyzzy" language="Other" />)
 
     expect(screen.getByRole('button', { name: /Pronunciation isn't available for “Other”/ })).toBeDisabled()
+  })
+
+  it('speaks an "Other"-language term by guessing a locale from its script', () => {
+    // The reported bug: a Russian flashcard (target_language "Other", since
+    // Russian isn't one of the nine listed languages) whose speaker button
+    // did nothing. localeFor('Other') has no label to work from, but the
+    // term itself is written in Cyrillic script.
+    const synth = withSpeech([voice('ru-RU'), voice('en-US')])!
+
+    render(<PronunciationButton term="привет" language="Other" />)
+    const button = screen.getByRole('button', { name: /Hear “привет” in Other/ })
+    expect(button).toBeEnabled()
+
+    fireEvent.click(button)
+    expect(synth.speak).toHaveBeenCalledTimes(1)
+    expect(synth.speak.mock.calls[0][0].lang).toBe('ru')
+  })
+
+  it('is disabled and says why for an "Other" term whose guessed script has no installed voice', () => {
+    withSpeech([voice('en-US')])
+
+    render(<PronunciationButton term="привет" language="Other" />)
+
+    expect(screen.getByRole('button', { name: 'No matching voice is installed on this device.' })).toBeDisabled()
   })
 
   it('is disabled and says why when no voice for that language is installed', () => {
