@@ -1,0 +1,72 @@
+id: flashcard-animations
+products:
+  - web
+  - desktop
+type: changed
+summary: >-
+  Flashcards now animate: each new card fades and slides in, and flipping
+  a card plays a short flip animation instead of swapping the answer in
+  instantly.
+technical_summary: >-
+  Adds card-enter and card-flip keyframes/utilities to tailwind.config.js
+  and applies them in FlashcardStack.tsx — no new dependency. card-enter is
+  applied to the whole stack, which already remounts per word via
+  key={word.id} in FlashcardSessionPage, so the remount restarts the
+  animation for every new card with no extra state. The flip is a scaleX
+  pinch (1 -> 0 -> 1) rather than a true two-sided rotateY flip: a real 3D
+  flip needs both faces present in the DOM at once (the back face hidden
+  only via backface-visibility), but FlashcardStack.test.tsx asserts the
+  hidden translation is genuinely absent from the DOM before reveal, not
+  merely visually hidden, so both faces coexisting would regress that
+  guarantee. The pinch swaps the single face's content at its narrowest
+  point instead, keyed on `revealed` so only the content span remounts —
+  the flip button itself never remounts, so keyboard focus survives a
+  flip. Both animations are neutralized for anyone with
+  prefers-reduced-motion: reduce via the existing global rule in
+  index.css.
+user_impact: >-
+  Flashcard practice at /flashcards feels less like an instant content
+  swap and more like handling a physical deck. No change to what
+  information is shown, when answers are gradable, or any keyboard/swipe
+  behavior.
+release_status: unreleased
+breaking: false
+migration: none
+known_limitations:
+  - The flip is a horizontal pinch, not a literal 3D card flip, for the
+    DOM-presence reason above.
+  - There is no exit animation when a card is answered and the next one
+    appears; the outgoing card is unmounted immediately. The existing
+    FlashcardStack.test.tsx suite asserts onAnswer fires synchronously
+    on answer, and animating the exit would require deferring that call.
+  - Not verified visually in a real browser — covered by the existing
+    component tests, which run in jsdom and do not execute CSS animation
+    timelines.
+compatibility:
+  requires:
+    server_api: null
+verification:
+  automated_tests:
+    status: passed
+    commands:
+      - cd apps/frontend && npx vitest run src/features/review/FlashcardStack.test.tsx
+      - cd apps/frontend && npx tsc --noEmit
+      - cd apps/frontend && npm run lint
+      - cd apps/frontend && npm run build
+    workflow_url: null
+  artifact_build:
+    status: not_run
+    artifacts: []
+  manual_platform_checks:
+    macos: not_run
+    windows: not_run
+    linux: not_run
+  production_observation:
+    status: not_observed
+security_impact: none
+documentation_required: false
+date: '2026-08-11'
+references:
+  issues: [338]
+  pull_requests: [364]
+  commits: []
