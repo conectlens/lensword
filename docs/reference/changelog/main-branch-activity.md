@@ -11,6 +11,8 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 
 | Date | Commit | Author | Subject | Changelog fragment |
 |---|---|---|---|---|
+| 2026-08-11 | [38e1c94](https://github.com/conectlens/lensword/commit/38e1c94dc72dcda850790142be01622655d53406) | Ömer Faruk Coşkun | Fix release.yml never starting: missing top-level permissions block (#366) | none (predates this system) |
+| 2026-08-11 | [ca4d3b0](https://github.com/conectlens/lensword/commit/ca4d3b080067244f797643fff1a9a89ddb746401) | Ömer Faruk Coşkun | Animate flashcards and fix silent pronunciation for "Other"-language words (#364) | [flashcard-animations](/reference/changelog/#flashcard-animations) |
 | 2026-08-11 | [1bc5da1](https://github.com/conectlens/lensword/commit/1bc5da1abc87c0d55c43f00e59412abbc65286f8) | Lenser | Make auto-version tags actually trigger their release/publish workflows | none (predates this system) |
 | 2026-08-11 | [37713d3](https://github.com/conectlens/lensword/commit/37713d3d87b814c1df952d8f18a316deffcf12c4) | Lenser | Merge remote-tracking branch 'origin/development' | none (predates this system) |
 | 2026-08-11 | [f8bb4a1](https://github.com/conectlens/lensword/commit/f8bb4a1e90a0035bc7342b3002eac20bcc4f8c88) | Lenser | Exclude raw .app bundle internals from release assets | none (predates this system) |
@@ -49,7 +51,5 @@ This ledger covers the most recent commits on `development` (regenerate to exten
 | 2026-08-09 | [a353a31](https://github.com/conectlens/lensword/commit/a353a31e1ca7d16ae36889b574bab4a32a3f80f2) | Ömer Faruk Coşkun | Draw dropdowns in the app's own theme instead of native popup chrome (#341) (#354) | none (predates this system) |
 | 2026-08-09 | [3533afc](https://github.com/conectlens/lensword/commit/3533afcf407e3d66e35cf6e47c78c528320c2849) | Ömer Faruk Coşkun | Give the weekly report's two actions loading and error feedback (#344) (#353) | none (predates this system) |
 | 2026-08-09 | [b555096](https://github.com/conectlens/lensword/commit/b555096f9f2dacaad6402d38a0a9f42dc87e9a9e) | Ömer Faruk Coşkun | Cache the per-user language profile instead of rescanning (#342) (#352) | none (predates this system) |
-| 2026-08-09 | [fb067d5](https://github.com/conectlens/lensword/commit/fb067d5c674ffcee1e320c7f120d7b9374654ac9) | Ömer Faruk Coşkun | Add opt-in browser notifications to the web app (#345) (#351) | none (predates this system) |
-| 2026-08-09 | [2b87c52](https://github.com/conectlens/lensword/commit/2b87c528d57badaa1e8dee73d118af692c6a8374) | Ömer Faruk Coşkun | Cut MCP transport request amplification (#347) (#350) | none (predates this system) |
 
 Generated from `git log -40 development` — 40 commits shown.
