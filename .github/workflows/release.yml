@@ -23,6 +23,19 @@ on:
       - "v*"
   workflow_dispatch: {}
 
+# Missing entirely until now — the repo's default workflow token permission
+# is "read" (confirmed via the API), and this workflow calls
+# build-desktop-installers.yml with secrets: inherit, whose own jobs need
+# contents: write to create the GitHub Release. A reusable-workflow call
+# can never be granted more than its caller's own token permissions, no
+# matter what the callee itself declares, so without this every run of
+# `release` failed before a single job started (observed on real runs: every
+# desktop-v* tag ever pushed or dispatched here — 0.1.0, 0.1.1, 0.1.2 — hit
+# `startup_failure` / "likely failed because of a workflow file issue").
+# release-continuous.yml already had this; release.yml never did.
+permissions:
+  contents: write
+
 jobs:
   compute-version:
     name: Compute display version
