@@ -262,7 +262,7 @@ jobs:
 
       - name: Fail if no platform produced an installer
         run: |
-          if [ -z "$(find dist -type f 2>/dev/null)" ]; then
+          if [ -z "$(find dist -type f -not -path '*.app/*' 2>/dev/null)" ]; then
             echo "::error::No platform produced an installer; nothing to publish."
             exit 1
           fi
@@ -291,7 +291,18 @@ jobs:
           # directory itself and fails ("read dist/msi: is a directory",
           # observed on a real run). find -type f only ever lists actual
           # files, regardless of nesting depth.
-          mapfile -t assets < <(find dist -type f)
+          #
+          # -not -path '*.app/*' excludes the raw macOS .app bundle's own
+          # internals (tauri.conf.json's targets: "all" makes tauri-action
+          # emit the unpacked .app alongside the .dmg): uploading those
+          # files individually collides on generic bundle-internal names
+          # like Contents/_CodeSignature/CodeResources — gh release create
+          # uses the basename as the asset name, so two files named
+          # CodeResources produce "ReleaseAsset.name already exists"
+          # (observed on a real run). The compressed .app.tar.gz sibling
+          # tauri also produces isn't inside a *.app/ directory itself, so
+          # it's unaffected and still gets uploaded.
+          mapfile -t assets < <(find dist -type f -not -path '*.app/*')
           gh release create "${{ inputs.tag_name }}" \
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
