@@ -9,7 +9,7 @@ alembic==1.18.5
 pydantic==2.13.4
 pydantic-settings==2.14.2
 email-validator==2.3.0
-pyjwt==2.13.0
+pyjwt==2.15.0
 bcrypt==5.0.0
 # Remote MCP OAuth (issue #196): only used for the RFC 7636 PKCE S256
 # transform (app/domain/services/oauth_pkce.py) — a vetted library for the
