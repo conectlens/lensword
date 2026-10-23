@@ -5,7 +5,7 @@
   "identifier": "com.lensword.desktop",
   "build": {
     "frontendDist": "../../frontend/dist",
-    "beforeBuildCommand": "npm --prefix ../../frontend ci && npm --prefix ../../frontend run build"
+    "beforeBuildCommand": "npm --prefix ../frontend ci && npm --prefix ../frontend run build"
   },
   "app": {
     "windows": [
