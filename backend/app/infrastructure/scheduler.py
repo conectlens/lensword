@@ -74,7 +74,12 @@ def register_jobs(
     user whose reminders are unreadable.
     """
     if settings.environment == "development":
-        scheduler.add_job(dev_heartbeat.run, "interval", seconds=10, id="dev_heartbeat")
+        # Removed first, then added with a persistent job store: see the
+        # PURGE_CLAIMS_JOB_ID comment below for why `replace_existing` alone
+        # doesn't cover a job left over from a prior run of this same process.
+        if scheduler.get_job("dev_heartbeat") is not None:
+            scheduler.remove_job("dev_heartbeat")
+        scheduler.add_job(dev_heartbeat.run, "interval", seconds=10, id="dev_heartbeat", replace_existing=True)
     if session_factory is None:
         return
 
